@@ -5,6 +5,8 @@ Run from server/:  python -m unittest discover -s tests
 No Firebase, no network. Every identifier is synthetic.
 """
 
+import pathlib
+import subprocess
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -21,6 +23,8 @@ from app.schemas.contributions import (
     ContributionSourceType,
     ContributionStatus,
 )
+
+SERVER_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 OCCURRED_AT = datetime(2026, 9, 1, 10, 0, tzinfo=timezone.utc)
 CREATED_AT = datetime(2026, 9, 2, 10, 0, tzinfo=timezone.utc)
@@ -569,8 +573,18 @@ class SerializationTests(unittest.TestCase):
             ContributionRecord.model_validate(record(legacy_points=50))
 
     def test_schema_does_not_initialise_firebase(self):
-        self.assertNotIn("app.firebase", sys.modules)
-        self.assertNotIn("firebase_admin", sys.modules)
+        # In a subprocess, so the result does not depend on what another test
+        # module imported first: importing the schema alone must not pull in
+        # Firebase.
+        probe = (
+            "import sys; import app.schemas.contributions; "
+            "print(any(name.startswith(('firebase_admin', 'google.cloud')) for name in sys.modules))"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", probe], capture_output=True, text=True, cwd=SERVER_ROOT
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "False")
 
 
 if __name__ == "__main__":
