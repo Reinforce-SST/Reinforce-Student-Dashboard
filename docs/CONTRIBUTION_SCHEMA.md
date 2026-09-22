@@ -1,8 +1,9 @@
 > ## STATUS: PROPOSED SCHEMA — NOT YET PART OF THE FIRESTORE DATA CONTRACT
 >
-> The Pydantic contract in `server/app/schemas/contributions.py`. No collection holds
-> contributions and no code reads or writes one. [`DATA_CONTRACT.md`](DATA_CONTRACT.md)
-> is unchanged; persistence is a separate team decision.
+> The contract in `server/app/schemas/contributions.py`, now implemented by the
+> award API (§11). The API reads and writes a `contributions` collection, but that
+> collection is **not yet described in** [`DATA_CONTRACT.md`](DATA_CONTRACT.md) and
+> still needs the team's approval as a persistence contract.
 
 # Contribution Schema
 
@@ -223,7 +224,7 @@ enforce this — if approved for persistence, the write paths must.
 
 For comparing Aryan's endpoint contract against this schema:
 
-- [ ] **Contributor identifier semantics** — `contributor_id`, opaque; which identity it holds is open (§11)
+- [ ] **Contributor identifier semantics** — `contributor_id`, opaque; which identity it holds is open (§12)
 - [ ] **Category enum values** — exactly the nine in §4
 - [ ] **Source representation** — nested `{type, id}` for `project`, `blog`, `trophy_item` only
 - [ ] **Context representation** — `event_id` and `spg_id`, never an event or SPG source
@@ -255,7 +256,46 @@ Known mismatches in the endpoints as of `backend@c0c9680`, for Aryan to align:
 - Records are stored with `model_dump(mode="json")` — timestamps as strings —
   while Python-mode dumps keep native timestamps; persistence must pick one.
 
-## 11. Open Decisions
+## 11. Runtime behaviour
+
+The award workflow is implemented in `app/services/contributions.py`, with thin
+handlers in `app/api/v1/endpoints/contributions.py`. The service is the shared
+entry point so the admin site and the Discord bot cannot drift apart.
+
+| Route | Access | Notes |
+|---|---|---|
+| `POST /api/v1/contributions/award/student/{student_id}` | admin | One approved record |
+| `POST /api/v1/contributions/award/spg/{spg_id}` | admin | One record per existing SPG member, all or none |
+| `PATCH /api/v1/contributions/{record_id}/revoke` | admin | Keeps the record, stops the points |
+| `GET /api/v1/contributions` | admin | Filter by contributor, SPG, event, status, category |
+| `GET /api/v1/contributions/me` | signed in | The caller's own history |
+| `GET /api/v1/contributions/{record_id}` | owner or admin | Someone else's answers 404, not 403 |
+| `GET /api/v1/contributions/leaderboard` | signed in | Summed from approved records |
+
+- **Admin** is the Firebase custom claim `admin`, and only the boolean `true`
+  passes. Provisioning that claim is an environment step, not something the API
+  grants. There is no document-based fallback: it fails closed.
+- **`contributor_id` is the lowercased email.** The path identifier may be an
+  email, a `users` document id or a Firebase UID; it is resolved to that one
+  form before any record exists, and an unknown identifier is a 404. This
+  follows the current DATA_CONTRACT and is deliberately not a migration.
+- **Deduplication is server-owned.** The key is a SHA-256 of the normalised
+  award (target kind, contributor, category, points, title, `occurred_at`,
+  event, SPG, source) and is also the document id, so the same award can only
+  occupy one document. Reading and writing inside one transaction is what makes
+  two concurrent retries safe; a repeat returns the existing record.
+- **An SPG award is one transaction** for every member, so it cannot half-apply.
+  Members come from `SPGRecord.member_ids`, never from a field on user
+  documents. An unresolvable member stops the whole award. SPGs are read
+  through `app/services/spgs.py` and never created here.
+- **Timestamps are stored as native datetimes,** not JSON strings, and render as
+  ISO-8601 in responses.
+- **Every stored document is validated** through `ContributionRecord` on the way
+  in and on the way out, including revocation, which is rebuilt and validated
+  before it is written.
+- **Listing is always bounded:** 20 by default, 100 at most, with a cursor.
+
+## 12. Open Decisions
 
 1. Which identity the actor fields hold — follows the canonical-identity decision in
    [`BACKEND_DATA_MODEL_PROPOSAL.md`](BACKEND_DATA_MODEL_PROPOSAL.md).
