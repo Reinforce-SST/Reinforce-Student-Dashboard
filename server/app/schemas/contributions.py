@@ -14,7 +14,7 @@ relationship has exactly one representation.
 
 from datetime import timezone
 from enum import Enum
-from typing import Annotated, Literal, Optional
+from typing import Annotated, List, Literal, Optional
 
 from pydantic import (
     AfterValidator,
@@ -213,3 +213,37 @@ class ContributionRecord(ContributionBase):
         """Reviewed and approved by the club — not a certification of the
         underlying content, which a blog or other entity would own itself."""
         return self.status is ContributionStatus.APPROVED
+
+
+# --- API response models ---
+
+
+class SPGAwardResponse(BaseModel):
+    """Result of awarding every member of one SPG."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    spg_id: NonBlankStr
+    points_per_member: int = Field(strict=True, ge=0)
+    awarded_count: int = Field(strict=True, ge=0)
+    contributor_ids: List[NonBlankStr] = Field(default_factory=list)
+    contribution_ids: List[NonBlankStr] = Field(default_factory=list)
+
+
+class LeaderboardEntry(BaseModel):
+    """One row of the leaderboard, summed from approved contributions."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    contributor_id: NonBlankStr
+    points: int = Field(strict=True, ge=0)
+    contribution_count: int = Field(strict=True, ge=0)
+
+
+class ContributionPage(BaseModel):
+    """A bounded page of contributions. `next_cursor` is null on the last page."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: List[ContributionRecord] = Field(default_factory=list)
+    next_cursor: Optional[NonBlankStr] = None
