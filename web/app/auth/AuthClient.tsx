@@ -1,6 +1,6 @@
 "use client";
 
-import { getRedirectResult, signInWithPopup, signInWithRedirect } from "firebase/auth";
+import { signInWithPopup, signInWithRedirect } from "firebase/auth";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -26,15 +26,6 @@ export default function AuthClient() {
   const [error, setError] = useState<string>("");
   const [roleGranted, setRoleGranted] = useState<string>("");
   const [botIssue, setBotIssue] = useState<string>("");
-
-  // Completes a redirect sign-in when the user lands back on this page.
-  useEffect(() => {
-    if (!isFirebaseConfigured) return;
-    getRedirectResult(getFirebaseAuth()).catch((err) => {
-      setPhase("error");
-      setError(err instanceof Error ? err.message : "Sign-in failed. Try again.");
-    });
-  }, []);
 
   const signIn = useCallback(async () => {
     setError("");
