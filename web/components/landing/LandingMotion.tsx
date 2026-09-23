@@ -35,5 +35,5 @@ export default function LandingMotion({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  return <div ref={ref} className={styles.landing}>{children}</div>;
+  return <div ref={ref} className={styles.landing} data-landing>{children}</div>;
 }

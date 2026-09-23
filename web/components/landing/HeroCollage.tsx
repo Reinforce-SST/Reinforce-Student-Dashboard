@@ -37,7 +37,7 @@ export default function HeroCollage() {
           <Bar color="violet" size="l" /><Bar index={1} /><Bar size="s" index={2} />
           <Bar color="violet" index={3} /><Bar size="l" index={4} />
         </PanelCard>
-        <Image className={styles.mark} src={mark} alt="" sizes="470px" />
+        <Image className={styles.mark} src={mark} alt="" sizes="470px" loading="eager" />
         <PanelCard title={<>Ledger <span className={styles.cardNote}>illustrated</span></>} position="cE" index={4}>
           {["Pick a track", "Register a project group", "File a resource request", "Follow the ticket in Discord", "See your records on the web"].map((label, i) => (
             <div className={styles.row} key={label} style={rowDelay(i)}>

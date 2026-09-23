@@ -21,10 +21,10 @@
 
 ## Tasks
 
-- [ ] 1. Port hero, collage and motion foundation. Add scoped palette, self-hosted Caveat, trimmed assets, and optional landing navigation. Browser-check hero, narrow collage layout, scroll chrome and reduced motion.
-- [ ] 2. Port tracks, ledger and YUVI. Accessible tabs swap copy and screenshot; keyboard Left/Right/Home/End works. Static screenshots use next/image. Only `/verify` is shown. Check real links and absence of API requests.
-- [ ] 3. Port policy figures, joining, close and footer. Figures animate once with final values available without JS. Omit unavailable testimonials and cohort count. Verify the entire page at 1440, 768 and 390 pixels, hover/focus states and existing public/auth routes.
-- [ ] 4. Run lint/build, inspect full diff, obtain a fresh code review, capture screenshots and prepare every PR template section. Verify signed author-only commits and the exact stacked range before publishing.
+- [x] 1. Port hero, collage and motion foundation. Add scoped palette, self-hosted Caveat, trimmed assets, and optional landing navigation. Browser-check hero, narrow collage layout, scroll chrome and reduced motion.
+- [x] 2. Port tracks, ledger and YUVI. Accessible tabs swap copy and screenshot; keyboard Left/Right/Home/End works. Static screenshots use next/image. Only `/verify` is shown. Check real links and absence of API requests.
+- [x] 3. Port policy figures, joining, close and footer. Figures animate once with final values available without JS. Omit unavailable testimonials and cohort count. Verify the entire page at 1440, 768 and 390 pixels, hover/focus states and existing public/auth routes.
+- [x] 4. Run lint/build, inspect full diff, obtain a fresh code review, capture screenshots and prepare every PR template section. Verify signed author-only commits and the exact stacked range before publishing.
 
 ## Review focus
 
@@ -37,3 +37,7 @@
 ## Verification record
 
 Baseline at `e4edc0b`: `npm ci --no-audit --no-fund`, `npm run lint` and `npm run build` passed. No environment credentials needed for the public page. Browser MCP available: Playwright (Puppeteer unavailable).
+
+Final verification: lint/build passed after all product changes. Playwright MCP exercised the production build at 1440/768/390, all tabs/keys, hover/focus, once-only count-up, nav contraction and progress. Reduced motion produced zero running animations and final figures; no-JS exposed all track panels; missing IntersectionObserver preserved content and pause. No API requests or browser runtime errors. Existing /tracks, /projects and /auth deep-link route return 200; auth shows its existing unconfigured state without credentials.
+
+Fresh review found two fallback bugs (pause root in reduced-motion/observer fallback; no-JS hidden track panels). Both were reproduced before their fixes and verified afterwards. Focused follow-up review found no new concrete issues. Evidence and reproducible browser checks are in `docs/verification/landing/`.

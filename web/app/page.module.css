@@ -1,3 +1,5 @@
+/* Port of the approved landing mockup. Warm tokens stay scoped to this route.
+   Small secondary text is brighter than the mockup for readable contrast. */
 .landing{
   --brand:#E5B731; --brand-hi:#F5CB4A; --ember:#D98E3D;
   --brand-line:rgba(229,183,49,.30); --brand-wash:rgba(229,183,49,.08);
@@ -27,7 +29,8 @@
 /* Server output is visible. The observer arms entrances only after hydration. */
 .rise { transition:opacity 760ms var(--ease),transform 760ms var(--ease); transition-delay:calc(var(--i,0) * 85ms) }
 .landing[data-motion-ready] .rise:not([data-in]) { opacity:0; transform:translateY(26px) }
-.marker { display:inline-block; font-family:var(--marker); font-weight:700; color:var(--brand); transform:rotate(-5deg) translateY(8px); }
+.marker { display:inline-block; font-family:var(--marker); font-weight:700; color:var(--brand); transform:rotate(-5deg) translateY(8px); transition:transform 900ms var(--ease); transition-delay:calc(var(--i,0) * 85ms + 220ms); }
+.landing[data-motion-ready] .marker:not([data-in]) { transform:rotate(-1deg) translateY(6px); }
 .markerWindow { display:inline-block; overflow:hidden; vertical-align:bottom; padding:.12em; margin:-.12em; }
 .markerInk { display:inline-block; }
 .markerWindow,.markerInk { transition:transform 900ms var(--ease); transition-delay:calc(var(--i,0) * 85ms + 220ms) }
@@ -41,21 +44,21 @@
 /* bars inside the cards wipe out to their width */
 .bar{transform-origin:left center;
   transition:transform 620ms var(--ease);
-  transition-delay:calc(var(--i,0) * 110ms + 520ms + var(--j,0) * 60ms)}
+  transition-delay:calc(var(--i,0) * 110ms + 1080ms + var(--j,0) * 60ms)}
 .card[data-in] .bar{transform:scaleX(1)}
 
 /* the ledger rows tick in one after another */
 .row{
   transition:opacity 500ms var(--ease),transform 500ms var(--ease);
-  transition-delay:calc(760ms + var(--j,0) * 110ms)}
+  transition-delay:calc(1080ms + var(--i,0) * 110ms + var(--j,0) * 110ms)}
 .card[data-in] .row{opacity:1;transform:none}
 .row .line{transform-origin:left;transition:transform 700ms var(--ease);
-  transition-delay:calc(900ms + var(--j,0) * 110ms)}
+  transition-delay:calc(1220ms + var(--i,0) * 110ms + var(--j,0) * 110ms)}
 .card[data-in] .row .line{transform:scaleX(1)}
 
 /* glow breathes */
 @keyframes breathe{0%,100%{opacity:.7;transform:scale(1)}50%{opacity:1;transform:scale(1.06)}}
-@keyframes watermark{0%,100%{opacity:.07}50%{opacity:.10}}
+@keyframes watermark{0%,100%{opacity:.07;transform:translateX(-50%) rotate(-6deg) scale(1)}50%{opacity:.10;transform:translateX(-50%) rotate(-6deg) scale(1.06)}}
 /* sparkles twinkle */
 @keyframes twinkle{0%,100%{opacity:.25}50%{opacity:1}}
 /* slow drift on the background field */
@@ -100,7 +103,7 @@
 /* ================================================================= nav == */
 .nav { position:sticky; top:0; z-index:50; background:rgba(11,10,7,.86); backdrop-filter:blur(14px); border-bottom:1px solid var(--edge); transition:transform 420ms var(--ease-soft)}
 .nav[data-condensed] { transform:translateY(-14px); box-shadow:0 14px 40px rgba(0,0,0,.5) }
-.nav .page { display:flex; align-items:center; gap:30px; height:72px }
+.nav .page { display:flex; align-items:center; gap:30px; height:71px }
 .nav .page > * { transition:transform 420ms var(--ease-soft)}
 .nav[data-condensed] .page > * { transform:translateY(7px) }
 .nav img { height:22px; width:auto }
@@ -424,7 +427,7 @@ h1.big .marker{font-family:var(--marker);font-weight:700;color:var(--brand);font
   .fbar { flex-direction:column; gap:10px; letter-spacing:.08em; }
 }
 @media (prefers-reduced-motion:reduce) {
-  .landing *, .landing *::before, .landing *::after { animation:none!important; transition:none; scroll-behavior:auto!important; }
+  .landing *, .landing *::before, .landing *::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; }
   .landing .rise,.landing .card,.landing .row,.landing .ln { opacity:1!important; transform:none!important; }
   .landing .bar,.landing .line,.landing .fg::before { transform:scaleX(1)!important; }
   .landing .markerWindow,.landing .markerInk { transform:none!important; }

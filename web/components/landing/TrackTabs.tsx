@@ -48,6 +48,9 @@ export default function TrackTabs() {
   };
 
   return <>
+    <noscript>
+      <style>{`.${styles.tabs}{display:none}.${styles.split}[hidden]{display:grid;margin-top:40px}`}</style>
+    </noscript>
     <div className={`${styles.tabs} ${styles.rise}`} role="tablist" aria-label="Club tracks" data-animate="rise" style={stagger(3)}>
       {TRACKS.map((track, index) => <button type="button" role="tab" key={track.id}
         id={`tab-${track.id}`} aria-controls={`panel-${track.id}`} aria-selected={index === active}
