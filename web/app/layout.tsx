@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Instrument_Serif, Plus_Jakarta_Sans } from "next/font/google";
+import { Caveat, Instrument_Serif, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
 // Self-hosted by next/font at build time. No CDN request, no layout shift,
@@ -15,6 +15,13 @@ const display = Instrument_Serif({
 const sans = Plus_Jakarta_Sans({
   variable: "--font-jakarta",
   subsets: ["latin"],
+  display: "swap",
+});
+
+const marker = Caveat({
+  variable: "--font-caveat",
+  subsets: ["latin"],
+  weight: "700",
   display: "swap",
 });
 
@@ -49,7 +56,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${display.variable} ${sans.variable}`}>
+    <html lang="en" className={`${display.variable} ${sans.variable} ${marker.variable}`}>
       {/*
         suppressHydrationWarning is scoped to <body>'s own attributes and does
         NOT extend to its children, so real hydration bugs inside the app still
