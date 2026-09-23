@@ -1,14 +1,14 @@
 /** Run with Playwright MCP against the local dev server documented in verification.md.
  * Fixtures live only at the browser/network boundary, never in production code.
  */
-export default async function verify(page) {
+export default async function verify(page, screenshots = '.') {
   const base = 'http://127.0.0.1:3107';
-  const screenshots = '/home/laterabhi/reinforce-member-fixes/docs/screenshots';
   const check = (ok, message) => { if (!ok) throw new Error(message); };
   await page.unrouteAll({ behavior: 'wait' });
   let profile = { email: 'review@sst.scaler.com', full_name: 'Review Member', discord_id: '123456789012345678', discord_link_version: 1, is_verified: true, skills: ['Python'], social_links: {} };
   let mode = 'ready';
   let saveFails = false;
+  let profileFails = false;
   const linking = [];
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -19,6 +19,7 @@ export default async function verify(page) {
     const path = req.url().split('?')[0];
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': base, 'access-control-allow-headers': 'authorization,content-type', 'access-control-allow-methods': 'GET,POST,PUT,OPTIONS' } });
     check(['Bearer local-review-token', 'Bearer local-review-token-refreshed'].includes(req.headers().authorization), 'API request lost Firebase credential');
+    if (path.endsWith('/me') && profileFails) return route.fulfill({ status: 503, json: { detail: 'Unavailable' } });
     if (path.endsWith('/profile') && req.method() === 'PUT') {
       if (saveFails) return route.fulfill({ status: 503, json: { detail: 'Save temporarily unavailable' } });
       profile = { ...profile, ...req.postDataJSON() };
@@ -82,7 +83,7 @@ export default async function verify(page) {
   await page.goto(base + '/profile');
   await page.getByLabel('Full name').fill('Draft awaiting token refresh');
   const refreshed = page.waitForResponse(response => response.url().endsWith('/auth/me') && response.request().headers().authorization === 'Bearer local-review-token-refreshed');
-  await page.evaluate(async () => {
+  async function rotateCredential(value) { await page.evaluate(async value => {
     await new Promise((resolve, reject) => {
       const req = indexedDB.open('firebaseLocalStorageDb', 1);
       req.onsuccess = () => {
@@ -91,7 +92,7 @@ export default async function verify(page) {
         const store = tx.objectStore('firebaseLocalStorage');
         const item = store.get('firebase:authUser:demo-member-review:[DEFAULT]');
         item.onsuccess = () => {
-          item.result.value.stsTokenManager.accessToken = 'local-review-token-refreshed';
+          item.result.value.stsTokenManager.accessToken = value;
           item.result.value.stsTokenManager.expirationTime = Date.now() + 3600000;
           store.put(item.result);
         };
@@ -100,7 +101,8 @@ export default async function verify(page) {
       };
       req.onerror = () => reject(req.error);
     });
-  });
+  }, value); }
+  await rotateCredential('local-review-token-refreshed');
   await refreshed;
   await page.getByLabel('Full name').waitFor();
   check(await page.getByLabel('Full name').inputValue() === 'Draft awaiting token refresh', 'Credential refresh discarded unsaved profile edits');
@@ -135,10 +137,26 @@ export default async function verify(page) {
   check(linking.length > 0, 'Private link was lost during effect replay');
   check(!page.url().includes('link_token'), 'Private token stayed in browser history');
   check(!await page.getByText('Verified Member', { exact: true }).count(), 'Pending role falsely reported granted');
-  await page.goto(base + '/dashboard');
+  const completedLinks = linking.length;
+  await rotateCredential('local-review-token');
+  // Firebase's IndexedDB persistence polls for cross-tab changes every 800ms.
+  await page.waitForTimeout(2000);
+  check(linking.length === completedLinks, 'Credential refresh repeated a completed private link');
+  profileFails = true;
+  await page.goto(base + '/profile');
+  await page.getByRole('alert').filter({ hasText: 'Your profile could not be refreshed' }).waitFor();
+  check(await page.getByRole('button', { name: 'Sign out', exact: true }).count() === 1, 'Profile outage traps the member without sign-out');
+  await noOverflow();
+  await shot('profile-recovery-mobile');
+  profileFails = false;
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await page.getByLabel('Full name').waitFor();
+  profileFails = true;
+  await page.reload();
+  await page.getByRole('alert').filter({ hasText: 'Your profile could not be refreshed' }).waitFor();
   await page.getByRole('button', { name: 'Sign out' }).click();
   await page.waitForURL(base + '/auth');
   await page.getByRole('button', { name: 'Sign in with Google' }).waitFor();
   check(errors.length === 0, `Browser errors: ${errors.join('; ')}`);
-  return { passed: ['desktop/mobile layout', 'drawer Escape/focus/navigation', 'ticket detail/attachment safety', 'profile save/reload/error/token refresh', 'empty/unlinked/error/retry', 'unsupported route', 'private link effect replay', 'pending role', 'sign out'], screenshots, errors };
+  return { passed: ['desktop/mobile layout', 'drawer Escape/focus/navigation', 'ticket detail/attachment safety', 'profile save/reload/error/token refresh', 'empty/unlinked/error/retry', 'unsupported route', 'private link effect replay/credential refresh', 'profile outage recovery', 'pending role', 'sign out'], screenshots, errors };
 }

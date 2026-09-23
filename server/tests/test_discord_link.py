@@ -64,3 +64,10 @@ class LinkTests(unittest.TestCase):
         unlink_member(tx, self.db, USER['email'], NOW)
         tx.commit()
         with self.assertRaises(HTTPException): self.consume()
+
+    def test_retry_rejects_a_primary_record_with_changed_identity(self):
+        self.consume()
+        self.db.data['users/' + USER['email']]['email'] = 'other@sst.scaler.com'
+        with self.assertRaises(HTTPException) as error:
+            self.consume()
+        self.assertEqual(error.exception.status_code, 409)

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.api.security import get_current_user
 from app.firebase import db
 from firebase_admin import firestore
+from google.api_core.exceptions import AlreadyExists
 from app.services.discord_link import consume_link, unlink_member
 from app.config import get_settings
 from app.schemas.student import (
@@ -18,6 +19,16 @@ from app.schemas.student import (
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 settings = get_settings()
+
+
+def _create_profile_if_absent(user_ref, data):
+    # A linking transaction in another tab may win after our missing-doc read.
+    # Create has an existence precondition; set would erase its ownership proof.
+    try:
+        user_ref.create(data)
+        return data
+    except AlreadyExists:
+        return user_ref.get().to_dict() or {}
 
 
 def _get_user_doc_ref(email: str, uid: Optional[str] = None):
@@ -107,7 +118,7 @@ async def sync_user(current_user: dict = Depends(get_current_user)):
                 "discord": None
             }
         }
-        user_ref.set(new_user_data)
+        new_user_data = _create_profile_if_absent(user_ref, new_user_data)
         return {
             "success": True,
             "user": _format_user_doc(new_user_data, default_email=email, default_name=name)
@@ -143,7 +154,7 @@ async def get_me(current_user: dict = Depends(get_current_user)):
             "skills": [],
             "social_links": {}
         }
-        user_ref.set(new_user_data)
+        new_user_data = _create_profile_if_absent(user_ref, new_user_data)
         return {"success": True, "user": _format_user_doc(new_user_data, default_email=email, default_name=name)}
 
     doc_data = doc.to_dict() or {}

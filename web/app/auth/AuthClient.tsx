@@ -20,6 +20,8 @@ export default function AuthClient() {
   const [botIssue, setBotIssue] = useState("");
   const [roleGranted, setRoleGranted] = useState("");
   const [attempt, setAttempt] = useState(0);
+  const completedSync = useRef<string | null>(null);
+  const identity = user?.uid;
 
   useEffect(() => {
     // Preserve the first fragment across Strict Mode's effect replay. Erasing
@@ -49,7 +51,15 @@ export default function AuthClient() {
   }, []);
 
   useEffect(() => {
-    if (!token || !link) return;
+    if (!token || !identity) {
+      completedSync.current = null;
+      return;
+    }
+    if (!link) return;
+    const operation = JSON.stringify([identity, link.token, attempt]);
+    // A new Firebase credential does not mean the member needs to consume the
+    // same short-lived proof again. Explicit retries and new links still run.
+    if (completedSync.current === operation) return;
     let cancelled = false;
     async function sync() {
       setPhase("linking");
@@ -70,7 +80,10 @@ export default function AuthClient() {
         } else {
           await api.syncUser(token!);
         }
-        if (!cancelled) setPhase("linked");
+        if (!cancelled) {
+          completedSync.current = operation;
+          setPhase("linked");
+        }
       } catch (err) {
         if (!cancelled) {
           setPhase("error");
@@ -82,7 +95,7 @@ export default function AuthClient() {
     // Strict Mode can repeat this request. One-time consumption is idempotent
     // for the same authenticated member, and each effect owns its completion.
     return () => { cancelled = true; };
-  }, [token, link, attempt]);
+  }, [token, identity, link, attempt]);
 
   if (!configured) return <section className={styles.card}><h1 className={`display ${styles.title}`}>Sign-in unavailable</h1><p className={styles.body}>Member sign-in has not been configured for this deployment. Please contact a club admin.</p></section>;
   if (loading || !link) return <section className={styles.card} aria-busy="true"><p className={styles.body}>Checking your session…</p></section>;

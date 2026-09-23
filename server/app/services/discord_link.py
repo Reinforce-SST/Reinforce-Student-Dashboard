@@ -47,7 +47,8 @@ def consume_link(transaction, db, token, user, now=None):
     if old_id and old_id != discord_id:
         raise HTTPException(409, 'Your student account is linked to another Discord account. Unlink it with a club admin first.')
     if used_by:
-        if (proof.get('email') != email or primary.get('discord_link_version') != 1
+        if (proof.get('email') != email or primary.get('email') != email
+                or primary.get('discord_link_version') != 1
                 or alias.get('discord_link_version') != 1 or old_id != discord_id
                 or alias.get('email') != email or str(alias.get('discord_id')) != discord_id):
             raise HTTPException(409, 'This link is no longer active. Run /auth in Discord again.')

@@ -16,7 +16,7 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8080/api/v1 \
 npm run dev -- --hostname 127.0.0.1 --port 3107
 ```
 
-Pass the exported function to a Playwright page (or remove `export default` to use it as an MCP function expression). Set its screenshot directory to your checkout. It covers desktop/mobile layout, focus return and Escape/navigation dismissal, ticket details, unsafe attachment suppression, profile save/reload/failure and preservation of drafts across ID-token refresh, empty/unlinked/error/retry states, unavailable routes, private link preservation through React effect replay, pending Discord roles, and sign-out. Fixture names in screenshots are test data, not production members.
+Pass the exported function to a Playwright page (or remove `export default` to use it as an MCP function expression). Its optional second argument is an existing screenshot directory (default: current directory). It covers desktop/mobile layout, focus return and Escape/navigation dismissal, ticket details, unsafe attachment suppression, profile save/reload/failure and preservation of drafts across ID-token refresh, empty/unlinked/error/retry states, unavailable routes, private link preservation through React effect replay, completed-link preservation through credential refresh, profile-outage recovery, pending Discord roles, and sign-out. Fixture names in screenshots are test data, not production members.
 
 ## Coordinated rollout
 
@@ -37,13 +37,29 @@ The legacy `client/` application remains in the repository. Its raw-ID/direct-bo
 - [Mobile menu](screenshots/member-mobile-menu.png)
 - [Mobile ticket conversation](screenshots/ticket-mobile.png)
 - [Mobile landing page](screenshots/landing-mobile.png)
+- [Mobile profile outage recovery](screenshots/profile-recovery-mobile.png)
 
 ## Review outcome
 
 Self-review and a separate read-only review found two issues before delivery:
 reciprocal proof did not validate the primary email, and an ID-token refresh could
 unmount the profile form. Both now have regressions observed failing before the
-fixes and passing afterward. The final suite has 16 API tests, 6 bot tests,
+fixes and passing afterward. The final suite has 18 API tests, 7 bot tests,
 3 frontend unit tests, and the browser scenarios above. API and YUVI HTTP startup
 were checked with synthetic credentials: health 200, unauthenticated tickets 401,
 and the unconfigured bot webhook 503. No production member records were changed.
+
+A follow-up self-review reproduced and fixed five additional cases:
+
+- A first `/auth/me` or `/auth/sync-user` request could overwrite a Discord link
+  created concurrently. Firestore create-only preconditions now preserve it.
+- A consumed-link retry must reject a primary record whose email has changed.
+- Overlapping bot callbacks could grant twice and send duplicate welcomes while
+  the gateway cache lagged. Per-member locks and fresh Discord REST reads now
+  serialize retries within the bot process; production runs one gateway process.
+- Credential refresh no longer consumes an already completed private link again.
+- A failed initial profile load offers retry, sign-out, and home navigation.
+
+The backend and browser regressions were observed failing before these fixes and
+passing afterward. The documented bot health URLs still returned owner-suspended
+503 responses during this review; live acceptance remains outstanding.
