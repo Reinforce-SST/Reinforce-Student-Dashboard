@@ -1,31 +1,8 @@
 import { LandingButton, MarkerText, Stars, stagger } from "./Primitives";
 import styles from "@/app/page.module.css";
 
-function CountUp({ value, suffix = "" }: { value: number; suffix?: string }) {
-  // The server renders final values. The single page observer animates only the
-  // decorative copy; assistive technology always gets the complete number.
-  return <>
-    <b data-count={value} data-suffix={suffix} aria-hidden="true">{value}{suffix}</b>
-    <span className="sr-only">{value}{suffix} </span>
-  </>;
-}
-
 export default function ClosingSections() {
   return <>
-    {/* Constants from the club structure/policy, never an estimated member count. */}
-    <section className={`${styles.band} ${styles.alt} ${styles.figures}`} aria-label="Club principles">
-      <div className={styles.page}>
-        <div className={styles.fig4}>
-          {[
-            { value: 3, label: "tracks to find your kind of work" },
-            { value: 100, suffix: "%", label: "of club repositories public" },
-            { value: 0, label: "paid tools required to take part" },
-          ].map((stat, index) => <div className={styles.fg} data-animate="figure" key={stat.label} style={stagger(index)}>
-            <CountUp value={stat.value} suffix={stat.suffix} /><span>{stat.label}</span>
-          </div>)}
-        </div>
-      </div>
-    </section>
     <section className={styles.band} id="joining" aria-labelledby="joining-heading">
       <div className={styles.page}>
         <div className={styles.center}>

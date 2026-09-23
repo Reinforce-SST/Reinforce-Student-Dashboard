@@ -50,11 +50,11 @@ Read these before changing anything structural.
 
 ### 1. `/auth` is a bot deep-link target
 
-YUVI builds its verification link as `{FRONTEND_AUTH_URL}?discord_id={id}` and sends
+YUVI builds its verification link as `{FRONTEND_AUTH_URL}#link_token={one-time-token}` and sends
 it to members as an ephemeral Discord message. `FRONTEND_AUTH_URL` is an environment
 variable **on Render, in the bot's repo** — not in this codebase, not greppable here.
 
-If you move, rename, or gate the route that handles `?discord_id=`, member
+If you move, rename, or gate the route that handles the private link token, member
 verification breaks silently for everyone, and nothing in this repo errors. Changing
 it requires a coordinated change to the bot's Render environment.
 
@@ -70,9 +70,8 @@ it; do not guess field names from the UI.
 ### 3. The user document is written twice
 
 `server/app/api/v1/endpoints/auth.py` writes the same payload to both
-`users/{email}` and `users/{discord_id}`. Two documents, one person, no transaction.
-They can and will drift. Be aware when reading either one. Consolidating this is a
-known task, not an accident to be fixed in passing.
+`users/{email}` and `users/{discord_id}`. Linking and unlinking now update both in a transaction. The email document remains
+the source of truth for editable profile fields. See docs/DATA_CONTRACT.md.
 
 ## Known defects — do not "fix in passing"
 
@@ -85,8 +84,8 @@ drive-by edit inside an unrelated change.
 - **Events and Projects tabs render hardcoded fake content.** Invented workshops with
   invented dates, shipped to real users. They have no data source behind them.
 - **`allow_origins=["*"]`** on the API (`server/main.py`).
-- **Discord linking accepts a typed snowflake**, not OAuth. A user can link an ID
-  they do not own.
+- **Legacy Discord records need reverification.** Raw-ID links no longer grant
+  access; members must open a fresh private YUVI token link. See docs/verification.md.
 - **`server/app/firebase.py` calls `storage.bucket()` at import time** with an empty
   default. Crashes on import for anyone without the env var set — this is why local
   backend setup fails for new contributors.

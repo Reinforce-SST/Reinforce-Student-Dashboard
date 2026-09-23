@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, feat/ledger-web]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -54,6 +54,9 @@ jobs:
       - name: Lint
         run: npx eslint .
 
+      - name: Regression tests
+        run: npm test
+
       # Builds without Firebase config on purpose. The app must render its
       # "not configured" state rather than crash, so a missing environment
       # variable can never take the public site down.
@@ -61,7 +64,7 @@ jobs:
         run: npm run build
 
   server:
-    name: Server — dependencies and syntax
+    name: Server — regression tests and syntax
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -75,6 +78,9 @@ jobs:
 
       - name: Resolve dependencies
         run: uv sync --locked
+
+      - name: Regression tests
+        run: uv run python -m unittest discover -s tests -v
 
       # The app initialises Firebase Admin at import time, so it cannot be imported
       # without credentials. Compile-check instead — this catches syntax and

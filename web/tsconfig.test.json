@@ -1,0 +1,4 @@
+{
+  "compilerOptions": { "target": "ES2022", "module": "commonjs", "strict": true, "skipLibCheck": true, "outDir": ".test-build", "esModuleInterop": true },
+  "include": ["lib/auth-flow.ts", "lib/api.ts"]
+}

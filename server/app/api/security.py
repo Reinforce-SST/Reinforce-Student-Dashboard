@@ -20,11 +20,11 @@ def get_current_user(
         decoded_token = auth.verify_id_token(cred.credentials)
         
         # Restrict login to SST student emails
-        email = decoded_token.get("email", "")
-        if not email.endswith("@sst.scaler.com"): # Update with exact SST domain if different
+        email = decoded_token.get("email", "").lower().strip()
+        if not email.endswith("@sst.scaler.com") or decoded_token.get("email_verified") is not True:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, 
-                detail="An SST student email is required for club access."
+                detail="A verified SST student email is required for club access."
             )
             
         return decoded_token

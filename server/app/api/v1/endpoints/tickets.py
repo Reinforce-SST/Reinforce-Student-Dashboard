@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.security import get_current_user
 from app.firebase import db
+from app.services.discord_link import linked_discord_id
 from app.schemas.tickets import (
     HIDDEN_CATEGORIES,
     TicketAuthor,
@@ -82,15 +83,6 @@ def _summary(doc_id: str, data: Dict[str, Any]) -> TicketSummary:
     )
 
 
-def _linked_discord_id(email: str) -> Optional[str]:
-    """Resolve the caller's linked Discord id from their own user document."""
-    doc = db.collection(USERS).document(email.lower().strip()).get()
-    if not doc.exists:
-        return None
-    discord_id = (doc.to_dict() or {}).get("discord_id")
-    return str(discord_id) if discord_id else None
-
-
 @router.get("", response_model=TicketListResponse, summary="List the caller's own tickets")
 def list_my_tickets(current_user: dict = Depends(get_current_user)) -> TicketListResponse:
     """Everything the signed-in member has filed through Discord.
@@ -100,7 +92,7 @@ def list_my_tickets(current_user: dict = Depends(get_current_user)) -> TicketLis
     unconditionally.
     """
     email = (current_user.get("email") or "").lower().strip()
-    discord_id = _linked_discord_id(email)
+    discord_id = linked_discord_id(db, email)
     if not discord_id:
         # Not an error. The member simply has not linked Discord yet, and the
         # frontend needs to tell those two cases apart.
@@ -109,7 +101,6 @@ def list_my_tickets(current_user: dict = Depends(get_current_user)) -> TicketLis
     query = (
         db.collection(TICKETS)
         .where("created_by.discord_id", "==", discord_id)
-        .limit(MAX_TICKETS)
     )
 
     tickets: List[TicketSummary] = []
@@ -119,17 +110,16 @@ def list_my_tickets(current_user: dict = Depends(get_current_user)) -> TicketLis
             continue
         tickets.append(_summary(doc.id, data))
 
-    # Sorted here rather than in Firestore: an order_by on updated_at combined
-    # with the created_by equality filter needs a composite index, and this
-    # result set is capped at MAX_TICKETS anyway.
+    # Filter and sort the complete owned set before capping. Applying limit
+    # first selects arbitrary document IDs and lets reports displace real tickets.
     tickets.sort(key=lambda t: t.updated_at or t.created_at or "", reverse=True)
-    return TicketListResponse(linked=True, tickets=tickets)
+    return TicketListResponse(linked=True, tickets=tickets[:MAX_TICKETS])
 
 
 @router.get("/{ticket_id}", response_model=TicketThread, summary="One ticket and its conversation")
 def get_ticket(ticket_id: str, current_user: dict = Depends(get_current_user)) -> TicketThread:
     email = (current_user.get("email") or "").lower().strip()
-    discord_id = _linked_discord_id(email)
+    discord_id = linked_discord_id(db, email)
 
     doc = db.collection(TICKETS).document(ticket_id).get()
     if not doc.exists:
@@ -157,7 +147,7 @@ def get_ticket(ticket_id: str, current_user: dict = Depends(get_current_user)) -
     messages: List[TicketMessage] = []
     stream = (
         db.collection(TICKETS).document(ticket_id).collection(MESSAGES)
-        .order_by("timestamp")
+        .order_by("timestamp", direction="DESCENDING")
         .limit(MAX_MESSAGES)
         .stream()
     )
@@ -176,4 +166,5 @@ def get_ticket(ticket_id: str, current_user: dict = Depends(get_current_user)) -
             )
         )
 
+    messages.reverse()
     return TicketThread(ticket=detail, messages=messages)

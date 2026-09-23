@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
 import AuthClient from "./AuthClient";
 import styles from "./auth.module.css";
 
@@ -12,7 +11,7 @@ export const metadata: Metadata = {
 /**
  * IMPORTANT — this route is a deep-link target for the YUVI Discord bot.
  *
- * The bot builds `{FRONTEND_AUTH_URL}?discord_id={id}` and sends it to members
+ * The bot builds `{FRONTEND_AUTH_URL}#link_token={one-time-token}` and sends it to members
  * as an ephemeral message. FRONTEND_AUTH_URL is an environment variable on
  * Render, in the bot's repository, and is not greppable from here.
  *
@@ -23,10 +22,7 @@ export const metadata: Metadata = {
 export default function AuthPage() {
   return (
     <main className={styles.wrap}>
-      {/* useSearchParams needs a Suspense boundary to stay statically renderable. */}
-      <Suspense fallback={<div className={styles.card} aria-busy="true" />}>
-        <AuthClient />
-      </Suspense>
+      <AuthClient />
     </main>
   );
 }
