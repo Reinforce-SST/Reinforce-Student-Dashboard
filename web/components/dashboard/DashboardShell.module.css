@@ -1,11 +1,14 @@
-.shellLayout { display: flex; min-height: 100dvh; background: #0e0e0e; color: #fff; font-family: var(--font-jakarta), sans-serif; }
-.desktopSidebar { width: 240px; flex: 0 0 240px; border-right: 1px solid #31343a; }
+.shellLayout { display: flex; min-height: 100dvh; }
+.desktopSidebar { width: 224px; flex: 0 0 224px; border-right: 1px solid var(--member-line); background: var(--member-deep); }
 .mainWrapper { flex: 1; min-width: 0; }
-.contentArea { padding: 32px; }
-.drawer { border: 0; background: transparent; color: #fff; padding: 0; width: 100%; max-width: none; height: 100dvh; max-height: none; margin: 0; }
-.drawer::backdrop { background: #000a; }
-.drawerContent { width: min(320px, 85vw); height: 100%; overflow-y: auto; background: #161616; padding-top: 12px; }
-.close { display: block; margin: 0 16px 0 auto; min-height: 44px; background: transparent; color: #E5B731; border: 1px solid #45402c; border-radius: 8px; padding: 8px 16px; cursor: pointer; font: inherit; }
-.authGate { display: grid; place-items: center; min-height: 100dvh; padding: 24px; background: #0e0e0e; color: #fff; text-align: center; }
-.authGate a { color: #E5B731; }
-@media (max-width: 900px) { .desktopSidebar { display: none; } .contentArea { padding: 24px 16px; } }
+.contentArea { padding: 44px 40px 72px; }
+.skip { position: fixed; top: 8px; left: 8px; z-index: 100; padding: 12px 20px; background: var(--brand); color: var(--member-deep); transform: translateY(-150%); }
+.skip:focus { transform: none; }
+.drawer { border: 0; background: transparent; color: var(--ink); padding: 0; width: 100%; max-width: none; height: 100dvh; max-height: none; margin: 0; }
+.drawer::backdrop { background: #000b; }
+.drawerContent { width: min(320px, 85vw); height: 100%; overflow-y: auto; background: var(--member-deep); padding-top: 12px; border-right: 1px solid var(--member-line); }
+.close { display: grid; place-items: center; margin: 0 16px 0 auto; min-height: 44px; min-width: 44px; color: var(--member-muted); }
+.authGate { display: grid; place-items: center; min-height: 100dvh; padding: 24px; text-align: center; color: var(--member-muted); }
+.authGate a { color: var(--brand); }
+@media (max-width: 1100px) { .contentArea { padding-inline: 28px; } }
+@media (max-width: 900px) { .desktopSidebar { display: none; } .contentArea { padding: 30px 20px 48px; } }
