@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import LandingNav from "./landing/LandingNav";
 import { useEffect, useState } from "react";
 import Pill from "./Pill";
 import styles from "./SiteNav.module.css";
@@ -15,7 +16,11 @@ const LINKS = [
   { href: "/projects", label: "Projects" },
 ];
 
-export default function SiteNav() {
+export default function SiteNav({ landing = false }: { landing?: boolean }) {
+  return landing ? <LandingNav /> : <DefaultNav />;
+}
+
+function DefaultNav() {
   const [condensed, setCondensed] = useState(false);
 
   useEffect(() => {
