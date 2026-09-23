@@ -41,7 +41,7 @@ export default function ClosingSections() {
           </li>
           <li className={`${styles.tile} ${styles.rise}`} data-animate="rise" style={stagger(3)}>
             <p className={styles.n}>02</p><h3>Link Discord</h3>
-            <p>Run <code className={styles.inlineCode}>/verify</code> in the club server and follow the private link to connect your account.</p>
+            <p>Run <code className={styles.inlineCode}>/auth</code> in the club server and follow the private link to connect your account.</p>
           </li>
           <li className={`${styles.tile} ${styles.rise}`} data-animate="rise" style={stagger(4)}>
             <p className={styles.n}>03</p><h3>Pick a track</h3>

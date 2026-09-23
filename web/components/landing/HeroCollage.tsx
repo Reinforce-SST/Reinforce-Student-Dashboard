@@ -39,7 +39,7 @@ export default function HeroCollage() {
         </PanelCard>
         <Image className={styles.mark} src={mark} alt="" sizes="470px" loading="eager" />
         <PanelCard title={<>Ledger <span className={styles.cardNote}>illustrated</span></>} position="cE" index={4}>
-          {["Pick a track", "Register a project group", "File a resource request", "Follow the ticket in Discord", "See your records on the web"].map((label, i) => (
+          {["Pick a track", "Register a project group", "File a resource request", "Follow the ticket in Discord", "Keep updates with the ticket"].map((label, i) => (
             <div className={styles.row} key={label} style={rowDelay(i)}>
               <span className={styles.ic}>0{i + 1}</span><span>{label}</span><i className={styles.line} />
             </div>

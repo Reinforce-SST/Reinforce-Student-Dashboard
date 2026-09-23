@@ -8,7 +8,7 @@ const GROUPS = [
   { title: "Club", links: [["Tracks", "/tracks"], ["Projects", "/projects"], ["How to join", "#joining"]] },
   { title: "Platform", links: [["Dashboard", "/dashboard"], ["Tickets", "/dashboard/tickets"], ["Sign in", "/auth"]] },
   { title: "Open source", links: [["Dashboard repo", REPO], ["YUVI bot", "https://github.com/Reinforce-SST/YUVI"], ["Project archive", "https://github.com/Reinforce-SST/Reinforce_Club-SST"]] },
-  { title: "Get help", links: [["Contact the club", "mailto:ai_ml_club@sst.scaler.com"], ["Contributing", `${REPO}/blob/feat/ledger-web/CONTRIBUTING.md`], ["Report an issue", `${REPO}/issues`]] },
+  { title: "Get help", links: [["Contact the club", "mailto:ai_ml_club@sst.scaler.com"], ["Contributing", `${REPO}/blob/main/CONTRIBUTING.md`], ["Report an issue", `${REPO}/issues`]] },
 ];
 
 export default function LandingFooter() {

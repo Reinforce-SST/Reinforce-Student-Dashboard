@@ -50,11 +50,21 @@ The approved mockup was ported with these factual corrections from the brief and
 
 - Omitted placeholder testimonials, unverified cohort size/application status and the unverified four-minute joining promise.
 - Kept only the three structure/policy constants.
-- Used the real Vercel hostname in preview frames and `/verify` as the only illustrated bot command.
+- Used the real Vercel hostname in preview frames and `/auth`, the command registered in YUVI's `cogs/auth.py`, in both onboarding instructions.
 - Labelled dashboard screenshots as interface previews with sample data; collage rows are explicitly an illustration.
-- Described the working Discord ticket mirror rather than promising automatic scoring, standing commands or role assignment by track.
+- Described filing and following tickets in Discord. Removed claims that Discord records already appear in the dashboard: the parent branch currently uses an in-memory sample store.
 - Linked only existing routes/repositories and the existing club contact address. No invented handbook, status page or Discord invite.
+- Pointed the Contributing link at `main` so deleting the parent feature branch will not break it.
+
+## Merge-readiness review
+
+PR #20 remains stacked on PR #7. These landing corrections do not make the combined product ready for release:
+
+- `web/lib/useClubStore.tsx` initializes profiles, tickets and other dashboard data from samples. Updates use local React state, not the API or Firestore. Connect supported screens to authenticated API methods and remove or gate unsupported actions before claiming persistence.
+- `server/app/api/v1/endpoints/auth.py` accepts a caller-supplied numeric Discord ID without ownership proof. PR #7's ticket endpoints trust that linked ID for authorization. Fix ownership verification before relying on it to protect member records. This was established from source; no live account linking or cross-member data access was attempted.
+- The API address embedded in the deployed production auth page is `https://reinforce-student-dashboard-ue6h.onrender.com/api/v1`. Read-only checks returned health 200, unauthenticated profile/tickets 401, and successful CORS preflights for production and this PR's preview. These checks do not prove authenticated Firestore persistence or bot role assignment.
+- The landing delta applies cleanly after the current PR #7 head. After #7 merges, retarget to `main`, rebase the landing commits if needed for the squash merge, and rerun checks against the resulting base. Neither PR was merged during this review.
 
 ## Limits
 
-No live Google sign-in, Discord account linking, signed-in dashboard, Firestore, bot service or backend start was tested. This change does not alter those paths or their configuration. Screenshots of dashboard screens intentionally use the existing reference assets, not live member records. A core-member review is still required before merging.
+No live Google sign-in, Discord account linking, signed-in dashboard, Firestore persistence, bot role assignment or local backend start was tested. API health/auth rejection/CORS checks were read-only. This change does not alter those paths or their configuration. Screenshots of dashboard screens intentionally use the existing reference assets, not live member records. The blockers above and a core-member review remain required before merging.
