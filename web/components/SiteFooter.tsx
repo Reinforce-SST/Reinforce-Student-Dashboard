@@ -1,4 +1,5 @@
 import Link from "next/link";
+import LandingFooter from "./landing/LandingFooter";
 import styles from "./SiteFooter.module.css";
 
 const REPOS = [
@@ -7,7 +8,8 @@ const REPOS = [
   { href: "https://github.com/Reinforce-SST/Reinforce_Club-SST", label: "Project archive" },
 ];
 
-export default function SiteFooter() {
+export default function SiteFooter({ landing = false }: { landing?: boolean }) {
+  if (landing) return <LandingFooter />;
   return (
     <footer className={styles.footer}>
       <div className={`page ${styles.inner}`}>
