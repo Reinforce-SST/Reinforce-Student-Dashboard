@@ -1,11 +1,17 @@
-.sidebar { display: flex; flex-direction: column; gap: 12px; padding: 28px 18px; position: sticky; top: 0; min-height: 90dvh; }
-.logoLink { margin-bottom: 28px; }
-.logoImage { width: 100%; max-width: 190px; height: auto; }
-.sectionHeader { font-size: .68rem; letter-spacing: .15em; color: #aaa; padding-left: 12px; }
-.navList { display: grid; gap: 8px; }
-.navItem { display: block; padding: 13px 12px; min-height: 44px; border-radius: 8px; color: #ccc; text-decoration: none; font-size: .9rem; }
-.navItem:hover { background: #212121; color: #fff; }
-.navItem:focus-visible { outline: 2px solid #E5B731; outline-offset: 2px; }
-.active, .active:hover { background: #E5B731; color: #111; font-weight: 700; }
-.resources { margin-top: 24px; }
-.note { color: #999; font-size: .78rem; line-height: 1.6; padding: 20px 12px; margin-top: auto; }
+.sidebar { display: flex; flex-direction: column; padding: 32px 20px 24px; position: sticky; top: 0; min-height: 100dvh; }
+.logoLink { display: block; width: 148px; margin: 0 12px 52px; }
+.logoImage { width: 100%; height: auto; }
+.navList { display: grid; gap: 6px; }
+.navItem { display: flex; align-items: center; gap: 12px; padding: 12px; min-height: 46px; border: 1px solid transparent; border-radius: 5px; color: var(--member-muted); font-size: .85rem; }
+.navItem svg { flex-shrink: 0; }
+.navItem:hover { background: var(--member-panel); color: var(--ink); }
+.active, .active:hover { background: var(--brand-wash); border-color: var(--brand-line); color: var(--brand); font-weight: 650; }
+.resources { border-top: 1px solid var(--member-line); padding-top: 26px; margin-top: 30px; }
+.resources .navItem { justify-content: space-between; }
+.resources svg { width: 15px; }
+.sectionHeader { font-size: .75rem; color: var(--member-faint); padding: 0 12px 10px; }
+.footer { margin-top: auto; padding: 60px 12px 0; font-size: .75rem; color: var(--member-faint); }
+.footer p { color: var(--member-muted); font-weight: 600; }
+.footer span { display: block; margin-top: 4px; font-size: .68rem; }
+.footer a { display: inline-block; padding-block: 12px; text-decoration: underline; text-underline-offset: 4px; }
+@media (max-width: 900px) { .sidebar { min-height: calc(100dvh - 60px); padding-top: 12px; } .logoLink { margin-bottom: 30px; } }

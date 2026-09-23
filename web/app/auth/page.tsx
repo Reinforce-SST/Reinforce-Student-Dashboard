@@ -1,4 +1,8 @@
 import type { Metadata } from "next";
+import Image from "next/image";
+import Link from "next/link";
+import logo from "@/public/brand/logo_main_trim.png";
+import theme from "@/components/dashboard/MemberTheme.module.css";
 import AuthClient from "./AuthClient";
 import styles from "./auth.module.css";
 
@@ -21,8 +25,10 @@ export const metadata: Metadata = {
  */
 export default function AuthPage() {
   return (
-    <main className={styles.wrap}>
+    <main className={`${theme.theme} ${styles.wrap}`}>
+      <Link href="/" className={styles.brand}><Image src={logo} alt="Reinforce home" priority sizes="164px" /></Link>
       <AuthClient />
+      <Link href="/" className={styles.back}>Back to the website</Link>
     </main>
   );
 }

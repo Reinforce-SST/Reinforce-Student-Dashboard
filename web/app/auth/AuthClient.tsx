@@ -2,7 +2,8 @@
 
 import { signInWithPopup } from "firebase/auth";
 import { useCallback, useEffect, useRef, useState } from "react";
-import Pill from "@/components/Pill";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { getFirebaseAuth, googleProvider, SST_DOMAIN } from "@/lib/firebase";
 import { googleSignIn, readLink } from "@/lib/auth-flow";
@@ -12,6 +13,7 @@ import styles from "./auth.module.css";
 type Phase = "idle" | "signing-in" | "linking" | "linked" | "error";
 
 export default function AuthClient() {
+  const router = useRouter();
   const { user, token, loading, configured, degraded, signOut } = useAuth();
   const [link, setLink] = useState<{ token: string | null; invalid: boolean } | null>(null);
   const capturedLink = useRef<ReturnType<typeof readLink> | null>(null);
@@ -83,6 +85,9 @@ export default function AuthClient() {
         if (!cancelled) {
           completedSync.current = operation;
           setPhase("linked");
+          // Landing-page sign-in continues directly into the member area.
+          // Private/invalid Discord links retain their confirmation or warning.
+          if (!link?.token && !link?.invalid) router.replace("/dashboard");
         }
       } catch (err) {
         if (!cancelled) {
@@ -95,15 +100,15 @@ export default function AuthClient() {
     // Strict Mode can repeat this request. One-time consumption is idempotent
     // for the same authenticated member, and each effect owns its completion.
     return () => { cancelled = true; };
-  }, [token, identity, link, attempt]);
+  }, [token, identity, link, attempt, router]);
 
-  if (!configured) return <section className={styles.card}><h1 className={`display ${styles.title}`}>Sign-in unavailable</h1><p className={styles.body}>Member sign-in has not been configured for this deployment. Please contact a club admin.</p></section>;
+  if (!configured) return <section className={styles.card}><h1 className={styles.title}>Sign-in unavailable</h1><p className={styles.body}>Member sign-in has not been configured for this deployment. Please contact a club admin.</p></section>;
   if (loading || !link) return <section className={styles.card} aria-busy="true"><p className={styles.body}>Checking your session…</p></section>;
 
   const busy = phase === "signing-in" || phase === "linking";
   return <section className={styles.card}>
-    <p className={`mono ${styles.kick}`}>{phase === "linked" ? "Account ready" : link.token ? "Discord verification" : "Member sign-in"}</p>
-    <h1 className={`display ${styles.title}`}>{phase === "linked" ? <>You&rsquo;re <em>in.</em></> : link.token ? <>Link your <em>Discord.</em></> : <>Sign in to <em>Reinforce.</em></>}</h1>
+    <p className={styles.kick}>{link.token ? "Discord verification" : "Member access"}</p>
+    <h1 className={styles.title}>{phase === "linked" ? link.token ? "Your account is connected." : "Opening your dashboard…" : link.token ? "Connect your Discord." : "Sign in to Reinforce."}</h1>
     <p className={styles.body}>{user ? user.email : <>Use your college Google account (<strong>@{SST_DOMAIN}</strong>).</>}</p>
     {link.invalid && <p className={styles.warn}>This Discord link is no longer valid. Run <code>/auth</code> in Discord for a new private link. You can still sign in to your dashboard.</p>}
     {degraded && <p className={styles.warn}>We couldn&rsquo;t reach Google sign-in. Check your connection and try again.</p>}
@@ -111,8 +116,8 @@ export default function AuthClient() {
     {botIssue && <p className={styles.warn}>{botIssue}</p>}
     {phase === "error" && <p className={styles.error} role="alert">{error}</p>}
     <div className={styles.actions}>
-      {phase === "linked" ? <Pill href="/dashboard" variant="filled">Go to your dashboard</Pill> : user ? <Pill variant="filled" disabled={busy} onClick={() => setAttempt(value => value + 1)}>{busy ? "Connecting your account…" : "Retry connection"}</Pill> : <Pill variant="filled" disabled={busy} onClick={signIn}>{busy ? "Signing in…" : "Sign in with Google"}</Pill>}
-      {user && !busy && <Pill onClick={async () => { await signOut(); setPhase("idle"); setError(""); }}>Use another account</Pill>}
+      {phase === "linked" ? <Link className={styles.primary} href="/dashboard">Go to your dashboard</Link> : user ? <button className={styles.primary} disabled={busy} onClick={() => setAttempt(value => value + 1)}>{busy ? "Connecting your account…" : "Retry connection"}</button> : <button className={styles.primary} disabled={busy} onClick={signIn}>{busy ? "Signing in…" : "Sign in with Google"}</button>}
+      {user && !busy && <button className={styles.secondary} onClick={async () => { try { await signOut(); setPhase("idle"); setError(""); } catch { setPhase("error"); setError("Could not sign out. Please try again."); } }}>Use another account</button>}
     </div>
     {!user && <p className={styles.body}>Google opens in a popup. If it is blocked, allow popups for this site and try again.</p>}
   </section>;

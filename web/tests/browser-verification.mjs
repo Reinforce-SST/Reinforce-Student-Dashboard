@@ -9,6 +9,7 @@ export default async function verify(page, screenshots = '.') {
   let mode = 'ready';
   let saveFails = false;
   let profileFails = false;
+  let syncFails = false;
   const linking = [];
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -20,6 +21,7 @@ export default async function verify(page, screenshots = '.') {
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': base, 'access-control-allow-headers': 'authorization,content-type', 'access-control-allow-methods': 'GET,POST,PUT,OPTIONS' } });
     check(['Bearer local-review-token', 'Bearer local-review-token-refreshed'].includes(req.headers().authorization), 'API request lost Firebase credential');
     if (path.endsWith('/me') && profileFails) return route.fulfill({ status: 503, json: { detail: 'Unavailable' } });
+    if (path.endsWith('/sync-user') && syncFails) return route.fulfill({ status: 503, json: { detail: 'Session sync unavailable' } });
     if (path.endsWith('/profile') && req.method() === 'PUT') {
       if (saveFails) return route.fulfill({ status: 503, json: { detail: 'Save temporarily unavailable' } });
       profile = { ...profile, ...req.postDataJSON() };
@@ -37,7 +39,7 @@ export default async function verify(page, screenshots = '.') {
     if (path.endsWith('/tickets/review-ticket')) return route.fulfill({ json: { ticket: { ...ticket, description: 'Request submitted through Discord.', fields: [{ label: 'Resources Requested', value: 'A shared GPU session to test our model.' }] }, messages: [{ id: 'message-1', sender_name: 'Review Member', sender_role: 'user', content: 'The model is ready for a training run.', attachments: ['https://example.com/progress.png', 'javascript:alert(1)'], timestamp: '2026-09-24T12:00:00Z' }] } });
     return route.fulfill({ json: { success: true, user: profile } });
   });
-  await page.goto(base + '/auth');
+  await page.goto(base + '/');
   const now = Date.now();
   const user = { uid: 'review-member', email: profile.email, emailVerified: true, displayName: 'Review Member', isAnonymous: false, providerData: [{ providerId: 'google.com', uid: 'review-member', displayName: 'Review Member', email: profile.email, photoURL: null, phoneNumber: null }], stsTokenManager: { refreshToken: 'local-review-refresh', accessToken: 'local-review-token', expirationTime: now + 3600000 }, createdAt: String(now), lastLoginAt: String(now), apiKey: 'demo-member-review', appName: '[DEFAULT]' };
   await page.evaluate(async user => {
@@ -55,16 +57,31 @@ export default async function verify(page, screenshots = '.') {
     });
   }, user);
   const noOverflow = async () => check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Horizontal overflow');
-  const shot = async name => { await page.locator('img:visible').evaluateAll(images => Promise.all(images.map(img => img.complete ? Promise.resolve() : new Promise(resolve => { img.onload = resolve; img.onerror = resolve; })))); await page.addStyleTag({ content: 'nextjs-portal { display: none !important; }' }); await page.screenshot({ path: `${screenshots}/${name}.png`, fullPage: true }); };
+  const shot = async name => { await page.locator('img:visible').evaluateAll(images => Promise.all(images.map(img => img.complete ? Promise.resolve() : new Promise(resolve => { img.onload = resolve; img.onerror = resolve; })))); await page.addStyleTag({ content: 'nextjs-portal { display: none !important; }' }); await page.screenshot({ path: `${screenshots}/${name}.png`, fullPage: name !== 'member-mobile-menu' }); };
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.goto(base + '/dashboard');
+  await page.goto(base + '/');
+  await page.getByRole('navigation', { name: 'Primary', exact: true }).getByRole('link', { name: 'Sign in', exact: true }).click();
+  await page.waitForURL(base + '/dashboard', { timeout: 7000 });
+  syncFails = true;
+  await page.goto(base + '/auth');
+  await page.getByRole('alert').filter({ hasText: 'Session sync unavailable' }).waitFor();
+  check(page.url() === base + '/auth', 'Failed sign-in sync incorrectly opened dashboard');
+  syncFails = false;
+  await page.getByRole('button', { name: 'Retry connection', exact: true }).click();
+  await page.waitForURL(base + '/dashboard');
   await page.getByRole('heading', { name: 'Welcome, Review Member.' }).waitFor();
   await page.getByText(ticket.title).waitFor();
   await noOverflow();
   await shot('member-desktop');
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(base + '/');
+  await page.getByRole('navigation', { name: 'Primary', exact: true }).getByRole('link', { name: 'Join the club', exact: true }).click();
+  await page.waitForURL(base + '/dashboard');
+  await page.getByText(ticket.title).waitFor();
   await noOverflow();
   await shot('member-mobile');
+  for (const width of [320, 768, 1024, 1440]) { await page.setViewportSize({ width, height: 900 }); await noOverflow(); }
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Open navigation' }).click();
   check(await page.locator('dialog').evaluate(el => el.open), 'Drawer did not open');
   await shot('member-mobile-menu');
@@ -75,12 +92,24 @@ export default async function verify(page, screenshots = '.') {
   await page.getByRole('dialog').getByRole('link', { name: 'Your tickets', exact: true }).click();
   await page.getByRole('heading', { name: 'Your tickets', exact: true }).waitFor();
   check(!await page.locator('dialog').evaluate(el => el.open), 'Navigation left drawer open');
+  await page.getByRole('button', { name: 'Closed', exact: true }).click();
+  await page.getByRole('heading', { name: 'No matching tickets' }).waitFor();
+  await page.getByRole('button', { name: 'Clear filters', exact: true }).click();
+  await page.getByLabel('Search tickets').fill('not a matching request');
+  await page.getByRole('heading', { name: 'No matching tickets' }).waitFor();
+  await page.getByRole('button', { name: 'Clear filters', exact: true }).click();
+  await shot('tickets-mobile');
   await page.getByRole('link', { name: new RegExp(ticket.title) }).click();
   await page.getByRole('heading', { name: 'Conversation' }).waitFor();
   check(await page.getByRole('link', { name: /^Attachment/ }).count() === 1, 'Unsafe attachment was rendered');
   await noOverflow();
   await shot('ticket-mobile');
   await page.goto(base + '/profile');
+  await page.getByLabel('Full name').waitFor();
+  await shot('profile-mobile');
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await shot('profile-desktop');
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.getByLabel('Full name').fill('Draft awaiting token refresh');
   const refreshed = page.waitForResponse(response => response.url().endsWith('/auth/me') && response.request().headers().authorization === 'Bearer local-review-token-refreshed');
   async function rotateCredential(value) { await page.evaluate(async value => {
@@ -157,6 +186,7 @@ export default async function verify(page, screenshots = '.') {
   await page.getByRole('button', { name: 'Sign out' }).click();
   await page.waitForURL(base + '/auth');
   await page.getByRole('button', { name: 'Sign in with Google' }).waitFor();
+  await shot('auth-mobile');
   check(errors.length === 0, `Browser errors: ${errors.join('; ')}`);
-  return { passed: ['desktop/mobile layout', 'drawer Escape/focus/navigation', 'ticket detail/attachment safety', 'profile save/reload/error/token refresh', 'empty/unlinked/error/retry', 'unsupported route', 'private link effect replay/credential refresh', 'profile outage recovery', 'pending role', 'sign out'], screenshots, errors };
+  return { passed: ['landing sign-in to dashboard', 'desktop/mobile layout', 'drawer Escape/focus/navigation', 'ticket filters/search/detail/attachment safety', 'profile save/reload/error/token refresh', 'empty/unlinked/error/retry', 'unsupported route', 'private link effect replay/credential refresh', 'profile outage recovery', 'pending role', 'sign out'], screenshots, errors };
 }

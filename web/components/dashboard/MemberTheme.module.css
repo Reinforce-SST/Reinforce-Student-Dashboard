@@ -1,0 +1,12 @@
+.theme {
+  --member-bg: #110f0a;
+  --member-deep: #0b0a07;
+  --member-panel: #19160f;
+  --member-line: #353023;
+  --member-muted: #c0b8a7;
+  --member-faint: #a89e89;
+  min-height: 100dvh;
+  background: var(--member-bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}

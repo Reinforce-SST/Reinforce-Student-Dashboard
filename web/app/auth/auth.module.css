@@ -1,106 +1,19 @@
-.wrap {
-  min-height: 100dvh;
-  display: grid;
-  place-items: center;
-  padding: 40px var(--gutter);
-  background: var(--black);
-  background-image:
-    radial-gradient(70% 55% at 50% 0%, rgba(229, 183, 49, 0.07), transparent 70%),
-    repeating-linear-gradient(0deg, transparent 0 63px, rgba(255,255,255,0.02) 63px 64px),
-    repeating-linear-gradient(90deg, transparent 0 63px, rgba(255,255,255,0.02) 63px 64px);
-}
-
-.card {
-  width: 100%;
-  max-width: 460px;
-  min-height: 300px;
-  background: var(--surface);
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius-lg);
-  padding: 36px 34px 30px;
-  animation: rise var(--dur-enter) var(--ease-out) both;
-}
-
-.kick { color: var(--brand); margin-bottom: 14px; }
-
-.title {
-  font-size: 2.25rem;
-  margin-bottom: 14px;
-}
-
-.body {
-  font-size: 0.9375rem;
-  line-height: 1.65;
-  color: var(--ink-3);
-  margin-bottom: 22px;
-}
-.body strong { color: var(--ink-2); font-weight: 600; }
-
-.snowflake {
-  display: inline-block;
-  font-size: 0.625rem;
-  letter-spacing: 0.12em;
-  color: var(--ink-3);
-  background: var(--surface-3);
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius-pill);
-  padding: 5px 13px;
-  margin-bottom: 22px;
-}
-
-.facts {
-  display: grid;
-  gap: 12px;
-  padding: 18px 0 22px;
-  border-top: 1px dashed var(--line-2);
-  border-bottom: 1px dashed var(--line-2);
-  margin-bottom: 24px;
-}
-.facts > div { display: flex; justify-content: space-between; gap: 16px; align-items: baseline; }
-.facts dt { font-size: 0.5625rem; letter-spacing: 0.14em; color: var(--ink-4); }
-.facts dd { font-size: 0.875rem; color: var(--ink); font-weight: 600; text-align: right; }
-
-.actions { display: flex; gap: 10px; }
-.actions > * { flex: 1; }
-
-.warn,
-.error {
-  font-size: 0.8125rem;
-  line-height: 1.55;
-  border-radius: var(--radius);
-  padding: 11px 13px;
-  margin-bottom: 18px;
-}
-.warn {
-  color: var(--ink-2);
-  background: var(--brand-wash);
-  border: 1px solid var(--brand-line);
-}
-.error {
-  color: #FFB4AE;
-  background: rgba(220, 80, 70, 0.10);
-  border: 1px solid rgba(220, 80, 70, 0.32);
-}
-
-.warn code,
-.body code {
-  font-family: var(--font-mono);
-  font-size: 0.8125em;
-  color: var(--brand);
-}
-
-.fine {
-  font-size: 0.75rem;
-  line-height: 1.6;
-  color: var(--ink-4);
-  margin-top: 20px;
-}
-
-.back {
-  display: inline-block;
-  margin-top: 18px;
-  font-size: 0.8125rem;
-  color: var(--ink-4);
-  transition: color var(--dur-micro) var(--ease-out);
-}
-.back:hover { color: var(--brand); }
+.wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px 20px; }
+.brand { display: block; width: 164px; margin-bottom: 42px; }
+.brand img { width: 100%; height: auto; }
+.card { width: 100%; max-width: 460px; background: var(--member-panel); border: 1px solid var(--member-line); border-top: 2px solid var(--brand); border-radius: 6px; padding: 36px; }
+.kick { color: var(--brand); font-size: .75rem; margin-bottom: 16px; }
+.title { font-family: var(--font-sans); font-size: clamp(1.7rem, 5vw, 2rem); font-weight: 700; letter-spacing: -.04em; line-height: 1.2; margin-bottom: 20px; }
+.body { font-size: .875rem; line-height: 1.7; color: var(--member-muted); margin-bottom: 22px; overflow-wrap: anywhere; }
+.body strong { color: var(--ink); font-weight: 550; }
+.actions { display: grid; gap: 12px; margin-block: 28px 20px; }
+.primary, .secondary { min-height: 48px; border: 1px solid var(--brand); padding: 12px 18px; border-radius: 5px; background: var(--brand); color: #1a1200; text-align: center; font-size: .85rem; font-weight: 700; }
+.primary:hover { background: var(--brand-hi); }
+.primary:disabled { opacity: .6; cursor: wait; }
+.secondary { color: var(--member-muted); background: transparent; border-color: var(--member-line); font-weight: 500; }
+.secondary:hover { color: var(--ink); border-color: var(--member-faint); }
+.warn, .error { font-size: .8rem; line-height: 1.7; padding: 14px 16px; margin-bottom: 18px; color: var(--ink); border-left: 2px solid var(--brand); background: var(--brand-wash); }
+.warn code, .body code { font-family: var(--font-mono); color: var(--brand); }
+.back { display: inline-block; padding: 12px 0; margin-top: 20px; color: var(--member-muted); font-size: .8rem; text-underline-offset: 4px; }
+.back:hover { text-decoration: underline; color: var(--brand); }
+@media (max-width: 480px) { .card { padding: 28px 24px; } .wrap { justify-content: flex-start; padding-top: 64px; } }
