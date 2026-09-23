@@ -19,7 +19,7 @@ inferred from the UI.
 ## `users/{doc_id}`
 
 ⚠️ **Written twice.** The API writes the same payload to `users/{email}` *and*
-`users/{discord_id}`. Two documents, one person, no transaction between them.
+`users/{discord_id}`. Linking and unlinking update the two records transactionally. Profile-only edits use the email document.
 
 - The **website** looks up by lowercased email.
 - The **bot** looks up by Discord ID first, then falls back to querying the
@@ -32,6 +32,7 @@ inferred from the UI.
   "avatar_url":    "string | null",
   "firebase_uid":  "string | null",
   "discord_id":    "string | null",           // numeric snowflake, as a string
+  "discord_link_version": "1 | null",       // proof from a private YUVI token
   "is_verified":   false,
   "verified_at":   "ISO-8601 | null",
   "created_at":    "ISO-8601",
@@ -134,7 +135,7 @@ The Discord thread conversation, mirrored message by message in real time.
 `source` already distinguishes `discord` from `web`. The bot's schema anticipated a
 web write path that does not exist yet. Phase 2 fills it.
 
-Ordered by `timestamp` ascending. The bot caps reads at 300 messages.
+The website queries the latest 300 messages in descending timestamp order, then reverses them for chronological display. The bot has its own transcript read path.
 
 ---
 
@@ -176,7 +177,8 @@ ampersands**, not snake_case identifiers. They come from the Discord modal label
   — which does not exist yet. Until RBAC ships, **do not surface `report` tickets on
   the website at all.**
 - Members may only read tickets where `created_by.discord_id` matches their own
-  linked Discord ID.
+  linked Discord ID. Both user documents must carry `discord_link_version == 1` and
+  agree on the email and Discord ID. Legacy raw-ID links do not authorize reads.
 - Firebase Admin credentials are server-side only. The browser never reads Firestore
   directly; every read goes through the FastAPI service.
 
@@ -201,3 +203,27 @@ Indexes the bot already relies on. Do not break them:
 - `tickets` where `created_by.discord_id == ...`
 - `users` where `discord_id == ...` limit 1
 - `users` where `email == ...` limit 1
+
+## `discord_link_tokens/{sha256_token}`
+
+YUVI creates a random 32-byte URL-safe token and privately sends it in the
+`/auth#link_token=...` fragment. Only its SHA-256 hash is stored as the document ID.
+The collection is server-only: client reads/writes must be denied.
+
+| Field | Type / writer |
+|---|---|
+| `discord_id` | String snowflake from the Discord interaction; YUVI |
+| `issued_at` | Native UTC timestamp; YUVI |
+| `expires_at` | Native UTC timestamp, ten minutes after issue; YUVI |
+| `consumed_by` | Null initially; Firebase UID after consumption; API |
+| `email` | Normalized verified SST email after consumption; API |
+| `consumed_at` | Native UTC timestamp; API |
+
+The API transaction reads the proof and both user documents before writing any
+of them. A repeat from the same UID/email is accepted only while the proof has not
+expired and the reciprocal link still exists. Another account, a changed/unlinked
+identity, an expired token, or a conflicting pre-existing link is rejected.
+Firestore TTL on `expires_at` is optional cleanup, never the authorization check.
+The bot webhook requires the existing shared secret plus reciprocal proof before
+granting a role. A failed role grant does not undo a proven identity; rerun `/auth`
+to get a new private link and retry. See [rollout](verification.md).

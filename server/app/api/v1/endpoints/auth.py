@@ -7,6 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.security import get_current_user
 from app.firebase import db
+from firebase_admin import firestore
+from app.services.discord_link import consume_link, unlink_member
 from app.config import get_settings
 from app.schemas.student import (
     StudentProfile, 
@@ -33,7 +35,8 @@ def _format_user_doc(doc_data: Dict[str, Any], default_email: str = "", default_
         "avatar_url": doc_data.get("avatar_url") or doc_data.get("picture"),
         "firebase_uid": doc_data.get("firebase_uid"),
         "discord_id": doc_data.get("discord_id"),
-        "is_verified": bool(doc_data.get("is_verified", False) or doc_data.get("discord_id")),
+        "is_verified": doc_data.get("discord_link_version") == 1 and bool(doc_data.get("discord_id")),
+        "discord_link_version": doc_data.get("discord_link_version"),
         "verified_at": doc_data.get("verified_at"),
         "created_at": doc_data.get("created_at"),
         "updated_at": doc_data.get("updated_at"),
@@ -148,150 +151,38 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 
 
 @router.post("/verify-discord")
-async def verify_discord(
-    payload: DiscordVerifyRequest,
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    1. Authenticate user from Firebase Google ID Token (Bearer header).
-    2. Save / update member record in Firestore with discord_id and verified status.
-    3. Notify YUVI Discord Bot server to assign the Verified role & send confirmation DM.
-    """
-    discord_id = payload.discord_id.strip()
-    if not discord_id.isdigit():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid discord_id format. Must be a numeric snowflake string."
-        )
-
-    email = current_user.get("email", "").lower().strip()
-    name = current_user.get("name") or current_user.get("displayName") or "SST Member"
-    picture = current_user.get("picture")
-    uid = current_user.get("uid")
-    now_iso = datetime.now(timezone.utc).isoformat()
-
-    # 1. Update primary User document in Firestore (keyed by email)
-    user_ref = _get_user_doc_ref(email, uid)
-    update_data = {
-        "email": email,
-        "full_name": name,
-        "avatar_url": picture,
-        "firebase_uid": uid,
-        "discord_id": discord_id,
-        "is_verified": True,
-        "verified_at": now_iso,
-        "updated_at": now_iso
-    }
-    try:
-        user_ref.set(update_data, merge=True)
-        # Also store secondary lookup document keyed by discord_id for direct-key bot query compatibility
-        db.collection("users").document(discord_id).set(update_data, merge=True)
-    except Exception as e:
-        print(f"[AuthRouter] Warning saving to Firestore: {e}")
-
-    # 2. Call YUVI Bot Server to assign Discord role & send DM
-    bot_payload = {
-        "discord_id": discord_id,
-        "email": email,
-        "name": name,
-        "secret": settings.bot_internal_secret or None
-    }
-
-    bot_url = settings.yuvi_bot_url
-    bot_response_data = {}
-
-    try:
-        req = urllib.request.Request(
-            bot_url,
-            data=json.dumps(bot_payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "X-Internal-Secret": settings.bot_internal_secret or ""
-            },
-            method="POST"
-        )
-        with urllib.request.urlopen(req, timeout=10.0) as response:
-            bot_res_body = response.read().decode("utf-8")
-            bot_response_data = json.loads(bot_res_body)
-
-    except urllib.error.HTTPError as e:
-        error_body = e.read().decode("utf-8", errors="replace")
+def verify_discord(payload: DiscordVerifyRequest, current_user: dict = Depends(get_current_user)):
+    # Firestore retries conflicting transactions; failures propagate, never claim
+    # success after a failed write. A repeated request by the same user is safe.
+    member = firestore.transactional(consume_link)(db.transaction(), db, payload.link_token, current_user)
+    discord_id = member["discord_id"]
+    bot_response = {"status": "bot_warning", "detail": "Discord role assignment is not configured. Contact a club admin."}
+    if settings.bot_internal_secret:
         try:
-            detail = str(json.loads(error_body).get("detail", "")).strip()
-        except Exception:
-            # Not JSON. This is the host answering rather than the bot itself —
-            # a suspended or sleeping service returns an HTML error page. That
-            # page is meaningless to a member, so keep the status code and drop
-            # the body rather than rendering markup into the sign-in card.
-            detail = ""
-
-        print(f"[AuthRouter] Discord Bot returned {e.code}: {detail or error_body[:200]}")
-        # Even if bot role assignment encounters a temporary issue, user is recorded in Firestore
-        bot_response_data = {
-            "status": "bot_warning",
-            "status_code": e.code,
-            "detail": detail or f"the bot service answered HTTP {e.code}",
-        }
-
-    except Exception as e:
-        print(f"[AuthRouter] Could not connect to Discord Bot server at {bot_url}: {e}")
-        bot_response_data = {"status": "bot_unreachable", "detail": f"the bot service is not reachable ({e})"}
-
-    # Fetch updated user state
-    refreshed_doc = user_ref.get()
-    formatted_user = _format_user_doc(
-        refreshed_doc.to_dict() if refreshed_doc.exists else update_data,
-        default_email=email,
-        default_name=name
-    )
-
+            req = urllib.request.Request(
+                settings.yuvi_bot_url,
+                data=json.dumps({"discord_id": discord_id, "email": member["email"], "name": member["full_name"]}).encode(),
+                headers={"Content-Type": "application/json", "X-Internal-Secret": settings.bot_internal_secret},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as response:
+                bot_response = json.loads(response.read())
+            if not bot_response.get("role_assigned"):
+                bot_response = {"status": "bot_warning", "detail": "Your account is linked, but the Discord role is pending. Run /auth again or contact a club admin."}
+        except (urllib.error.URLError, ValueError, TimeoutError, OSError):
+            bot_response = {"status": "bot_unreachable", "detail": "The bot could not confirm your role. Run /auth in Discord again to retry."}
     return {
         "success": True,
-        "message": "Discord account successfully linked & verified!",
-        "discord_id": discord_id,
-        "email": email,
-        "role_granted": bot_response_data.get("role_granted", "Verified Member"),
-        "bot_response": bot_response_data,
-        "user": formatted_user
+        "user": _format_user_doc(member),
+        "role_granted": bot_response.get("role_granted") if bot_response.get("role_assigned") else None,
+        "bot_response": bot_response,
     }
 
 
 @router.post("/unlink-discord")
-async def unlink_discord(current_user: dict = Depends(get_current_user)):
-    """
-    Unlinks Discord ID from current student profile.
-    """
-    email = current_user.get("email", "").lower().strip()
-    user_ref = _get_user_doc_ref(email)
-    
-    doc = user_ref.get()
-    if not doc.exists:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found.")
-    
-    old_data = doc.to_dict() or {}
-    old_discord_id = old_data.get("discord_id")
-
-    now_iso = datetime.now(timezone.utc).isoformat()
-    update_data = {
-        "discord_id": None,
-        "is_verified": False,
-        "updated_at": now_iso
-    }
-    user_ref.set(update_data, merge=True)
-
-    # Clean up secondary discord_id doc if existing
-    if old_discord_id and old_discord_id.isdigit():
-        try:
-            db.collection("users").document(old_discord_id).delete()
-        except Exception as e:
-            print(f"[AuthRouter] Warning cleaning secondary doc: {e}")
-
-    refreshed = user_ref.get()
-    return {
-        "success": True,
-        "message": "Discord account successfully unlinked.",
-        "user": _format_user_doc(refreshed.to_dict() or update_data, default_email=email)
-    }
+def unlink_discord(current_user: dict = Depends(get_current_user)):
+    member = firestore.transactional(unlink_member)(db.transaction(), db, current_user["email"])
+    return {"success": True, "message": "Discord link removed. Ask a club admin to remove any remaining Discord role.", "user": _format_user_doc(member)}
 
 
 @router.put("/profile")

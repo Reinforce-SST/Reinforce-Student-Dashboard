@@ -73,6 +73,7 @@ export type StudentProfile = {
   avatar_url?: string | null;
   discord_id?: string | null;
   is_verified: boolean;
+  discord_link_version?: number | null;
   verified_at?: string | null;
   skills: string[];
   social_links: SocialLinks;
@@ -140,11 +141,13 @@ export const api = {
   me: (token: string) =>
     request<{ success: boolean; user: StudentProfile }>("/auth/me", token),
 
-  verifyDiscord: (token: string, discordId: string) =>
+  verifyDiscord: (token: string, linkToken: string) =>
     request<VerifyDiscordResponse>("/auth/verify-discord", token, {
       method: "POST",
-      body: JSON.stringify({ discord_id: discordId }),
+      body: JSON.stringify({ link_token: linkToken }),
     }),
+
+  ticket: (token: string, id: string) => request<TicketThread>(`/tickets/${encodeURIComponent(id)}`, token),
 
   myTickets: (token: string) => request<TicketListResponse>("/tickets", token),
 
@@ -188,4 +191,9 @@ export const STATUS_LABEL: Record<TicketStatus, string> = {
   in_progress: "In progress",
   resolved: "Resolved",
   closed: "Closed",
+};
+
+export type TicketThread = {
+  ticket: TicketSummary & { description: string; fields: { label: string; value: string }[]; close_reason?: string | null; closed_at?: string | null };
+  messages: { id: string; sender_name: string; sender_role: string; content: string; attachments: string[]; timestamp?: string | null }[];
 };

@@ -1,13 +1,11 @@
 "use client";
 
 import {
-  getRedirectResult,
-  onAuthStateChanged,
+  onIdTokenChanged,
   signOut as fbSignOut,
-  type Auth,
   type User,
 } from "firebase/auth";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getFirebaseAuth, isFirebaseConfigured } from "./firebase";
 
 export type AuthState = {
@@ -45,66 +43,48 @@ export function useAuth(): AuthState & { signOut: () => Promise<void> } {
     degraded: false,
   });
 
-  const settled = useRef(false);
 
   useEffect(() => {
     if (!isFirebaseConfigured) return;
 
     let unsubscribe: (() => void) | undefined;
     let cancelled = false;
+    let settled = false;
+    let revision = 0;
 
     const watchdog = setTimeout(() => {
-      if (settled.current) return;
-      settled.current = true;
+      if (settled) return;
+      settled = true;
       setState({ user: null, token: null, loading: false, configured: true, degraded: true });
     }, AUTH_TIMEOUT_MS);
 
     const settle = (next: Partial<AuthState>) => {
       if (cancelled) return;
-      settled.current = true;
+      settled = true;
       clearTimeout(watchdog);
       setState((prev) => ({ ...prev, loading: false, degraded: false, ...next }));
     };
 
     const publish = async (user: User | null) => {
+      const currentRevision = ++revision;
       if (!user) {
         settle({ user: null, token: null });
         return;
       }
       try {
         const token = await user.getIdToken();
-        settle({ user, token });
+        if (currentRevision === revision) settle({ user, token });
       } catch {
         // Signed in but the token could not be minted — treat as signed out
         // rather than leaving the caller with a user and no credential.
-        settle({ user: null, token: null, degraded: true });
+        if (currentRevision === revision) settle({ user: null, token: null, degraded: true });
       }
     };
 
-    const subscribe = (auth: Auth) => {
-      if (cancelled) return;
-      unsubscribe = onAuthStateChanged(auth, publish, () =>
+    try {
+      unsubscribe = onIdTokenChanged(getFirebaseAuth(), publish, () =>
         settle({ user: null, token: null, degraded: true }),
       );
-    };
-
-    try {
-      const auth = getFirebaseAuth();
-
-      // A redirect sign-in lands back on the page with the credential still in
-      // flight. Resolving it before subscribing means the first callback below
-      // already carries the signed-in user instead of a spurious null.
-      //
-      // This must stay a .finally() chain, not an await: if getRedirectResult
-      // rejects — or never settles because a browser blocked the cross-origin
-      // storage the redirect flow depends on — we still have to subscribe, or
-      // nothing ever reports auth state and every browser looks signed out.
-      getRedirectResult(auth)
-        .catch(() => {
-          // A failed redirect is not a failed session. The listener is the
-          // source of truth; swallow this and let it speak.
-        })
-        .finally(() => subscribe(auth));
     } catch {
       settle({ user: null, token: null, degraded: true });
     }

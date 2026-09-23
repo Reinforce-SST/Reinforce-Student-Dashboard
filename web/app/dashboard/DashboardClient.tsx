@@ -1,198 +1,21 @@
 "use client";
-
-import React from "react";
 import Link from "next/link";
-import { useClub, TrackType } from "@/lib/useClubStore";
-import { HeadlineCarousel, CalendarWidget } from "@/components/dashboard/DashboardWidgets";
-import styles from "./dashboard.module.css";
+import { useMember, useTickets } from "@/lib/useMember";
+import { STATUS_LABEL } from "@/lib/api";
+import styles from "@/components/dashboard/MemberContent.module.css";
 
 export default function DashboardClient() {
-  const { spgs, events } = useClub();
-
-  const getTrackTagClass = (track: TrackType) => {
-    switch (track) {
-      case "Kaggle":
-        return styles.trackKaggle;
-      case "Product":
-        return styles.trackProduct;
-      case "Research":
-        return styles.trackResearch;
-      default:
-        return styles.trackGeneral;
-    }
-  };
-
-  const getHealthBadgeClass = (health: string) => {
-    switch (health) {
-      case "on_track":
-        return styles.badgeOnTrack;
-      case "need_progress":
-        return styles.badgeNeedProgress;
-      case "at_risk":
-        return styles.badgeAtRisk;
-      default:
-        return styles.badgeNeutral;
-    }
-  };
-
-  return (
-    <div className={styles.dashboardContainer}>
-      {/* Top Section: Big Yellow Headline Carousel (Left) & Upcoming Events (Right) */}
-      <section className={styles.topHeroGrid}>
-        {/* Big Yellow Headline Carousel */}
-        <div className={styles.carouselCol}>
-          <HeadlineCarousel />
-        </div>
-
-        {/* Upcoming Events Box (Pushed up to the top right) */}
-        <div className={styles.eventsCol}>
-          <div className={styles.widgetCard}>
-            <div className={styles.widgetCardHeader}>
-              <div className={styles.widgetTitleGroup}>
-                <span className={styles.eventsHeaderIcon}>⚡</span>
-                <h3 className={styles.widgetTitle}>Upcoming Events</h3>
-              </div>
-              <Link href="/dashboard/events" className={styles.smallGoldLink}>
-                View All →
-              </Link>
-            </div>
-
-            <div className={styles.eventsList}>
-              {events.slice(0, 2).map((ev) => (
-                <div key={ev.id} className={styles.eventItem}>
-                  <div className={styles.eventDateBadge}>
-                    <span className={styles.dateMonth}>{ev.monthDay.month}</span>
-                    <span className={styles.dateDay}>{ev.monthDay.day}</span>
-                  </div>
-                  <div className={styles.eventInfo}>
-                    <h4 className={styles.eventTitle}>{ev.title}</h4>
-                    <span className={styles.eventLocation}>
-                      {ev.location.includes("Lab") ? "📍 " : "👥 "}
-                      {ev.location}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <Link href="/dashboard/events" className={styles.calendarLink}>
-              View Event Calendar
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* Main Body Grid: Current Projects (Left) & Interactive Calendar (Right) */}
-      <div className={styles.mainLayoutGrid}>
-        {/* Left Column: Current Projects (SPG) */}
-        <div className={styles.projectsSection}>
-          <div className={styles.sectionHeaderBar}>
-            <div className={styles.sectionTitleWithBar}>
-              <span className={styles.yellowBar} />
-              <h2 className={styles.sectionHeading}>Current Projects (SPG)</h2>
-            </div>
-            <Link href="/dashboard/spg" className={styles.viewAllLink}>
-              View All Management
-            </Link>
-          </div>
-
-          <div className={styles.spgList}>
-            {spgs.slice(0, 3).map((spg) => (
-              <div key={spg.id} className={styles.projectCard}>
-                <div className={styles.cardHeader}>
-                  <div className={styles.cardTags}>
-                    <span className={`${styles.trackTag} ${getTrackTagClass(spg.track)}`}>
-                      {spg.track.toUpperCase()} TRACK
-                    </span>
-                    <span className={styles.projectCode}>ID: {spg.id}</span>
-                  </div>
-                  <span className={`${styles.healthBadge} ${getHealthBadgeClass(spg.health)}`}>
-                    {spg.health === "on_track"
-                      ? "On Track"
-                      : spg.health === "need_progress"
-                      ? "Need Progress"
-                      : "At Risk"}
-                  </span>
-                </div>
-
-                <Link href={`/dashboard/spg/${spg.id}`} className={styles.projectTitleLink}>
-                  <h3 className={styles.projectTitle}>{spg.title}</h3>
-                </Link>
-                <p className={styles.projectDesc}>{spg.description}</p>
-
-                <div className={styles.cardFooter}>
-                  <div className={styles.avatarStack}>
-                    {spg.members.slice(0, 2).map((m, idx) => (
-                      <div key={idx} className={styles.memberAvatar}>
-                        {m.initials}
-                      </div>
-                    ))}
-                    {spg.members.length > 2 && (
-                      <div className={styles.avatarMore}>
-                        +{spg.members.length - 2}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className={styles.cardActionsRight}>
-                    <div className={styles.metaSubtext}>
-                      {spg.id === "SPG-2024-089" ? (
-                        <>
-                          <span className={styles.metaLabel}>NEXT REPORT</span>
-                          <span className={styles.metaVal}>In 2 days</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className={styles.metaLabel}>RESOURCES</span>
-                          <span className={styles.metaVal}>Pending Review</span>
-                        </>
-                      )}
-                    </div>
-
-                    {spg.id === "SPG-2024-089" ? (
-                      <Link
-                        href={`/dashboard/spg/${spg.id}/report`}
-                        className={styles.submitReportBtn}
-                      >
-                        Submit Report
-                      </Link>
-                    ) : (
-                      <Link
-                        href={`/dashboard/spg/${spg.id}`}
-                        className={styles.manageResourcesBtn}
-                      >
-                        Manage Resources
-                      </Link>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Right Column: Calendar Widget & Quick Resources */}
-        <div className={styles.sidebarWidgets}>
-          {/* Interactive Calendar Widget (Directly below Upcoming Events) */}
-          <CalendarWidget />
-
-          {/* Quick Idea Jar Preview */}
-          <div className={styles.widgetCard}>
-            <div className={styles.widgetCardHeader}>
-              <div className={styles.widgetTitleGroup}>
-                <span className={styles.eventsHeaderIcon}>💡</span>
-                <h3 className={styles.widgetTitle}>Idea Jar</h3>
-              </div>
-              <Link href="/dashboard/ideas" className={styles.smallGoldLink}>
-                Browse All →
-              </Link>
-            </div>
-            <p className={styles.ideaJarPrompt}>
-              Need inspiration for your next SPG? Grab a curated AI/ML research proposal or product idea from core.
-            </p>
-          </div>
-        </div>
-      </div>
+  const { profile } = useMember();
+  const { data, error, retry } = useTickets();
+  return <div className={styles.page}>
+    <div className={styles.intro}><p className={styles.eyebrow}>Your club, connected</p><h1 className={styles.title}>Welcome, {profile.full_name}.</h1><p className={styles.muted}>Your member profile and requests from Discord, in one place.</p></div>
+    <div className={styles.grid}>
+      <section className={styles.card}><h2>Your membership</h2><p>{profile.email}</p><p className={styles.muted}>{profile.is_verified ? "Your Discord identity is verified." : "Run /auth in the club Discord to verify your account and view your tickets."}</p><div className={styles.actions}><Link className={styles.button} href="/profile">Edit your profile</Link></div></section>
+      <section className={styles.card}><h2>Start something</h2><p className={styles.muted}>Explore the Product, Kaggle and Research tracks. Register a project group or request resources through YUVI in Discord.</p><div className={styles.actions}><Link className={`${styles.button} ${styles.secondary}`} href="/tracks">Explore tracks</Link><Link className={`${styles.button} ${styles.secondary}`} href="/projects">Club projects</Link></div></section>
     </div>
-  );
+    <section className={styles.card}><h2>Recent requests</h2>
+      {error ? <div role="alert"><p>{error}</p><button className={styles.button} onClick={retry}>Retry</button></div> : !data ? <p role="status">Loading your tickets…</p> : !data.linked ? <p className={styles.muted}>Verify your Discord account with <code>/auth</code> to see requests here.</p> : data.tickets.length === 0 ? <p className={styles.muted}>No tickets yet. Requests you create with YUVI in Discord will appear here.</p> : <ul className={styles.list}>{data.tickets.slice(0, 5).map(ticket => <li key={ticket.id}><Link className={styles.row} href={`/dashboard/tickets/${encodeURIComponent(ticket.id)}`}><strong>{ticket.title}</strong><span className={styles.badge}>{STATUS_LABEL[ticket.status]}</span></Link></li>)}</ul>}
+      <div className={styles.actions}><Link className={`${styles.button} ${styles.secondary}`} href="/dashboard/tickets">View your tickets</Link></div>
+    </section>
+  </div>;
 }

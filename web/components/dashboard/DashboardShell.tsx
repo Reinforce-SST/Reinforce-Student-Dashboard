@@ -1,118 +1,37 @@
 "use client";
-
-import React, { useState } from "react";
-import Link from "next/link";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
-import { ClubProvider } from "@/lib/useClubStore";
+import { MemberProvider } from "@/lib/useMember";
 import RequireAuth from "./RequireAuth";
 import styles from "./DashboardShell.module.css";
 
-interface DashboardShellProps {
-  children: React.ReactNode;
+export default function DashboardShell({ children }: { children: ReactNode }) {
+  return <RequireAuth><MemberProvider><DashboardChrome>{children}</DashboardChrome></MemberProvider></RequireAuth>;
 }
-
-export default function DashboardShell({ children }: DashboardShellProps) {
-  return (
-    <RequireAuth>
-      <DashboardChrome>{children}</DashboardChrome>
-    </RequireAuth>
-  );
-}
-
-function DashboardChrome({ children }: DashboardShellProps) {
-  const [showQuickModal, setShowQuickModal] = useState(false);
-
-  return (
-    <ClubProvider>
-      <div className={styles.shellLayout}>
-        <Sidebar />
-        <div className={styles.mainWrapper}>
-          <Header />
-          <div className={styles.contentArea}>{children}</div>
-        </div>
-
-        {/* Floating Action Button (+) */}
-        <button
-          type="button"
-          className={styles.fabButton}
-          onClick={() => setShowQuickModal(!showQuickModal)}
-          title="Quick Actions"
-          aria-label="Quick Actions"
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-        </button>
-
-        {/* Quick Action Modal */}
-        {showQuickModal && (
-          <div className={styles.modalOverlay} onClick={() => setShowQuickModal(false)}>
-            <div className={styles.quickModal} onClick={(e) => e.stopPropagation()}>
-              <div className={styles.modalHeader}>
-                <h3>Quick Actions</h3>
-                <button
-                  type="button"
-                  className={styles.closeBtn}
-                  onClick={() => setShowQuickModal(false)}
-                >
-                  ✕
-                </button>
-              </div>
-              <div className={styles.actionGrid}>
-                <Link
-                  href="/dashboard/spg"
-                  className={styles.actionCard}
-                  onClick={() => setShowQuickModal(false)}
-                >
-                  <div className={styles.actionIcon}>🚀</div>
-                  <div className={styles.actionMeta}>
-                    <strong>New SPG Application</strong>
-                    <span>Register a student project group</span>
-                  </div>
-                </Link>
-
-                <Link
-                  href="/dashboard/tickets"
-                  className={styles.actionCard}
-                  onClick={() => setShowQuickModal(false)}
-                >
-                  <div className={styles.actionIcon}>🎫</div>
-                  <div className={styles.actionMeta}>
-                    <strong>Create Support Ticket</strong>
-                    <span>Resource requests, inquiry, or reports</span>
-                  </div>
-                </Link>
-
-                <Link
-                  href="/dashboard/spg/SPG-2024-089/report"
-                  className={styles.actionCard}
-                  onClick={() => setShowQuickModal(false)}
-                >
-                  <div className={styles.actionIcon}>📝</div>
-                  <div className={styles.actionMeta}>
-                    <strong>Submit Progress Report</strong>
-                    <span>File milestone update for active SPG</span>
-                  </div>
-                </Link>
-
-                <Link
-                  href="/dashboard/ideas"
-                  className={styles.actionCard}
-                  onClick={() => setShowQuickModal(false)}
-                >
-                  <div className={styles.actionIcon}>💡</div>
-                  <div className={styles.actionMeta}>
-                    <strong>Submit Idea to Jar</strong>
-                    <span>Pitch a project idea for club members</span>
-                  </div>
-                </Link>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </ClubProvider>
-  );
+function DashboardChrome({ children }: { children: ReactNode }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+  useEffect(() => { dialog.current?.close(); }, [pathname]);
+  useEffect(() => {
+    const wide = window.matchMedia("(min-width: 901px)");
+    const closeOnWide = () => { if (wide.matches) dialog.current?.close(); };
+    wide.addEventListener("change", closeOnWide);
+    return () => wide.removeEventListener("change", closeOnWide);
+  }, []);
+  useEffect(() => {
+    if (!open) return;
+    const old = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = old; };
+  }, [open]);
+  return <div className={styles.shellLayout}>
+    <aside className={styles.desktopSidebar}><Sidebar /></aside>
+    <dialog ref={dialog} id="member-drawer" aria-label="Navigation" className={styles.drawer} onClose={() => setOpen(false)} onClick={event => { if (event.target === event.currentTarget) dialog.current?.close(); }}>
+      <div className={styles.drawerContent}><button className={styles.close} onClick={() => dialog.current?.close()} aria-label="Close navigation">Close ×</button><Sidebar onNavigate={() => dialog.current?.close()} /></div>
+    </dialog>
+    <div className={styles.mainWrapper}><Header menuOpen={open} onMenu={() => { dialog.current?.showModal(); setOpen(true); }} /><main className={styles.contentArea}>{children}</main></div>
+  </div>;
 }
