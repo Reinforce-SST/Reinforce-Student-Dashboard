@@ -238,7 +238,7 @@ h1.big .marker{font-family:var(--marker);font-weight:700;color:var(--brand);font
   box-shadow:0 26px 60px rgba(0,0,0,.55)}
 .tile:hover::before{transform:scaleX(1)}
 .tile .n{font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;color:var(--brand);margin-bottom:14px}
-.tile h4{font-size:20px;font-weight:700;margin-bottom:9px}
+.tile h3{font-size:20px;font-weight:700;margin-bottom:9px}
 .tile p{font-size:14px;color:var(--ink-2);line-height:1.6}
 
 /* ================================================================ code == */
@@ -368,7 +368,7 @@ h1.big .marker{font-family:var(--marker);font-weight:700;color:var(--brand);font
   .split h3 { max-width:24ch; }
   .three { gap:14px; }
   .tile { padding:22px 18px; }
-  .tile h4 { font-size:18px; }
+  .tile h3 { font-size:18px; }
   .fg b { font-size:56px; }
   .fgGrid { grid-template-columns:repeat(4,1fr); gap:30px 20px; }
   .footerBrand { grid-column:1 / -1; }
@@ -430,3 +430,5 @@ h1.big .marker{font-family:var(--marker);font-weight:700;color:var(--brand);font
   .landing .markerWindow,.landing .markerInk { transform:none!important; }
   .pause { display:none; }
 }
+
+.split[hidden] { display:none; }

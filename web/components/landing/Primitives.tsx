@@ -24,15 +24,15 @@ export function Stars({ faint = false }: { faint?: boolean }) {
   return <div className={styles.stars} aria-hidden="true" style={faint ? { opacity: 0.35 } : undefined} />;
 }
 
-export function ShotFrame({ image, alt, path, index = 0 }: {
-  image: StaticImageData; alt: string; path: string; index?: number;
+export function ShotFrame({ image, alt, path, index = 0, wide = false }: {
+  image: StaticImageData; alt: string; path: string; index?: number; wide?: boolean;
 }) {
   return <figure className={`${styles.shot} ${styles.rise}`} data-animate="rise" style={stagger(index)}>
     <div className={styles.barTop} aria-hidden="true">
       <i className={styles.dot} /><i className={styles.dot} /><i className={styles.dot} />
       <span className={styles.url}>reinforce-student-dashboard-xi.vercel.app{path}</span>
     </div>
-    <Image src={image} alt={alt} sizes="(max-width: 800px) 100vw, 1140px" placeholder="blur" />
+    <Image src={image} alt={alt} sizes={wide ? "(max-width: 1220px) 100vw, 1140px" : "(max-width: 800px) 100vw, (max-width: 1220px) 50vw, 600px"} placeholder="blur" />
     <figcaption className={styles.shotCaption}>Interface preview · sample data</figcaption>
   </figure>;
 }

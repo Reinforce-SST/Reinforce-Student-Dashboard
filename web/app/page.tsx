@@ -1,6 +1,7 @@
 import SiteNav from "@/components/SiteNav";
 import SiteFooter from "@/components/SiteFooter";
 import LandingMotion from "@/components/landing/LandingMotion";
+import WorkSections from "@/components/landing/WorkSections";
 import HeroCollage from "@/components/landing/HeroCollage";
 import { LandingButton, MarkerText, Stars, stagger } from "@/components/landing/Primitives";
 import styles from "./page.module.css";
@@ -43,6 +44,7 @@ export default function Home() {
           </div>
         </div>
       </section>
+      <WorkSections />
     </main>
     <SiteFooter />
   </LandingMotion>;
