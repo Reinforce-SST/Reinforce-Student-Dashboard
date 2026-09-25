@@ -45,44 +45,13 @@ def _verify_credential(cred: HTTPAuthorizationCredentials) -> dict:
         )
 
 
-def get_current_user(cred: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    return _verify_credential(cred)
-
-
-def get_optional_current_user(
-    cred: HTTPAuthorizationCredentials = Depends(security),
-) -> dict | None:
-    """Return a verified user when supplied, otherwise allow public access."""
-    if cred is None:
-        return None
-    return _verify_credential(cred)
-
-
-def verify_internal_bot_secret(
-    x_internal_secret: Optional[str] = Header(None, alias="X-Internal-Secret"),
-) -> bool:
-    """Dependency that strictly validates internal service calls from YUVI bot."""
-    settings = get_settings()
-    if not settings.bot_internal_secret or not x_internal_secret:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid bot secret",
-        )
-    if not secrets.compare_digest(x_internal_secret, settings.bot_internal_secret):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unauthorized internal request",
-        )
-    return True
-
-
-def get_user_or_bot(
+def get_current_user(
     cred: Optional[HTTPAuthorizationCredentials] = Depends(security),
     x_internal_secret: Optional[str] = Header(None, alias="X-Internal-Secret"),
 ) -> dict:
-    """Authenticate either via Firebase ID token or internal bot secret.
+    """Authenticate via Firebase ID token or internal bot secret.
 
-    Returns user payload dictionary with an additional `is_bot` boolean indicator.
+    Fails closed: requires either a valid bot secret or verified Firebase credential.
     """
     settings = get_settings()
     if x_internal_secret and settings.bot_internal_secret:
@@ -105,15 +74,46 @@ def get_user_or_bot(
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Authentication required (User token or Bot secret)",
+        detail="Invalid authentication credentials",
     )
 
 
-def require_admin(user: dict = Depends(get_user_or_bot)) -> dict:
-    """Admin access, from the Firebase custom claim `admin` or bot internal secret.
+def get_optional_current_user(
+    cred: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    x_internal_secret: Optional[str] = Header(None, alias="X-Internal-Secret"),
+) -> dict | None:
+    """Return a verified user when supplied, otherwise allow public access."""
+    if cred is None and not x_internal_secret:
+        return None
+    return get_current_user(cred=cred, x_internal_secret=x_internal_secret)
 
-    Fails closed: only exact boolean True passes. When called by YUVI bot via
-    X-Internal-Secret, admin is set to True automatically.
+
+def verify_internal_bot_secret(
+    x_internal_secret: Optional[str] = Header(None, alias="X-Internal-Secret"),
+) -> bool:
+    """Dependency that strictly validates internal service calls from YUVI bot."""
+    settings = get_settings()
+    if not settings.bot_internal_secret or not x_internal_secret:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid bot secret",
+        )
+    if not secrets.compare_digest(x_internal_secret, settings.bot_internal_secret):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized internal request",
+        )
+    return True
+
+
+def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    """Admin access, from the Firebase custom claim `admin`.
+
+    The one authorization rule in the API. It fails closed: only the exact
+    boolean True passes, so a missing claim, a false one or a truthy string is
+    rejected. Nothing is read from Firestore, so `UserDocument.is_admin` can
+    exist for display without ever granting API privileges. Provisioning the
+    claim on an account is an environment setup step.
     """
     if user.get("admin") is not True:
         raise HTTPException(
@@ -124,6 +124,14 @@ def require_admin(user: dict = Depends(get_user_or_bot)) -> dict:
 
 
 def get_admin_user(user: dict = Depends(require_admin)) -> dict:
-    """Compatibility wrapper for modules that already import this name."""
+    """Compatibility wrapper for modules that already import this name.
+
+    Delegates to `require_admin`, so there is only one authorization rule.
+    """
+    return user
+
+
+def get_user_or_bot(user: dict = Depends(get_current_user)) -> dict:
+    """Compatibility wrapper that resolves to get_current_user."""
     return user
 
