@@ -12,6 +12,9 @@ from app.schemas.spgs import (
     SPGRecord,
     SPGStatus,
     SPGTrack,
+    SPGLeadUpdate,
+    SPGRecruitingUpdateRequest,
+    SPGTeamUpdateRequest,
     SPGType,
     SPGUpdate,
     SPGVisibility,
@@ -270,6 +273,26 @@ class SPGUpdateTests(unittest.TestCase):
             with self.subTest(field=field):
                 with self.assertRaises(ValidationError):
                     SPGUpdate.model_validate({field: value})
+
+
+class SPGTeamUpdateTests(unittest.TestCase):
+    def test_valid_team_update(self):
+        req = SPGTeamUpdateRequest.model_validate({
+            "member_ids": ["uid_1", "uid_2", "uid_3"],
+            "lead_id": "uid_2",
+        })
+        self.assertEqual(len(req.member_ids), 3)
+        self.assertEqual(req.lead_id, "uid_2")
+
+
+class SPGRecruitingTests(unittest.TestCase):
+    def test_valid_recruiting_update(self):
+        req = SPGRecruitingUpdateRequest.model_validate({
+            "is_recruiting": True,
+            "recruiting_roles": ["Frontend Dev", "PyTorch Specialist"],
+        })
+        self.assertTrue(req.is_recruiting)
+        self.assertEqual(len(req.recruiting_roles), 2)
 
 
 if __name__ == "__main__":

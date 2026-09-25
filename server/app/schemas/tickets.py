@@ -25,7 +25,9 @@ from app.schemas.common import DescriptionStr, NonBlankStr, TitleStr
 # Also Maybe add a Suggestion Box
 class TicketCategory(str, Enum):
     SPG_REGISTRATION = "spg_registration"
-    RESOURCE_REQUEST = "resource_request"
+    RESOURCE_REQUEST = "resource_request"  # Legacy alias for COMPUTE_RESOURCE_REQUEST
+    COMPUTE_RESOURCE_REQUEST = "compute_resource_request"
+    LEARNING_RESOURCE_REQUEST = "learning_resource_request"
     SUPPORT = "support"
     IDEA_JAR = "idea_jar"
     FEEDBACK = "feedback"

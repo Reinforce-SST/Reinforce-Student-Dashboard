@@ -100,6 +100,8 @@ export type VerifyDiscordResponse = {
 export type TicketCategory =
   | "spg_registration"
   | "resource_request"
+  | "compute_resource_request"
+  | "learning_resource_request"
   | "support"
   | "idea_jar"
   | "feedback"
@@ -143,9 +145,12 @@ type ApiTicketMessage = {
 
 const FIELD_ORDER: Partial<Record<TicketCategory, string[]>> = {
   spg_registration: ["Project Name & Track", "Team Members", "Duration & Frequency", "Summary & Goals"],
+  compute_resource_request: ["SPG Name", "Resources Requested", "Progress Proof", "Justification"],
+  learning_resource_request: ["Topic / Subject Area", "Resource Format", "Target Audience / Track", "Description & Suggested Links"],
   resource_request: ["SPG Name", "Resources Requested", "Progress Proof", "Justification"],
   idea_jar: ["Idea Title", "Track", "Overview"],
   support: ["Subject", "Details"],
+  feedback: ["Feedback Topic", "Comments"],
   misc: ["Subject", "Details"],
   report: ["Incident Summary", "Report Details"],
 };
@@ -236,6 +241,8 @@ export type ProfileUpdate = {
 
 export const CATEGORY_LABEL: Record<TicketCategory, string> = {
   spg_registration: "Project group",
+  compute_resource_request: "Compute resource request",
+  learning_resource_request: "Learning resource request",
   resource_request: "Resource request",
   support: "Support",
   idea_jar: "Idea Jar",

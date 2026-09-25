@@ -33,14 +33,14 @@ from app.schemas.events import (
     EventParticipationConfig,
     EventRegisterRequest,
     EventResources,
-    EventSPGStatus,
     EventStats,
     EventStatus,
     EventStatusUpdate,
     EventSummary,
     EventTrack,
-    EventType,
     EventUpdate,
+    EventWinner,
+    EventWinnersUpdateRequest,
     FeedbackDocument,
     FeedbackSubmitRequest,
     FeedbackSummaryResponse,
@@ -263,6 +263,7 @@ def _event_spg_data(
         "updated_at": now,
         "source_ticket_id": None,
         "event_id": event_id,
+        "is_event_derived": True,
     }
 
 
@@ -278,7 +279,7 @@ def run_event_transaction(work):
 def list_events(
     status_filter: Optional[EventStatus] = Query(None, alias="status"),
     track: Optional[EventTrack] = None,
-    event_type: Optional[EventType] = None,
+    event_type: Optional[str] = Query(None, description="Filter by event type string"),
     timeline: Optional[str] = Query(None, pattern="^(upcoming|past)$"),
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
@@ -316,7 +317,7 @@ def list_events(
     if track:
         query = query.where("track", "==", track.value)
     if event_type:
-        query = query.where("event_type", "==", event_type.value)
+        query = query.where("event_type", "==", event_type)
 
     docs = list(query.stream())
     events: List[EventSummary] = []
@@ -559,13 +560,11 @@ def register_for_event(
             else RegistrationStatus.WAITLISTED.value
         )
         spg_id = None
-        spg_status = None
         if fresh_event.participation.requires_event_spg and fits:
             spg_id, spg_data = _event_spg_data(
                 fresh_event, event_id, user_uid, member_uids, team_name
             )
             transaction.set(db.collection(SPGS_COLLECTION).document(spg_id), spg_data)
-            spg_status = EventSPGStatus.ACTIVE_COMPETITION.value
         registration_data = {
             "id": reg_id,
             "event_id": event_id,
@@ -573,7 +572,7 @@ def register_for_event(
             "team_name": team_name,
             "member_uids": member_uids,
             "spg_id": spg_id,
-            "spg_status": spg_status,
+            "spg_status": None,
             "status": reg_status,
             "checked_in_at": None,
             "checked_in_by": None,
@@ -647,9 +646,6 @@ def cancel_registration(
             reg_doc.reference,
             {
                 "status": RegistrationStatus.CANCELLED.value,
-                "spg_status": EventSPGStatus.DISBANDED.value
-                if reg_data.get("spg_id")
-                else None,
                 "updated_at": now_timestamp,
             },
         )
@@ -696,7 +692,6 @@ def cancel_registration(
                     promotion.update(
                         {
                             "spg_id": spg_id,
-                            "spg_status": EventSPGStatus.ACTIVE_COMPETITION.value,
                         }
                     )
                 transaction.update(next_reg.reference, promotion)
@@ -821,11 +816,6 @@ def event_spg_decision(
                 "updated_at": now_timestamp,
             }
         )
-        reg_doc.reference.update(
-            {
-                "spg_status": EventSPGStatus.CONVERTED_PERMANENT.value,
-            }
-        )
         return {
             "message": "Event SPG successfully converted to a permanent Project SPG"
         }
@@ -836,17 +826,12 @@ def event_spg_decision(
                 "updated_at": now_timestamp,
             }
         )
-        reg_doc.reference.update(
-            {
-                "spg_status": EventSPGStatus.DISBANDED.value,
-            }
-        )
         return {"message": "Event SPG successfully disbanded"}
 
 
 # --- Admin Management Endpoints ---
 
-# Umm no Slash??
+
 @router.post("", response_model=EventDocument, status_code=status.HTTP_201_CREATED)
 def create_event(
     payload: EventCreate,
@@ -865,7 +850,7 @@ def create_event(
         "title": payload.title,
         "description": payload.description,
         "detailed_info": payload.detailed_info,
-        "event_type": payload.event_type.value,
+        "event_type": payload.event_type,
         "track": payload.track.value,
         "format": payload.format.value,
         "venue_info": (payload.venue_info or VenueInfo()).model_dump(),
@@ -877,6 +862,8 @@ def create_event(
         "points_reward": (payload.points_reward or PointsRewardConfig()).model_dump(),
         "resources": (payload.resources or EventResources()).model_dump(),
         "stats": EventStats().model_dump(),
+        "banner_url": payload.banner_url,
+        "winners": None,
         "status": payload.status.value,
         "created_by": admin_uid,
         "created_at": now_timestamp,
@@ -1112,6 +1099,29 @@ def submit_attendance_roll_call(
         awarded_uids=awarded_uids,
         failed_uids=failed_uids,
     )
+
+
+@router.post("/{id}/winners", response_model=EventDocument)
+def set_event_winners(
+    id: str,
+    payload: EventWinnersUpdateRequest,
+    current_user: Dict[str, Any] = Depends(get_admin_user),
+):
+    """Set or update post-event winners list on the event document (Admin only)."""
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+
+    now_timestamp = now_iso()
+    winners_data = [w.model_dump() for w in payload.winners]
+    db.collection(EVENTS_COLLECTION).document(event_id).update(
+        {
+            "winners": winners_data,
+            "updated_at": now_timestamp,
+        }
+    )
+
+    updated_doc = db.collection(EVENTS_COLLECTION).document(event_id).get()
+    return _doc_to_event_document(updated_doc)
 
 
 @router.post("/{id}/award-winners", response_model=WinnerAwardResponse)

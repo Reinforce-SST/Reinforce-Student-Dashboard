@@ -45,7 +45,6 @@ def event_doc(**overrides):
         },
         "points_reward": {
             "attendance_points": 5,
-            "winner_points": 10,
             "track": "general",
         },
         "resources": {},

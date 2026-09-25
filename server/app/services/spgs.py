@@ -148,7 +148,10 @@ def list_spgs(
     type: Optional[SPGType] = None,
     track: Optional[SPGTrack] = None,
     visibility: Optional[SPGVisibility] = None,
+    event_id: Optional[str] = None,
+    idea_id: Optional[str] = None,
     member_id: Optional[str] = None,
+    recruiting: Optional[bool] = None,
     limit: int = DEFAULT_PAGE_SIZE,
     cursor: Optional[str] = None,
 ) -> Tuple[List[SPGRecord], Optional[str]]:
@@ -160,6 +163,9 @@ def list_spgs(
         ("type", type),
         ("track", track),
         ("visibility", visibility),
+        ("event_id", event_id),
+        ("idea_id", idea_id),
+        ("is_recruiting", recruiting),
     ):
         if value is not None:
             query = query.where(field, "==", getattr(value, "value", value))
@@ -256,6 +262,11 @@ def create_spg(
         updated_at=moment,
         proposition_document_url=create.proposition_document_url,
         source_ticket_id=create.source_ticket_id,
+        event_id=create.event_id,
+        is_event_derived=create.is_event_derived,
+        idea_id=create.idea_id,
+        is_recruiting=create.is_recruiting,
+        recruiting_roles=list(create.recruiting_roles),
     )
 
     collection = db.collection(SPGS_COLLECTION)
@@ -370,3 +381,51 @@ def set_status(db: Any, *, spg_id: str, target: SPGStatus, now: Optional[datetim
     if target not in _ALLOWED_TRANSITIONS[spg.status]:
         raise SPGError(409, f"An SPG cannot go from {spg.status.value} to {target.value}.")
     return _save(db, spg.model_copy(update={"status": target}), now or utcnow())
+
+
+def update_team(
+    db: Any,
+    *,
+    spg_id: str,
+    member_ids: List[str],
+    lead_id: Optional[str] = None,
+    now: Optional[datetime] = None,
+) -> SPGRecord:
+    """Update SPG team members and designated project lead."""
+    spg = require_spg(db, spg_id)
+    _assert_mutable(spg)
+
+    clean_members = [m.strip() for m in member_ids if m and m.strip()]
+    if not clean_members:
+        raise SPGError(400, "An SPG must have at least one member.")
+    if len(clean_members) > MAX_MEMBERS:
+        raise SPGError(400, f"An SPG has at most {MAX_MEMBERS} members.")
+    if len(set(clean_members)) != len(clean_members):
+        raise SPGError(400, "member_ids must not contain duplicates.")
+
+    assert_members_exist(db, clean_members)
+
+    new_lead = lead_id or spg.lead_id
+    if new_lead not in clean_members:
+        raise SPGError(400, "The team lead must be one of the member_ids.")
+    if not canonical_user_exists(db, new_lead):
+        raise SPGError(400, f"{new_lead} is not a known member UID.")
+
+    updated = spg.model_copy(update={"member_ids": clean_members, "lead_id": new_lead})
+    return _save(db, updated, now or utcnow())
+
+
+def update_recruiting(
+    db: Any,
+    *,
+    spg_id: str,
+    is_recruiting: bool,
+    recruiting_roles: Optional[List[str]] = None,
+    now: Optional[datetime] = None,
+) -> SPGRecord:
+    """Update SPG recruitment status and open roles."""
+    spg = require_spg(db, spg_id)
+    _assert_mutable(spg)
+    roles = [r.strip() for r in (recruiting_roles or []) if r and r.strip()]
+    updated = spg.model_copy(update={"is_recruiting": is_recruiting, "recruiting_roles": roles})
+    return _save(db, updated, now or utcnow())

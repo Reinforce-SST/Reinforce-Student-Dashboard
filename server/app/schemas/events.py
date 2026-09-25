@@ -27,30 +27,8 @@ UtcDatetime = Annotated[
 ]
 
 # Do Event Type Really Need to be Stored like This?
-# If we are to Store them it should probably follow a model like this
-# We Make an Event Type Model with a nameStr and any other details a event type needs Maybe some hardcoded color/ icons etc.
-# any Event We Want to Add Later would ideally not affect the codebase or schema
-# Keeping it as an ENUM is limiting
-# The Question is not about if we need any more event idea but the system should be able to plan alongside it
-class EventType(str, Enum):
-    ORIENTATION = "orientation"
-    WORKSHOP = "workshop"
-    SUPER_MENTOR_SESSION = "super_mentor_session"
-    BUILD_DAY = "build_day"
-    PAPER_DISCUSSION = "paper_discussion"
-    KAGGLE_WRITEUP_DISCUSSION = "kaggle_writeup_discussion"
-    PRODUCT_TEARDOWN = "product_teardown"
-    DEBATE = "debate"
-    SPRINT_12H_24H = "sprint_12h_24h"
-    HACKATHON_WEEK = "hackathon_week"
-    DATATHON = "datathon"
-    RE_THESIS = "re_thesis"
-    PITCH_DECK_COMPETITION = "pitch_deck_competition"
-    EXHIBITION = "exhibition"
-    QUIZ_CONTEST = "quiz_contest"
-    GENERAL_MEET = "general_meet"
-
-# Having Event Track is Fine i guess
+# Freeform event type string instead of rigid enum
+# EventTrack is kept as standard track categories
 class EventTrack(str, Enum):
     RESEARCH = "research"
     PRODUCT = "product"
@@ -89,12 +67,6 @@ class RegistrationStatus(str, Enum):
     WAITLISTED = "waitlisted"
     CHECKED_IN = "checked_in"
     CANCELLED = "cancelled"
-
-# Umm Should Event SPGS need to be Defined Here Separately? I dont think so everything related to SPGs must be covered under SPGs
-class EventSPGStatus(str, Enum):
-    ACTIVE_COMPETITION = "active_competition"
-    CONVERTED_PERMANENT = "converted_permanent"
-    DISBANDED = "disbanded"
 
 
 # --- Nested Config Models ---
@@ -154,8 +126,18 @@ class PointsRewardConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     attendance_points: int = Field(default=0, ge=0)
-    winner_points: int = Field(default=0, ge=0)
     track: str = "general"
+
+
+class EventWinner(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    placement: str  # e.g. "1st Place", "Runner Up", "Best Innovation"
+    title: str  # Team or project title
+    user_ids: List[str] = Field(default_factory=list)  # Member UIDs
+    spg_id: Optional[str] = None
+    project_url: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class EventResources(BaseModel):
@@ -186,7 +168,10 @@ class EventCreate(BaseModel):
     slug: Optional[NonBlankStr] = None
     description: DescriptionStr
     detailed_info: Optional[str] = None
-    event_type: EventType
+    event_type: NonBlankStr = Field(
+        ...,
+        description="Freeform event type string (e.g. 'Workshop', 'Hackathon', 'AMA')",
+    )
     track: EventTrack = EventTrack.MISC
     format: EventFormat = EventFormat.ONLINE
     venue_info: Optional[VenueInfo] = None
@@ -195,6 +180,7 @@ class EventCreate(BaseModel):
     participation: Optional[EventParticipationConfig] = None
     points_reward: Optional[PointsRewardConfig] = None
     resources: Optional[EventResources] = None
+    banner_url: Optional[str] = None
     status: EventStatus = EventStatus.DRAFT
 
 
@@ -205,7 +191,7 @@ class EventUpdate(BaseModel):
     slug: Optional[NonBlankStr] = None
     description: Optional[DescriptionStr] = None
     detailed_info: Optional[str] = None
-    event_type: Optional[EventType] = None
+    event_type: Optional[NonBlankStr] = None
     track: Optional[EventTrack] = None
     format: Optional[EventFormat] = None
     venue_info: Optional[VenueInfo] = None
@@ -214,6 +200,8 @@ class EventUpdate(BaseModel):
     participation: Optional[EventParticipationConfig] = None
     points_reward: Optional[PointsRewardConfig] = None
     resources: Optional[EventResources] = None
+    banner_url: Optional[str] = None
+    winners: Optional[List[EventWinner]] = None
     status: Optional[EventStatus] = None
 
 
@@ -222,7 +210,7 @@ class EventStatusUpdate(BaseModel):
 
     status: EventStatus
 
-# We Also Need Event Banner With a Firestore Link ideally
+
 class EventDocument(BaseModel):
     """Full Event document schema stored in Firestore."""
 
@@ -245,6 +233,8 @@ class EventDocument(BaseModel):
     points_reward: PointsRewardConfig = Field(default_factory=PointsRewardConfig)
     resources: EventResources = Field(default_factory=EventResources)
     stats: EventStats = Field(default_factory=EventStats)
+    banner_url: Optional[str] = None
+    winners: Optional[List[EventWinner]] = None
     status: str = EventStatus.DRAFT.value
     created_by: str
     created_at: str
@@ -264,7 +254,14 @@ class EventSummary(BaseModel):
     schedule: EventSchedule
     venue_info: VenueInfo
     stats: EventStats
+    banner_url: Optional[str] = None
     status: str
+
+
+class EventWinnersUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    winners: List[EventWinner] = Field(default_factory=list)
 
 
 class EventListResponse(BaseModel):

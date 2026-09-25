@@ -70,9 +70,9 @@ class IdeaCreate(BaseModel):
     description: DescriptionStr
     track: IdeaTrack = IdeaTrack.MISC
     difficulty: Optional[IdeaDifficulty] = None
-    prerequisites: List[str] = Field(default_factory=list, max_length=20)
-    rough_roadmap: List[str] = Field(default_factory=list, max_length=20)
-    learning_outcomes: List[str] = Field(default_factory=list, max_length=20)
+    prerequisites: Optional[List[str]] = Field(default_factory=list, max_length=20)
+    rough_roadmap: Optional[List[str]] = Field(default_factory=list, max_length=20)
+    learning_outcomes: Optional[List[str]] = Field(default_factory=list, max_length=20)
     creator_uid: Optional[str] = None
 
 
@@ -102,9 +102,9 @@ class IdeaDocument(BaseModel):
     description: str
     track: IdeaTrack = IdeaTrack.MISC
     difficulty: Optional[IdeaDifficulty] = None
-    prerequisites: List[str] = Field(default_factory=list)
-    rough_roadmap: List[str] = Field(default_factory=list)
-    learning_outcomes: List[str] = Field(default_factory=list)
+    prerequisites: Optional[List[str]] = Field(default_factory=list)
+    rough_roadmap: Optional[List[str]] = Field(default_factory=list)
+    learning_outcomes: Optional[List[str]] = Field(default_factory=list)
     is_verified: bool = False
     created_by_uid: str
     approved_by_uid: Optional[str] = None
@@ -132,9 +132,9 @@ class IdeaSummary(BaseModel):
 
 class IdeaDetail(IdeaSummary):
     """Full detail view including roadmap, prerequisites, and learning outcomes."""
-    prerequisites: List[str] = Field(default_factory=list)
-    rough_roadmap: List[str] = Field(default_factory=list)
-    learning_outcomes: List[str] = Field(default_factory=list)
+    prerequisites: Optional[List[str]] = Field(default_factory=list)
+    rough_roadmap: Optional[List[str]] = Field(default_factory=list)
+    learning_outcomes: Optional[List[str]] = Field(default_factory=list)
     updated_at: Optional[str] = None
 
 

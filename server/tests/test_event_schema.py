@@ -17,8 +17,8 @@ from app.schemas.events import (
     EventSchedule,
     EventStatus,
     EventTrack,
-    EventType,
     EventUpdate,
+    EventWinner,
     FeedbackDocument,
     FeedbackSubmitRequest,
     ParticipationMode,
@@ -37,9 +37,10 @@ def sample_event_create(**overrides):
         "title": "RE:Thesis — Research Paper Sprint",
         "description": "Reproduce baseline results from top machine learning papers.",
         "detailed_info": "# RE:Thesis\nDetailed markdown instructions...",
-        "event_type": EventType.RE_THESIS,
+        "event_type": "re_thesis",
         "track": EventTrack.RESEARCH,
         "format": EventFormat.HYBRID,
+        "banner_url": "https://storage.googleapis.com/events/banner.png",
         "venue_info": {"venue_name": "Scaler Auditorium", "room": "Room 402", "meeting_url": "https://meet.google.com/abc-def"},
         "schedule": {
             "start_time": "2026-10-01T10:00:00Z",
@@ -64,7 +65,6 @@ def sample_event_create(**overrides):
         },
         "points_reward": {
             "attendance_points": 25,
-            "winner_points": 100,
             "track": "research",
         },
         "status": EventStatus.PUBLISHED,
@@ -77,9 +77,26 @@ class EventCreateTests(unittest.TestCase):
     def test_valid_event_creation(self):
         created = EventCreate.model_validate(sample_event_create())
         self.assertEqual(created.title, "RE:Thesis — Research Paper Sprint")
-        self.assertEqual(created.event_type, EventType.RE_THESIS)
+        self.assertEqual(created.event_type, "re_thesis")
+        self.assertEqual(created.banner_url, "https://storage.googleapis.com/events/banner.png")
         self.assertEqual(created.participation.mode, ParticipationMode.TEAM)
         self.assertTrue(created.participation.requires_event_spg)
+
+    def test_arbitrary_event_type_string_accepted(self):
+        created = EventCreate.model_validate(sample_event_create(event_type="AMA with Founder"))
+        self.assertEqual(created.event_type, "AMA with Founder")
+
+    def test_event_winner_schema(self):
+        winner = EventWinner(
+            placement="1st Place",
+            title="Team Gradient",
+            user_ids=["user_001", "user_002"],
+            spg_id="spg_123",
+            project_url="https://github.com/example/repo",
+            notes="Best overall reproduction",
+        )
+        self.assertEqual(winner.placement, "1st Place")
+        self.assertEqual(len(winner.user_ids), 2)
 
     def test_title_and_description_length_enforced(self):
         for bad_title in ("", "   ", "t" * 201):

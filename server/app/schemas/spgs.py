@@ -100,6 +100,22 @@ class SPGBase(BaseModel):
     type: SPGType
     track: SPGTrack = SPGTrack.GENERAL
     visibility: SPGVisibility = SPGVisibility.PRIVATE
+    event_id: Optional[NonBlankStr] = Field(
+        default=None,
+        description="Linked event ID if derived from a competition/hackathon",
+    )
+    is_event_derived: bool = Field(default=False)
+    idea_id: Optional[NonBlankStr] = Field(
+        default=None, description="Linked idea ID if created from Idea Jar"
+    )
+    is_recruiting: bool = Field(
+        default=False,
+        description="Whether this SPG is looking for new collaborators",
+    )
+    recruiting_roles: List[str] = Field(
+        default_factory=list,
+        description="Roles/skills needed (e.g. ['PyTorch Developer', 'Frontend'])",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -135,7 +151,6 @@ class SPGRecord(SPGBase):
     completed_at: Optional[UtcDatetime] = None
     proposition_document_url: Optional[NonBlankStr] = None
     source_ticket_id: Optional[NonBlankStr] = None
-    event_id: Optional[NonBlankStr] = None
 
     @model_validator(mode="after")
     def _members_are_unique_and_include_the_lead(self):
@@ -193,11 +208,7 @@ class SPGCreate(SPGRegistrationRequest):
             raise ValueError("a project SPG requires a proposition document")
         return self
 
-# SPGs Might Need to Update Teams after Creation
-# An SPG update should Include Changing team Members too
-# Albeit It might need a Different Update Step and different Validation points
-# Another Things is Applying to SPGs, If Someone wants to work on the same problem as other people already on it they should be able to apply to them if they are open to invitation
-# Open to Invitation can be yet another Field That needs to be added
+
 class SPGUpdate(BaseModel):
     """Metadata an admin may edit in place.
 
@@ -211,6 +222,8 @@ class SPGUpdate(BaseModel):
     description: Optional[DescriptionStr] = None
     track: Optional[SPGTrack] = None
     visibility: Optional[SPGVisibility] = None
+    is_recruiting: Optional[bool] = None
+    recruiting_roles: Optional[List[str]] = None
 
 
 class SPGLeadUpdate(BaseModel):
@@ -219,6 +232,32 @@ class SPGLeadUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     new_lead_id: NonBlankStr
+
+
+class SPGTeamUpdateRequest(BaseModel):
+    """Payload for PATCH /spgs/{spg_id}/team."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    member_ids: List[NonBlankStr] = Field(
+        ..., min_length=1, description="Full updated list of member Firebase UIDs"
+    )
+    lead_id: Optional[NonBlankStr] = Field(
+        None, description="Designated project lead UID (must be in member_ids)"
+    )
+
+
+class SPGRecruitingUpdateRequest(BaseModel):
+    """Payload for PATCH /spgs/{spg_id}/recruiting."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    is_recruiting: bool = Field(
+        ..., description="Whether this SPG is looking for new collaborators"
+    )
+    recruiting_roles: Optional[List[str]] = Field(
+        default_factory=list, description="Roles/skills needed"
+    )
 
 
 class SPGResponse(SPGRecord):

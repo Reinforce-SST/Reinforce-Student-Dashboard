@@ -41,6 +41,15 @@ class IdeaCreateTests(unittest.TestCase):
         self.assertEqual(idea.difficulty, IdeaDifficulty.INTERMEDIATE)
         self.assertEqual(len(idea.prerequisites), 3)
 
+    def test_optional_roadmap_and_prerequisites(self):
+        idea = IdeaCreate.model_validate({
+            "title": "Minimal Idea",
+            "description": "A simple submission without roadmap.",
+        })
+        self.assertEqual(idea.prerequisites, [])
+        self.assertEqual(idea.rough_roadmap, [])
+        self.assertEqual(idea.learning_outcomes, [])
+
     def test_title_and_description_bounds(self):
         for bad_title in ("", "  ", "t" * 201):
             with self.subTest(title=bad_title):
@@ -69,7 +78,7 @@ class IdeaDocumentTests(unittest.TestCase):
             "created_by_uid": "user_001",
             "approved_by_uid": "admin_001",
             "approved_at": "2026-09-24T10:00:00Z",
-            "stats": {"upvote_count": 12, "views_count": 45, "claims_count": 0},
+            "stats": {"upvote_count": 12, "views_count": 45, "claims_count": 2},
             "created_at": "2026-09-24T09:00:00Z",
             "updated_at": "2026-09-24T10:00:00Z",
         }

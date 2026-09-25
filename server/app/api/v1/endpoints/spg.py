@@ -42,8 +42,10 @@ from app.schemas.spg_reports import (
 from app.schemas.spgs import (
     SPGLeadUpdate,
     SPGPage,
+    SPGRecruitingUpdateRequest,
     SPGResponse,
     SPGStatus,
+    SPGTeamUpdateRequest,
     SPGTrack,
     SPGType,
     SPGUpdate,
@@ -99,6 +101,8 @@ def _member_or_403(spg, user: dict) -> None:
         )
 
 
+
+
 # ---------------------------------------------------------------------------
 # There is deliberately no creation route here.
 #
@@ -143,7 +147,10 @@ def list_spgs(
     status_filter: Optional[SPGStatus] = Query(None, alias="status"),
     type_filter: Optional[SPGType] = Query(None, alias="type"),
     track: Optional[SPGTrack] = Query(None),
+    event_id: Optional[str] = Query(None, description="Filter SPGs created for a specific event"),
+    idea_id: Optional[str] = Query(None, description="Filter SPGs derived from a specific Idea Jar idea"),
     member_id: Optional[str] = Query(None, description="Only SPGs this member UID belongs to"),
+    recruiting: Optional[bool] = Query(None, description="Filter open/recruiting SPGs"),
     limit: int = Query(service.DEFAULT_PAGE_SIZE, ge=1, le=service.MAX_PAGE_SIZE),
     cursor: Optional[str] = Query(None),
     user: dict = Depends(get_current_user),
@@ -156,7 +163,10 @@ def list_spgs(
             status=status_filter,
             type=type_filter,
             track=track,
+            event_id=event_id,
+            idea_id=idea_id,
             member_id=member_id,
+            recruiting=recruiting,
             limit=limit,
             cursor=cursor,
         )
@@ -245,6 +255,50 @@ def change_lead(
 ) -> SPGResponse:
     try:
         return _respond(db, service.change_lead(db, spg_id=spg_id, new_lead_id=payload.new_lead_id))
+    except service.SPGError as error:
+        raise _handle(error) from None
+
+
+@router.patch("/{spg_id}/team", response_model=SPGResponse, summary="Update team members and lead (admin)")
+def update_team(
+    spg_id: str,
+    payload: SPGTeamUpdateRequest,
+    admin: dict = Depends(require_admin),
+    db: Any = Depends(get_db),
+) -> SPGResponse:
+    """Admin updates full list of SPG team members and optionally assigns a new lead (via ticket approval)."""
+    try:
+        return _respond(
+            db,
+            service.update_team(
+                db,
+                spg_id=spg_id,
+                member_ids=[str(m) for m in payload.member_ids],
+                lead_id=str(payload.lead_id) if payload.lead_id else None,
+            ),
+        )
+    except service.SPGError as error:
+        raise _handle(error) from None
+
+
+@router.patch("/{spg_id}/recruiting", response_model=SPGResponse, summary="Update recruitment status (admin)")
+def update_recruiting(
+    spg_id: str,
+    payload: SPGRecruitingUpdateRequest,
+    admin: dict = Depends(require_admin),
+    db: Any = Depends(get_db),
+) -> SPGResponse:
+    """Admin toggles whether the SPG is actively recruiting new collaborators and lists roles (via ticket request)."""
+    try:
+        return _respond(
+            db,
+            service.update_recruiting(
+                db,
+                spg_id=spg_id,
+                is_recruiting=payload.is_recruiting,
+                recruiting_roles=[str(r) for r in (payload.recruiting_roles or [])],
+            ),
+        )
     except service.SPGError as error:
         raise _handle(error) from None
 

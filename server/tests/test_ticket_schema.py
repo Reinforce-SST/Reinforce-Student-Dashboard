@@ -43,6 +43,19 @@ class TicketCreateTests(unittest.TestCase):
         self.assertEqual(created.title, "Bug in model training submission pipeline")
         self.assertEqual(created.category, TicketCategory.REPORT)
 
+    def test_compute_and_learning_resource_categories(self):
+        compute_ticket = TicketCreate.model_validate({
+            "title": "GPU compute for LLM fine-tuning",
+            "category": "compute_resource_request",
+        })
+        self.assertEqual(compute_ticket.category, TicketCategory.COMPUTE_RESOURCE_REQUEST)
+
+        learning_ticket = TicketCreate.model_validate({
+            "title": "Request for Deep Learning Roadmap",
+            "category": "learning_resource_request",
+        })
+        self.assertEqual(learning_ticket.category, TicketCategory.LEARNING_RESOURCE_REQUEST)
+
     def test_priority_cannot_be_set_by_user(self):
         # Regular users cannot set priority at creation
         with self.assertRaises(ValidationError):
