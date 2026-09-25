@@ -18,12 +18,14 @@ inferred from the UI.
 
 ## `users/{doc_id}`
 
-⚠️ **Written twice.** The API writes the same payload to `users/{email}` *and*
-`users/{discord_id}`. Linking and unlinking update the two records transactionally. Profile-only edits use the email document.
-
-- The **website** looks up by lowercased email.
-- The **bot** looks up by Discord ID first, then falls back to querying the
-  `discord_id` field.
+The website's canonical member record is `users/{firebase_uid}`. During the
+YUVI compatibility window, a successful `/auth` link also writes
+`users/{lowercased_email}` and `users/{discord_id}` aliases in the same Firestore
+transaction. The bot looks up those aliases; the website reads profile fields
+from the UID record. A raw `discord_id` in any single document is **not** proof
+that the member owns that Discord account. Legacy email-keyed profile fields
+are copied to the UID record on first sign-in, but a Discord link migrates only
+when both aliases agree on `firebase_uid`, email, ID, and link version.
 
 ```jsonc
 {
@@ -32,7 +34,7 @@ inferred from the UI.
   "avatar_url":    "string | null",
   "firebase_uid":  "string | null",
   "discord_id":    "string | null",           // numeric snowflake, as a string
-  "discord_link_version": "1 | null",       // proof from a private YUVI token
+  "discord_link_version": 1,                 // present only on proven links
   "is_verified":   false,
   "verified_at":   "ISO-8601 | null",
   "created_at":    "ISO-8601",
@@ -47,14 +49,41 @@ Timestamps here are **ISO-8601 strings**, written by the API with
 `datetime.now(timezone.utc).isoformat()`. This differs from the tickets collection —
 see the warning below.
 
-There is no `role` or `tier` field. RBAC does not exist yet.
+The UID-keyed profile also stores `is_member`, `tier`, `batch_year`, and
+the cached per-track `points` map. `is_admin` in this profile is display metadata
+only; API authorization comes exclusively from the verified Firebase
+`admin == true` custom claim.
+
+## `discord_link_tokens/{sha256(token)}`
+
+YUVI issues a private, short-lived `/auth#link_token=...` URL. The browser sends
+that opaque token to `/users/verify-discord`; it never sends a raw Discord ID as
+identity proof. The API consumes the hashed token and writes the UID member plus
+the email and Discord aliases atomically. The token stores `discord_id`,
+`expires_at`, and, after use, `consumed_by`, `email`, and `consumed_at`. An expired
+or differently consumed token cannot link an account. A repeated request from
+the same member may retry the bot role notification while the aliases remain
+consistent.
+
+Unlinking clears the UID and email link markers and removes the matching Discord
+alias. Existing unproven links need a fresh private YUVI token.
 
 ---
 
 ## `tickets/{auto_id}`
 
-Written by the bot when a member submits a ticket modal in Discord. Document ID is a
-Firestore auto-ID, **not** the Discord thread ID.
+Written by the bot when a member submits a ticket modal in Discord, or by the API
+when a member creates one in the dashboard. The bot uses a Firestore auto-ID; the
+API uses a `tkt_` ID. Neither uses the Discord thread ID.
+
+Dashboard-created documents use Firebase UID reference fields
+(`created_by_uid`, `assigned_to_uid`, and `closed_by_uid`). Older bot-created
+documents use the nested `TicketUser` objects below. Readers must accept both
+shapes. The YUVI bridge resolves `created_by_uid` through `users/{uid}.discord_id`
+before adding the member to the private thread.
+Legacy Discord tickets are visible on the member dashboard only when the UID
+record and both aliases prove the same link. Confidential `report` tickets are
+omitted from the member list and detail responses.
 
 ```jsonc
 {
@@ -133,9 +162,38 @@ The Discord thread conversation, mirrored message by message in real time.
 ```
 
 `source` already distinguishes `discord` from `web`. The bot's schema anticipated a
-web write path that does not exist yet. Phase 2 fills it.
+web write path. Dashboard messages use `sender_uid`; older Discord messages use
+`sender_id`. API readers normalize either field into `sender_uid` on the wire.
+They also preserve `sender_name` when YUVI supplied it.
 
-The website queries the latest 300 messages in descending timestamp order, then reverses them for chronological display. The bot has its own transcript read path.
+Ordered by `timestamp` ascending. The bot caps reads at 300 messages.
+
+---
+
+## `ideas/{idea_id}`
+
+The dashboard and bot historically used different names for the same values.
+During the compatibility window, writers set both names and readers accept either:
+
+| Dashboard field | Legacy YUVI field | Meaning |
+|---|---|---|
+| `is_verified` | `is_approved` | visible in the public idea feed |
+| `rough_roadmap` | `roadmap` | ordered implementation steps |
+| `created_by_uid` | `created_by.discord_id` | submitting member identity |
+| `approved_by_uid` | `approved_by.discord_id` | approving admin identity |
+
+YUVI's `other` track maps to the dashboard's `misc` track at the API boundary.
+New YUVI writes resolve linked Discord IDs to Firebase UIDs when the user profile
+is available. Existing legacy documents remain readable without a migration.
+
+---
+
+## `event_slugs/{sha256(slug)}`
+
+Internal reservation documents keep event slugs unique under concurrent admin
+creates and updates. Each document stores `slug`, `event_id`, and `updated_at`.
+Event readers continue to resolve slugs from `events/{event_id}.slug`; clients do
+not read this collection directly.
 
 ---
 
@@ -169,16 +227,148 @@ ampersands**, not snake_case identifiers. They come from the Discord modal label
 
 ---
 
+## `spgs/{spg_id}`
+
+Student Project Groups. **Written only by this API** — the bot does not read or
+write this collection. Full workflow in [`SPG_WORKFLOW.md`](SPG_WORKFLOW.md).
+
+Document ID is derived from the approved registration ticket so that approving
+the same ticket twice cannot create two groups:
+`"spg_" + sha256("spg_registration:" + source_ticket_id)[:24]`.
+
+```jsonc
+{
+  "id":                       "spg_1f2e...",      // equals the document ID
+  "name":                     "string",           // 1-200, trimmed
+  "description":              "string | null",    // <= 2000
+  "type":                     "project",          // learning | project | event | external_event | miscellaneous
+  "track":                    "research",         // kaggle | product | research | general
+  "visibility":               "private",          // public | private; an event SPG is always public
+  "member_ids":               ["<firebase_uid>"], // >= 1, no duplicates, UIDs only
+  "lead_id":                  "<firebase_uid>",   // must be one of member_ids
+  "status":                   "active",           // active | paused | completed | disbanded
+  "created_by":               "<firebase_uid> | null",
+  "created_at":               "ISO-8601 | null",
+  "updated_at":               "ISO-8601 | null",
+  "completed_at":             "ISO-8601 | null",  // unused until completion exists
+  "proposition_document_url": "string | null",    // required for type=project at creation
+  "source_ticket_id":         "string | null"     // the spg_registration ticket
+}
+```
+
+⚠️ **`member_ids` holds Firebase UIDs, never emails or Discord IDs.** Because
+`users` is keyed three ways (see above), membership is validated by requiring
+the user document's `id` field to equal its own document ID — which only the
+`users/{uid}` profile writer sets. An email-keyed or Discord-keyed document is
+not an identity and is rejected.
+
+There is no `users.spg_ids`. `member_ids` is the only membership source.
+`progress` and a separate `health` field are **not** stored; both are derived
+for display.
+
+Server-owned fields are nullable so documents written before this workflow
+existed still validate on read. **A newly created SPG always has a
+`source_ticket_id`**: creation goes through `create_spg()`, which requires one
+and derives the document ID from it. It is nullable here only for the older
+documents that predate the rule.
+
+**Readers:** this API, and the contribution SPG award, which reads `member_ids`
+to write one contribution per member.
+
+---
+
+## `spg_reports/{report_id}`
+
+Append-only report history. **Written only by this API.**
+
+A report is filed in one of two formats and the member chooses: a structured
+**form** stored here in Firestore, or an uploaded **PDF** kept in Firebase
+Storage. Both are this one shape in this one collection, and both share a
+single sequence per SPG.
+
+```jsonc
+{
+  "id":              "rep_9a8b...",     // equals the document ID
+  "spg_id":          "spg_1f2e...",
+  "report_type":     "progress",        // progress | final  — what it is about
+  "report_format":   "form",            // form | pdf        — how it was filed
+  "heading":         "Week two progress",      // required, both formats
+  "short_description": "Baseline trained.",    // required, both formats
+  "sequence_number": 1,                 // >= 1, per SPG, monotonic, never reused
+
+  // report_format == "pdf" only
+  "pdf_url":         "https://firebasestorage.googleapis.com/...",
+
+  // report_format == "form" only
+  "summary":         "string",          // required for a form report
+  "milestones":      ["string"],        // may be empty
+  "blockers":        "string | null",
+  "next_steps":      "string | null",
+
+  "submitted_by":    "<firebase_uid>",
+  "submitted_at":    "ISO-8601",
+  "status":          "pending",         // pending | verified
+  "verified_by":     "<firebase_uid> | null",
+  "verified_at":     "ISO-8601 | null"
+}
+```
+
+**Conditional invariants** — a record carries one format's content, never both:
+
+| `report_format` | Required | Must be absent |
+|---|---|---|
+| `pdf` | `pdf_url` | `summary`, `blockers`, `next_steps`; `milestones` empty |
+| `form` | `summary` | `pdf_url` |
+
+`heading` and `short_description` are required for both, because the dashboard
+lists every report the same way regardless of format.
+
+`report_type` and `report_format` are independent. All four combinations are
+valid: a `final` report may be a form, a `progress` report may be a PDF.
+
+**Other invariants**
+
+- `verified_by` and `verified_at` are both set exactly when `status == "verified"`,
+  and `verified_at >= submitted_at`
+- a stored report is never overwritten; a correction is a new report with the
+  next sequence number
+- form and PDF reports draw from **one** sequence per SPG, not one each
+- submitting or verifying a report **awards no points and creates no
+  contribution** — that is a separate admin decision in the contribution
+  workflow
+
+Timestamps here are ISO-8601 strings, matching `users` rather than `tickets`.
+
+### Storage paths
+
+```
+spgs/{spg_id}/reports/{report_id}.pdf
+spgs/registrations/{request_id}/proposition.pdf
+```
+
+Server-generated from IDs the server created. A client filename never reaches
+a storage path.
+
+### Ticket linkage
+
+SPG registration is meant to raise an `spg_registration` ticket (see the
+`tickets` category table above) that a reviewer approves, and the approval
+creates the `spgs` document, recording the ticket in `source_ticket_id`.
+
+The dashboard ticket write path now exists. There is still no HTTP route that
+approves an SPG registration ticket into an SPG; `create_spg()` remains the
+internal service that approval will call once that workflow is implemented.
+
+---
+
 ## Access rules
 
 - `report` category tickets are **confidential**. The Discord modal tells members
   they are visible only to core admins. Any mirror of this collection must filter
   `category == "report"` out of member-facing views and gate it behind an admin role
-  — which does not exist yet. Until RBAC ships, **do not surface `report` tickets on
-  the website at all.**
-- Members may only read tickets where `created_by.discord_id` matches their own
-  linked Discord ID. Both user documents must carry `discord_link_version == 1` and
-  agree on the email and Discord ID. Legacy raw-ID links do not authorize reads.
+  through the Firebase `admin == true` custom claim.
+- Members may only read tickets where `created_by_uid` is their Firebase UID or
+  where legacy `created_by.discord_id` matches their linked Discord ID.
 - Firebase Admin credentials are server-side only. The browser never reads Firestore
   directly; every read goes through the FastAPI service.
 
@@ -204,26 +394,17 @@ Indexes the bot already relies on. Do not break them:
 - `users` where `discord_id == ...` limit 1
 - `users` where `email == ...` limit 1
 
-## `discord_link_tokens/{sha256_token}`
+Added by the SPG workflow. These are API-side only; the bot does not use them,
+but they need composite indexes in Firestore:
 
-YUVI creates a random 32-byte URL-safe token and privately sends it in the
-`/auth#link_token=...` fragment. Only its SHA-256 hash is stored as the document ID.
-The collection is server-only: client reads/writes must be denied.
+- `spgs` where `status ==` / `type ==` / `track ==` / `visibility ==`, and any
+  two of those combined
+- `spg_reports` where `spg_id ==` order by `sequence_number`
+- `spg_reports` where `spg_id ==` and `report_type ==` order by `sequence_number`
 
-| Field | Type / writer |
-|---|---|
-| `discord_id` | String snowflake from the Discord interaction; YUVI |
-| `issued_at` | Native UTC timestamp; YUVI |
-| `expires_at` | Native UTC timestamp, ten minutes after issue; YUVI |
-| `consumed_by` | Null initially; Firebase UID after consumption; API |
-| `email` | Normalized verified SST email after consumption; API |
-| `consumed_at` | Native UTC timestamp; API |
+`report_format` is stored but never filtered on — the report list is not
+segmented by format — so it needs no index. A field existing is not a reason
+to index it.
 
-The API transaction reads the proof and both user documents before writing any
-of them. A repeat from the same UID/email is accepted only while the proof has not
-expired and the reciprocal link still exists. Another account, a changed/unlinked
-identity, an expired token, or a conflicting pre-existing link is rejected.
-Firestore TTL on `expires_at` is optional cleanup, never the authorization check.
-The bot webhook requires the existing shared secret plus reciprocal proof before
-granting a role. A failed role grant does not undo a proven identity; rerun `/auth`
-to get a new private link and retry. See [rollout](verification.md).
+There is no `firestore.indexes.json` in this repository, so these must be
+created by whoever owns the Firebase console.

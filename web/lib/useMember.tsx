@@ -18,8 +18,8 @@ export function MemberProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!token || !identity) return;
     let active = true;
-    api.me(token).then(result => {
-      if (active) setState({ identity, profile: result.user });
+    api.me(token).then(profile => {
+      if (active) setState({ identity, profile });
     }).catch(() => {
       if (active) setState(current => ({ ...(current?.identity === identity ? current : {}), identity, error: "Your profile could not be refreshed. Please try again." }));
     });
@@ -43,7 +43,7 @@ export function MemberProvider({ children }: { children: ReactNode }) {
     profile: state.profile,
     async save(update) {
       const result = await api.updateProfile(token, update);
-      setState(current => current?.identity === identity ? { identity, profile: result.user } : current);
+      setState(current => current?.identity === identity ? { identity, profile: result } : current);
     },
   };
   return <MemberContext.Provider value={value}>{state.error && <div role="alert"><p>{state.error}</p><button onClick={() => setAttempt(value => value + 1)}>Retry profile refresh</button></div>}{children}</MemberContext.Provider>;
@@ -56,15 +56,17 @@ export function useMember() {
 }
 
 export function useTickets() {
-  const { token } = useMember();
+  const { token, profile } = useMember();
   const [state, setState] = useState<{ token: string; data?: TicketListResponse; error?: string } | null>(null);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let active = true;
-    api.myTickets(token).then(data => { if (active) setState({ token, data }); })
+    api.myTickets(token).then(tickets => {
+      if (active) setState({ token, data: { linked: Boolean(profile.is_verified && profile.discord_id) || tickets.length > 0, tickets } });
+    })
       .catch(() => { if (active) setState({ token, error: "Tickets could not be loaded. Try again in a moment." }); });
     return () => { active = false; };
-  }, [token, attempt]);
+  }, [token, profile.is_verified, profile.discord_id, attempt]);
   return { data: state?.token === token ? state.data : undefined, error: state?.token === token ? state.error : undefined,
     retry: () => { setState(null); setAttempt(value => value + 1); } };
 }

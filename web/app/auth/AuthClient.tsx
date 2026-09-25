@@ -34,7 +34,9 @@ export default function AuthClient() {
       }
       const parsed = capturedLink.current;
       queueMicrotask(() => setLink(parsed));
-      if (parsed.token) window.history.replaceState(null, "", window.location.pathname);
+      if (parsed.token || window.location.search.includes("link_token=")) {
+        window.history.replaceState(null, "", window.location.pathname);
+      }
     }
     capture();
     const onHashChange = () => capture(true);

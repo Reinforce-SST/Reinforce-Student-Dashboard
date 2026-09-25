@@ -1,22 +1,34 @@
-"""Response models for the read-only Discord mirror.
+"""Pydantic schemas and models for the Unified Ticket & Support System.
 
-Shapes here mirror what the YUVI bot writes to Firestore. The authoritative
-description of those documents is docs/DATA_CONTRACT.md — read it before
-changing anything in this file, because the bot lives in another repository
-and will not fail to build when this drifts.
+Adheres to server/plan.md, omitting denormalized user objects in favor of UIDs.
 """
 
 from enum import Enum
 from typing import Any, Dict, List, Optional
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+)
 
-from pydantic import BaseModel, Field
+from app.schemas.common import DescriptionStr, NonBlankStr, TitleStr
 
 
+# ---------------------------------------------------------------------------
+# Enums
+# ---------------------------------------------------------------------------
+
+# Ohk to Resource Request is a Bit Ambiguous here
+# It can mean GPU Resource Rest or HArdware Requests
+# It can also mean Learning Resource Request
+# Can we have a Categorization for both of these
+# Also Maybe add a Suggestion Box
 class TicketCategory(str, Enum):
     SPG_REGISTRATION = "spg_registration"
     RESOURCE_REQUEST = "resource_request"
     SUPPORT = "support"
     IDEA_JAR = "idea_jar"
+    FEEDBACK = "feedback"
     REPORT = "report"
     MISC = "misc"
 
@@ -28,99 +40,183 @@ class TicketStatus(str, Enum):
     CLOSED = "closed"
 
 
-# Confidential by design. The Discord modal promises members that misconduct
-# reports are visible only to core admins, and this platform has no admin role
-# yet, so these never leave the database through this API.
+class TicketPriority(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    URGENT = "urgent"
+
+
+class MessageSource(str, Enum):
+    WEB = "web"
+    DISCORD = "discord"
+
+
+class SenderRole(str, Enum):
+    USER = "user"
+    ADMIN = "admin"
+    LEAD = "lead"
+    BOT = "bot"
+
+
+# Confidential by design. Misconduct reports are visible only to core admins and the creator.
 HIDDEN_CATEGORIES = frozenset({TicketCategory.REPORT.value})
 
 
-# Firestore stores maps with keys sorted lexicographically, so the insertion
-# order the bot used is lost in transit. Without this, an SPG registration
-# reads back as "Duration -> Project Name -> Summary -> Team Members", which is
-# not the order the member filled it in. Unknown keys fall back to alphabetical
-# so a new bot category degrades instead of disappearing.
-FIELD_ORDER: Dict[str, List[str]] = {
-    TicketCategory.SPG_REGISTRATION.value: [
-        "Project Name & Track", "Team Members", "Duration & Frequency", "Summary & Goals",
-    ],
-    TicketCategory.RESOURCE_REQUEST.value: [
-        "SPG Name", "Resources Requested", "Progress Proof", "Justification",
-    ],
-    TicketCategory.IDEA_JAR.value: ["Idea Title", "Track", "Overview"],
-    TicketCategory.SUPPORT.value: ["Subject", "Details"],
-    TicketCategory.MISC.value: ["Subject", "Details"],
-    TicketCategory.REPORT.value: ["Incident Summary", "Report Details"],
-}
+# ---------------------------------------------------------------------------
+# Discord Bridge Metadata
+# ---------------------------------------------------------------------------
+
+class DiscordMeta(BaseModel):
+    guild_id: Optional[str] = None
+    channel_id: Optional[str] = None
+    thread_id: Optional[str] = None
+    thread_url: Optional[str] = None
 
 
-def order_fields(category: str, fields: Optional[Dict[str, Any]]) -> List["TicketField"]:
-    """Return a ticket's free-form fields in the order the member saw them."""
-    if not fields:
-        return []
-    preferred = FIELD_ORDER.get(category, [])
-    seen = set()
-    ordered: List[TicketField] = []
-    for key in preferred:
-        if key in fields:
-            seen.add(key)
-            ordered.append(TicketField(label=key, value=str(fields[key])))
-    for key in sorted(k for k in fields if k not in seen):
-        ordered.append(TicketField(label=key, value=str(fields[key])))
-    return ordered
+# ---------------------------------------------------------------------------
+# Ticket Mutation Request Schemas
+# ---------------------------------------------------------------------------
+
+class TicketCreate(BaseModel):
+    """Member creation payload. Note: priority is system-assigned to 'medium' and cannot be set here."""
+    model_config = ConfigDict(extra="forbid")
+
+    category: TicketCategory
+    title: TitleStr
+    description: Optional[DescriptionStr] = None
+    fields: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Category-specific structured form fields (e.g. spg_id, resources_needed, etc.)"
+    )
+    spg_id: Optional[NonBlankStr] = None
 
 
-class TicketField(BaseModel):
-    label: str
-    value: str
+class TicketCloseRequest(BaseModel):
+    """Payload to close a ticket."""
+    model_config = ConfigDict(extra="forbid")
+
+    close_reason: Optional[DescriptionStr] = None
 
 
-class TicketAuthor(BaseModel):
-    discord_id: Optional[str] = None
-    username: str = "Unknown"
-    avatar_url: Optional[str] = None
+class AdminUpdateTicketPriority(BaseModel):
+    """Admin-only payload to update ticket priority."""
+    model_config = ConfigDict(extra="forbid")
+
+    priority: TicketPriority
+
+
+class AdminUpdateTicketStatus(BaseModel):
+    """Admin-only payload to transition ticket status."""
+    model_config = ConfigDict(extra="forbid")
+
+    status: TicketStatus
+    close_reason: Optional[DescriptionStr] = None
+
+
+class AdminAssignTicket(BaseModel):
+    """Admin-only payload to assign ticket to a core lead."""
+    model_config = ConfigDict(extra="forbid")
+
+    assigned_to_uid: NonBlankStr
+
+
+# ---------------------------------------------------------------------------
+# Message Schemas
+# ---------------------------------------------------------------------------
+
+class TicketMessageCreate(BaseModel):
+    """Payload to post a message from the web dashboard."""
+    model_config = ConfigDict(extra="forbid")
+
+    content: NonBlankStr
+    attachments: List[str] = Field(default_factory=list, max_length=10)
+
+
+class BotSyncMessageRequest(BaseModel):
+    """Payload sent by the YUVI Discord bot webhook to sync messages to Firestore."""
+    model_config = ConfigDict(extra="ignore")
+
+    sender_uid: Optional[str] = None
+    sender_name: Optional[str] = None
+    sender_role: SenderRole = SenderRole.USER
+    source: MessageSource = MessageSource.DISCORD
+    content: str
+    attachments: List[str] = Field(default_factory=list)
+    discord_message_id: Optional[str] = None
+    timestamp: Optional[str] = None
+
+
+class TicketMessage(BaseModel):
+    """Message representation in a ticket thread."""
+    id: str
+    sender_uid: Optional[str] = None
+    sender_name: Optional[str] = None
+    sender_role: SenderRole = SenderRole.USER
+    source: MessageSource = MessageSource.WEB
+    content: str
+    attachments: List[str] = Field(default_factory=list)
+    discord_message_id: Optional[str] = None
+    timestamp: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Response Models & Document Shapes
+# ---------------------------------------------------------------------------
+
+class TicketDocument(BaseModel):
+    """Raw Firestore stored document in `tickets/{ticket_id}`."""
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    category: TicketCategory
+    title: str
+    description: Optional[str] = None
+    status: TicketStatus = TicketStatus.OPEN
+    priority: TicketPriority = TicketPriority.MEDIUM
+    spg_id: Optional[str] = None
+    fields: Dict[str, Any] = Field(default_factory=dict)
+    created_by_uid: str
+    assigned_to_uid: Optional[str] = None
+    closed_by_uid: Optional[str] = None
+    close_reason: Optional[str] = None
+    closed_at: Optional[str] = None
+    discord_meta: Optional[DiscordMeta] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
 
 class TicketSummary(BaseModel):
-    """A ticket as it appears in a list. Deliberately excludes `fields`."""
+    """Ticket card summary in feeds and list views."""
     id: str
     category: TicketCategory
     title: str
     status: TicketStatus
-    created_by: Optional[TicketAuthor] = None
-    assigned_to: Optional[TicketAuthor] = None
+    priority: TicketPriority
+    created_by_uid: str
+    assigned_to_uid: Optional[str] = None
+    spg_id: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
-    thread_url: Optional[str] = Field(
-        default=None,
-        description="Deep link to the Discord thread, when guild and thread ids are both present.",
-    )
+    thread_url: Optional[str] = None
 
 
 class TicketDetail(TicketSummary):
-    description: str = ""
-    fields: List[TicketField] = Field(default_factory=list)
+    """Full ticket detail view."""
+    description: Optional[str] = None
+    fields: Dict[str, Any] = Field(default_factory=dict)
+    closed_by_uid: Optional[str] = None
     close_reason: Optional[str] = None
     closed_at: Optional[str] = None
-
-
-class TicketMessage(BaseModel):
-    id: str
-    sender_name: str = "Unknown"
-    sender_avatar: Optional[str] = None
-    sender_role: str = "user"
-    source: str = "discord"
-    content: str = ""
-    attachments: List[str] = Field(default_factory=list)
-    timestamp: Optional[str] = None
+    discord_meta: Optional[DiscordMeta] = None
 
 
 class TicketThread(BaseModel):
+    """Full ticket detail with its conversation messages."""
     ticket: TicketDetail
     messages: List[TicketMessage] = Field(default_factory=list)
 
 
 class TicketListResponse(BaseModel):
-    linked: bool = Field(
-        description="False when the member has not linked a Discord account; the list is then empty by definition, not by accident.",
-    )
-    tickets: List[TicketSummary] = Field(default_factory=list)
+    total: int
+    items: List[TicketSummary]

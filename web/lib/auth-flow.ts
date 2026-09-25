@@ -18,7 +18,8 @@ export async function googleSignIn(popup: () => Promise<unknown>) {
 }
 
 export function readLink(hash: string, search: string) {
-  const value = new URLSearchParams(hash.replace(/^#/, "")).get("link_token");
+  const query = new URLSearchParams(search);
+  const value = new URLSearchParams(hash.replace(/^#/, "")).get("link_token") ?? query.get("link_token");
   const token = value && /^[A-Za-z0-9_-]{43}$/.test(value) ? value : null;
-  return { token, invalid: Boolean(value && !token) || new URLSearchParams(search).has("discord_id") };
+  return { token, invalid: Boolean(value && !token) || query.has("discord_id") };
 }

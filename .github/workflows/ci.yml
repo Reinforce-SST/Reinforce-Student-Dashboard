@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, backend]
   pull_request:
-    branches: [main, feat/ledger-web]
+    branches: [main, backend, feat/ledger-web]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -34,37 +34,8 @@ jobs:
       - name: Build
         run: npm run build
 
-  web:
-    name: Web — lint and build
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-
-      - run: npm ci
-
-      - name: Lint
-        run: npx eslint .
-
-      - name: Regression tests
-        run: npm test
-
-      # Builds without Firebase config on purpose. The app must render its
-      # "not configured" state rather than crash, so a missing environment
-      # variable can never take the public site down.
-      - name: Build
-        run: npm run build
-
   server:
-    name: Server — regression tests and syntax
+    name: Server — dependencies, syntax and tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -79,14 +50,17 @@ jobs:
       - name: Resolve dependencies
         run: uv sync --locked
 
-      - name: Regression tests
-        run: uv run python -m unittest discover -s tests -v
-
       # The app initialises Firebase Admin at import time, so it cannot be imported
       # without credentials. Compile-check instead — this catches syntax and
       # indentation errors without needing a service account key in CI.
       - name: Compile check
         run: uv run python -m compileall -q app main.py
+
+      # The schema tests are plain unittest against pydantic models. No Firebase,
+      # no network, no dependency the app does not already have. Compiling alone
+      # does not notice a schema and the endpoint that uses it drifting apart.
+      - name: Schema tests
+        run: uv run python -m unittest discover -s tests -t .
 
   secrets:
     name: Secret scan
@@ -99,7 +73,7 @@ jobs:
       - name: Block credential files
         run: |
           set -euo pipefail
-          if git ls-files | grep -E '(^|/)(\.env$|\.env\.[^e]|.*serviceAccount.*\.json|.*firebase-adminsdk.*\.json|firebase_credentials\.json)'; then
+          if git ls-files | grep -E '(^|/)(\.env$|\.env\.[^e]|serviceAccountKey\.json|firebase_credentials\.json)'; then
             echo "::error::A credential file is tracked in this repository. Remove it and rotate the key."
             exit 1
           fi

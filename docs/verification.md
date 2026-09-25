@@ -1,12 +1,22 @@
-# Member dashboard verification and rollout
+# Integrated website, API, and bot rollout
 
-## Local checks
+## Local verification
 
-- `cd server && uv sync --locked && uv run python -m unittest discover -s tests -v`
+- `cd server && uv sync --locked && uv run python -m unittest discover -s tests -t . -q`
+- `cd server && uv run python -m compileall -q app main.py`
 - `cd web && npm ci && npm test && npm run lint && npm run build`
-- YUVI: `uv sync --locked && uv run python -m unittest discover -s tests -v`
+- `cd client && npm ci && npm run build` (legacy client remains until the
+  Vercel project uses `web/`)
 
-Browser verification uses `web/tests/browser-verification.mjs`, run through Playwright MCP. Puppeteer MCP was unavailable in the authoring session. It injects an isolated Firebase session and intercepts API responses in the browser; production code has no test sign-in bypass. Start the local server with the explicitly fake config:
+`web/tests/browser-verification.mjs` runs against the local Next.js dev server
+using an isolated Firebase session and intercepted API responses. It exercises
+the current `/users/*` and `/tickets/*` responses, landing sign-in to dashboard,
+private Discord token, profile save and failure recovery, ticket list/detail,
+desktop/mobile layout, and navigation. It takes screenshots. Puppeteer MCP was
+not available in the authoring environment; the same script ran in headless
+Chrome through Playwright. Browser fixtures do not bypass production auth.
+
+Start the test server with deliberately fake client configuration:
 
 ```sh
 NEXT_PUBLIC_FIREBASE_API_KEY=demo-member-review \
@@ -16,50 +26,35 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8080/api/v1 \
 npm run dev -- --hostname 127.0.0.1 --port 3107
 ```
 
-Pass the exported function to a Playwright page (or remove `export default` to use it as an MCP function expression). Its optional second argument is an existing screenshot directory (default: current directory). It covers desktop/mobile layout, focus return and Escape/navigation dismissal, ticket details, unsafe attachment suppression, profile save/reload/failure and preservation of drafts across ID-token refresh, empty/unlinked/error/retry states, unavailable routes, private link preservation through React effect replay, completed-link preservation through credential refresh, profile-outage recovery, pending Discord roles, and sign-out. Fixture names in screenshots are test data, not production members.
+The browser script exports a `verify(page, screenshotsDir)` function for a
+Playwright page. Its API and Google responses are fixtures, not production data.
 
-## Coordinated rollout
+## Coordinated deployment
 
-1. Review and merge this PR into `feat/ledger-web` before #7 is merged into main. PR #20's landing implementation is already part of that branch. This change removes its low-information statistics block; it does not replace the landing design.
-2. Recover the YUVI service and confirm its current URL. At research time the known `yuvi-oxug` and `yuvi-182k` Render URLs returned HTTP 503. No production settings were changed in this PR.
-3. Ensure both services use the same Firestore project. Set matching `BOT_INTERNAL_SECRET` values on Dashboard API and YUVI. Configure API `YUVI_BOT_URL` to the reachable `/internal/verify-success` endpoint. Without the secret the webhook deliberately fails closed; the website reports role pending.
-4. Confirm Firestore client rules deny all access to `discord_link_tokens` and client writes to `users`. These are Admin-SDK-only records. Set an optional Firestore TTL policy on `discord_link_tokens.expires_at` to clean up expired tokens. Code enforces expiry regardless of TTL.
-5. Deploy the Dashboard API and `web/` frontend together, then the coordinated YUVI PR. Set the bot's `FRONTEND_AUTH_URL` to the deployed **web** `/auth` route. Set `NEXT_PUBLIC_API_BASE_URL` to the live API `/api/v1` URL (the `-ue6h` health endpoint was reachable during research; the older documented URL was not). Verify Firebase authorized domains for this frontend.
-6. Members rerun `/auth`. Old raw-ID links and legacy clients cannot create verified links. Existing records are retained, but ticket access requires fresh ownership proof. A pre-existing conflicting email/Discord pair requires an admin review and unlink; the new flow never silently reassigns it.
-7. Test real Google popup sign-in, a fresh private link, a role grant, role retry, profile save/reload, and an owned ticket on the deployed pair. Check Chrome plus an affected Opera/Zen browser and a phone. A blocked popup gives an allow-popups retry message; redirect is intentionally disabled until compatible hosting exists.
+1. Review the integration PR into `main`. It contains the frontend work from
+   #7 and #23 plus the backend branch. Merging #23 alone into #7 does not deploy
+   the backend.
+2. Deploy the API from this branch and the Next.js `web/` app together. The
+   existing Vercel project has served the legacy `client/` Vite app; change its
+   root directory to `web/` when the team is ready for the Next.js site. The
+   root and `client/vercel.json` files contain Vite rewrites and are not valid
+   configuration for the Next.js app.
+3. Use the same Firebase project in API and web. Configure `NEXT_PUBLIC_API_BASE_URL`
+   with the deployed API's `/api/v1` URL, and authorize the frontend domain in
+   Firebase Authentication. Enable Google sign-in when the team is ready.
+4. Merge and deploy YUVI's secure-link PR #9 and ticket-bridge PR #10 as a
+   coordinated bot release. Point `FRONTEND_AUTH_URL` to the deployed Next.js
+   `/auth` page. Set matching `BOT_INTERNAL_SECRET` values on both backends and
+   `YUVI_BOT_URL` to the reachable bot webhook. The frontend accepts both query
+   and fragment `link_token` URLs; YUVI #9 issues fragment URLs.
+5. Deny client access to `discord_link_tokens` and client writes to `users` in
+   Firestore rules. Existing raw-ID links must be reverified through YUVI `/auth`.
+   Conflicting aliases require an admin review; the API refuses to reassign one.
+6. On the deployed pair, test a real Google sign-in, dashboard redirect, private
+   `/auth` link, role grant and retry, profile save/reload, and an owned Discord
+   ticket. Include an affected Opera/Zen browser and a phone. Confirm the API
+   health endpoint and bot availability before directing members to the site.
 
-The legacy `client/` application remains in the repository. Its raw-ID/direct-bot linking paths are intentionally no longer authorized by these backends. Deploy `web/` as the member experience; do not point YUVI links at the legacy client. Backend tests isolate Firestore and Discord. Browser tests isolate Google and API responses. Live OAuth, production Firestore transactions, and Discord role assignment are not claimed as tested.
-
-## Screenshots
-
-- [Desktop member dashboard](screenshots/member-desktop.png)
-- [Mobile member dashboard](screenshots/member-mobile.png)
-- [Mobile menu](screenshots/member-mobile-menu.png)
-- [Mobile ticket conversation](screenshots/ticket-mobile.png)
-- [Mobile landing page](screenshots/landing-mobile.png)
-- [Mobile profile outage recovery](screenshots/profile-recovery-mobile.png)
-
-## Review outcome
-
-Self-review and a separate read-only review found two issues before delivery:
-reciprocal proof did not validate the primary email, and an ID-token refresh could
-unmount the profile form. Both now have regressions observed failing before the
-fixes and passing afterward. The final suite has 18 API tests, 7 bot tests,
-3 frontend unit tests, and the browser scenarios above. API and YUVI HTTP startup
-were checked with synthetic credentials: health 200, unauthenticated tickets 401,
-and the unconfigured bot webhook 503. No production member records were changed.
-
-A follow-up self-review reproduced and fixed five additional cases:
-
-- A first `/auth/me` or `/auth/sync-user` request could overwrite a Discord link
-  created concurrently. Firestore create-only preconditions now preserve it.
-- A consumed-link retry must reject a primary record whose email has changed.
-- Overlapping bot callbacks could grant twice and send duplicate welcomes while
-  the gateway cache lagged. Per-member locks and fresh Discord REST reads now
-  serialize retries within the bot process; production runs one gateway process.
-- Credential refresh no longer consumes an already completed private link again.
-- A failed initial profile load offers retry, sign-out, and home navigation.
-
-The backend and browser regressions were observed failing before these fixes and
-passing afterward. The documented bot health URLs still returned owner-suspended
-503 responses during this review; live acceptance remains outstanding.
+The backend tests and browser fixtures never touch production Firestore or the
+Discord gateway. A passing PR check does not establish that the live sign-in,
+Firestore transaction, bot webhook, or production Vercel routing works.

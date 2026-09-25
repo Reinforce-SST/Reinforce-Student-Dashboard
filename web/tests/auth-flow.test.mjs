@@ -13,8 +13,10 @@ test('blocked popup gives an actionable error without starting another sign-in',
   assert.equal(result.phase, 'error');
   assert.match(result.error, /allow popups/i);
 });
-test('a private token is accepted only from the fragment', () => {
+test('a private token is accepted from YUVI query links or older fragment links', () => {
   assert.deepEqual(readLink('#link_token=' + 'A'.repeat(43), ''), { token: 'A'.repeat(43), invalid: false });
+  assert.deepEqual(readLink('', '?link_token=' + 'B'.repeat(43)), { token: 'B'.repeat(43), invalid: false });
   assert.deepEqual(readLink('', '?discord_id=123456'), { token: null, invalid: true });
+  assert.deepEqual(readLink('', '?link_token=123'), { token: null, invalid: true });
   assert.deepEqual(readLink('#link_token=123', ''), { token: null, invalid: true });
 });

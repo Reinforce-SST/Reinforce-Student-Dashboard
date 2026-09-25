@@ -1,10 +1,17 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.config import get_settings
-# Import firebase to ensure it initializes when the app starts
-import app.firebase 
+import re
+from app.services.config import get_settings
 
-from app.api.v1.endpoints import auth, tickets  
+from app.api.v1.endpoints import (
+    tickets,
+    blogs,
+    users,
+    contributions,
+    spg,
+    ideas,
+    events,
+)
 
 settings = get_settings()
 app = FastAPI()
@@ -14,8 +21,10 @@ app = FastAPI()
 # trailing slash silently never matches, so CORS fails for that site.
 origins = [
     "http://localhost:3000",
+    "http://localhost:5173",
     "https://reinforce-student-dashboard-xi.vercel.app",
     "https://reinforce-student-dashboard.vercel.app",
+    settings.frontend_url.rstrip("/"),
 ]
 
 # Vercel gives every preview deployment its own hostname, so reviewers cannot be
@@ -33,8 +42,15 @@ origins = [
 # widens access to our own previews and nothing else. If the project moves to a
 # club-owned Vercel team the slug changes and this stops matching, which fails
 # closed rather than open.
+team_slugs = [
+    re.escape(slug.strip())
+    for slug in settings.vercel_team_slugs.split(",")
+    if slug.strip()
+]
 preview_origin_regex = (
-    r"https://reinforce-student-dashboard(-[a-z0-9-]+)?-reinforce3\.vercel\.app"
+    rf"https://reinforce-student-dashboard(-[a-z0-9-]+)?-({'|'.join(team_slugs)})\.vercel\.app"
+    if team_slugs
+    else r"(?!)"
 )
 
 app.add_middleware(
@@ -46,13 +62,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router, prefix="/api/v1")
-app.include_router(tickets.router, prefix="/api/v1")
+API_PREFIX = "/api/v1"
+
+app.include_router(users.router, prefix=API_PREFIX)
+app.include_router(contributions.router, prefix=API_PREFIX)
+app.include_router(spg.router, prefix=API_PREFIX)
+app.include_router(tickets.router, prefix=API_PREFIX)
+app.include_router(blogs.router, prefix=API_PREFIX)
+app.include_router(ideas.router, prefix=API_PREFIX)
+app.include_router(events.router, prefix=API_PREFIX)
+
 
 @app.get("/")
 @app.head("/")
 async def root():
     return {"status": "ok", "service": "Reinforce Student Dashboard API"}
+
 
 @app.get("/health")
 @app.head("/health")

@@ -102,65 +102,121 @@ export type TicketCategory =
   | "resource_request"
   | "support"
   | "idea_jar"
+  | "feedback"
+  | "report"
   | "misc";
 
 export type TicketStatus = "open" | "in_progress" | "resolved" | "closed";
-
-export type TicketAuthor = {
-  discord_id?: string | null;
-  username: string;
-  avatar_url?: string | null;
-};
 
 export type TicketSummary = {
   id: string;
   category: TicketCategory;
   title: string;
   status: TicketStatus;
-  created_by?: TicketAuthor | null;
-  assigned_to?: TicketAuthor | null;
   created_at?: string | null;
   updated_at?: string | null;
   thread_url?: string | null;
 };
 
 export type TicketListResponse = {
-  /** False when the member has not linked Discord — an empty list by definition, not by accident. */
+  /** Derived from the verified member profile, never from an empty ticket list. */
   linked: boolean;
   tickets: TicketSummary[];
 };
+
+type ApiTicketDetail = TicketSummary & {
+  description?: string | null;
+  fields?: Record<string, unknown>;
+  close_reason?: string | null;
+  closed_at?: string | null;
+};
+
+type ApiTicketMessage = {
+  id: string;
+  sender_uid?: string | null;
+  sender_name?: string | null;
+  sender_role: string;
+  content: string;
+  attachments: string[];
+  timestamp?: string | null;
+};
+
+const FIELD_ORDER: Partial<Record<TicketCategory, string[]>> = {
+  spg_registration: ["Project Name & Track", "Team Members", "Duration & Frequency", "Summary & Goals"],
+  resource_request: ["SPG Name", "Resources Requested", "Progress Proof", "Justification"],
+  idea_jar: ["Idea Title", "Track", "Overview"],
+  support: ["Subject", "Details"],
+  misc: ["Subject", "Details"],
+  report: ["Incident Summary", "Report Details"],
+};
+
+function ticketFields(category: TicketCategory, fields: Record<string, unknown>) {
+  const order = FIELD_ORDER[category] ?? [];
+  return Object.entries(fields)
+    .sort(([left], [right]) => {
+      const leftIndex = order.indexOf(left);
+      const rightIndex = order.indexOf(right);
+      if (leftIndex !== -1 || rightIndex !== -1) {
+        if (leftIndex === -1) return 1;
+        if (rightIndex === -1) return -1;
+        return leftIndex - rightIndex;
+      }
+      return left.localeCompare(right);
+    })
+    .map(([label, value]) => ({ label, value: String(value) }));
+}
 
 /* --------------------------------------------------------------- requests */
 
 export const api = {
   syncUser: (token: string) =>
-    request<{ success: boolean; user: StudentProfile }>("/auth/sync-user", token, {
+    request<StudentProfile>("/users/sync", token, {
       method: "POST",
     }),
 
   me: (token: string) =>
-    request<{ success: boolean; user: StudentProfile }>("/auth/me", token),
+    request<StudentProfile>("/users/me", token),
 
   verifyDiscord: (token: string, linkToken: string) =>
-    request<VerifyDiscordResponse>("/auth/verify-discord", token, {
+    request<VerifyDiscordResponse>("/users/verify-discord", token, {
       method: "POST",
       body: JSON.stringify({ link_token: linkToken }),
     }),
 
-  ticket: (token: string, id: string) => request<TicketThread>(`/tickets/${encodeURIComponent(id)}`, token),
+  ticket: async (token: string, id: string): Promise<TicketThread> => {
+    const path = `/tickets/${encodeURIComponent(id)}`;
+    const [detail, messages] = await Promise.all([
+      request<ApiTicketDetail>(path, token),
+      request<ApiTicketMessage[]>(`${path}/messages`, token),
+    ]);
+    return {
+      ticket: {
+        ...detail,
+        description: detail.description ?? "",
+        fields: ticketFields(detail.category, detail.fields ?? {}),
+      },
+      messages: messages.map(message => ({
+        ...message,
+        sender_name: message.sender_name?.trim() || (message.sender_role === "admin" || message.sender_role === "lead" ? "Club team" : "Member"),
+      })),
+    };
+  },
 
-  myTickets: (token: string) => request<TicketListResponse>("/tickets", token),
+  myTickets: async (token: string) => {
+    const data = await request<{ total: number; items: TicketSummary[] }>("/tickets/my", token);
+    return data.items.filter(ticket => ticket.category !== "report").slice(0, 100);
+  },
 
   updateProfile: (token: string, body: ProfileUpdate) =>
-    request<{ success: boolean; message?: string; user: StudentProfile }>(
-      "/auth/profile",
+    request<StudentProfile>(
+      "/users/me",
       token,
-      { method: "PUT", body: JSON.stringify(body) },
+      { method: "PATCH", body: JSON.stringify(body) },
     ),
 
   unlinkDiscord: (token: string) =>
     request<{ success: boolean; message?: string; user: StudentProfile }>(
-      "/auth/unlink-discord",
+      "/users/unlink-discord",
       token,
       { method: "POST" },
     ),
@@ -183,6 +239,8 @@ export const CATEGORY_LABEL: Record<TicketCategory, string> = {
   resource_request: "Resource request",
   support: "Support",
   idea_jar: "Idea Jar",
+  feedback: "Feedback",
+  report: "Confidential report",
   misc: "General",
 };
 
