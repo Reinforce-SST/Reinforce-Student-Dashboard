@@ -6,8 +6,8 @@ export default function MemberLoading({ message }: { message: string }) {
     <Image
       className={styles.loadingLogo}
       src="/brand/logo_main_trim.png"
-      width={190}
-      height={44}
+      width={2221}
+      height={519}
       alt=""
       priority
     />
