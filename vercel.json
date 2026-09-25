@@ -1,7 +1,8 @@
 {
   "services": {
     "frontend": {
-      "root": "web/"
+      "root": "web/",
+      "outputDirectory": "dist"
     }
   },
   "rewrites": [
