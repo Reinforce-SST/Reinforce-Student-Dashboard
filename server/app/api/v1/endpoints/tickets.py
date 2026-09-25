@@ -15,7 +15,12 @@ import uuid
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from google.cloud import firestore
 
-from app.api.security import get_admin_user, get_current_user
+
+from app.api.security import (
+    get_admin_user,
+    get_current_user,
+    verify_internal_bot_secret,
+)
 from app.utils import is_admin_user, iso_str, now_iso
 from app.services.firebase import db
 from app.services.discord_link import linked_discord_id
@@ -688,19 +693,9 @@ def export_ticket_transcript(
 def bot_sync_message(
     ticket_id: str,
     payload: BotSyncMessageRequest,
-    x_internal_secret: Optional[str] = Header(None, alias="X-Internal-Secret"),
+    _authorized: bool = Depends(verify_internal_bot_secret),
 ):
     """Internal webhook called by YUVI bot when a Discord thread message is created."""
-    if (
-        not settings.bot_internal_secret
-        or not x_internal_secret
-        or not secrets.compare_digest(x_internal_secret, settings.bot_internal_secret)
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing internal sync secret.",
-        )
-
     doc_ref = db.collection(TICKETS_COLLECTION).document(ticket_id)
     if not doc_ref.get().exists:
         raise HTTPException(

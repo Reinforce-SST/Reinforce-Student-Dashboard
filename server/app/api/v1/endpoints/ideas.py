@@ -11,7 +11,12 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from google.cloud import firestore
 
-from app.api.security import get_admin_user, get_current_user, get_optional_current_user
+from app.api.security import (
+    get_admin_user,
+    get_current_user,
+    get_optional_current_user,
+    get_user_or_bot,
+)
 from app.utils import is_admin_user, iso_str, now_iso
 from app.services.firebase import db
 from app.schemas.ideas import (
@@ -327,11 +332,12 @@ def get_idea(
 )
 def create_idea(
     payload: IdeaCreate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_user_or_bot),
 ) -> IdeaDetail:
     """Submit an idea. Automatically verified if submitted by an admin, else queued for review."""
-    uid = current_user["uid"]
-    is_admin = is_admin_user(current_user)
+    uid = payload.creator_uid or current_user["uid"]
+    # If submitted directly by a human admin or bot on behalf of an admin
+    is_admin = is_admin_user(current_user) and not payload.creator_uid
     now = now_iso()
     idea_id = f"idea_{uuid.uuid4().hex[:8]}"
 

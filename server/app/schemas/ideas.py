@@ -64,7 +64,7 @@ class IdeaUpvoteToggleResponse(BaseModel):
 # Can be Edited Later though
 class IdeaCreate(BaseModel):
     """Payload to submit a new idea."""
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     title: TitleStr
     description: DescriptionStr
@@ -73,6 +73,7 @@ class IdeaCreate(BaseModel):
     prerequisites: List[str] = Field(default_factory=list, max_length=20)
     rough_roadmap: List[str] = Field(default_factory=list, max_length=20)
     learning_outcomes: List[str] = Field(default_factory=list, max_length=20)
+    creator_uid: Optional[str] = None
 
 
 class IdeaUpdate(BaseModel):

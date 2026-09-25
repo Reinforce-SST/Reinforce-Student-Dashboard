@@ -408,28 +408,57 @@ def get_leaderboard(
 
 @router.get("/{id_or_email}", response_model=UserPublicResponse, summary="Get public member profile")
 def get_user_profile(id_or_email: str) -> UserPublicResponse:
-    """Fetch public member profile by UID or email."""
-    # 1. Try UID direct lookup
-    doc = db.collection(USERS_COLLECTION).document(id_or_email).get()
+    """Fetch public member profile by UID, email, or linked Discord ID."""
+    clean_target = id_or_email.strip()
+
+    # 1. Try UID direct lookup or compatibility alias
+    doc = db.collection(USERS_COLLECTION).document(clean_target).get()
     if doc.exists:
         data = doc.to_dict() or {}
+        # If it's a legacy or alias doc pointing to a canonical UID
+        if data.get("firebase_uid"):
+            canonical = db.collection(USERS_COLLECTION).document(data["firebase_uid"]).get()
+            if canonical.exists:
+                return _to_user_public(canonical.id, canonical.to_dict() or {})
         return _to_user_public(doc.id, data)
 
     # 2. Try email query
-    query = (
+    query_email = (
         db.collection(USERS_COLLECTION)
-        .where("email", "==", id_or_email.lower().strip())
+        .where("email", "==", clean_target.lower())
         .limit(1)
         .stream()
     )
-    for match in query:
-        return _to_user_public(match.id, match.to_dict() or {})
+    for match in query_email:
+        data = match.to_dict() or {}
+        if data.get("firebase_uid"):
+            canonical = db.collection(USERS_COLLECTION).document(data["firebase_uid"]).get()
+            if canonical.exists:
+                return _to_user_public(canonical.id, canonical.to_dict() or {})
+        return _to_user_public(match.id, data)
+
+    # 3. Try discord_id query if numeric
+    if clean_target.isdigit():
+        query_discord = (
+            db.collection(USERS_COLLECTION)
+            .where("discord_id", "==", clean_target)
+            .limit(1)
+            .stream()
+        )
+        for match in query_discord:
+            data = match.to_dict() or {}
+            if data.get("firebase_uid"):
+                canonical = db.collection(USERS_COLLECTION).document(data["firebase_uid"]).get()
+                if canonical.exists:
+                    return _to_user_public(canonical.id, canonical.to_dict() or {})
+            return _to_user_public(match.id, data)
 
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member profile not found")
 
 
 @router.get("", response_model=UserListResponse, summary="Browse member directory")
 def list_users(
+    discord_id: Optional[str] = Query(None, description="Lookup user by linked Discord ID"),
     search: Optional[str] = Query(None, description="Search by name, email, or skill"),
     track: Optional[str] = Query(None, description="Filter by active track points > 0"),
     tier: Optional[MemberTier] = Query(None, description="Filter by tier"),
@@ -444,6 +473,9 @@ def list_users(
     for doc in docs:
         data = doc.to_dict() or {}
         if doc.id.isdigit() and not data.get("full_name"):
+            continue
+
+        if discord_id and str(data.get("discord_id")) != str(discord_id).strip():
             continue
 
         public_user = _to_user_public(doc.id, data)
