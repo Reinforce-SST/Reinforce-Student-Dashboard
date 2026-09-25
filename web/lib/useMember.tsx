@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import Link from "next/link";
 import { api, type StudentProfile, type ProfileUpdate, type TicketListResponse } from "./api";
 import { useAuth } from "./useAuth";
+import MemberLoading from "@/components/dashboard/MemberLoading";
 import styles from "@/components/dashboard/MemberContent.module.css";
 
 type MemberState = { token: string; profile: StudentProfile; save: (update: ProfileUpdate) => Promise<void> };
@@ -26,7 +27,7 @@ export function MemberProvider({ children }: { children: ReactNode }) {
     return () => { active = false; };
   }, [token, identity, attempt]);
 
-  if (!token || !identity || state?.identity !== identity) return <p role="status">Loading your member record…</p>;
+  if (!token || !identity || state?.identity !== identity) return <MemberLoading message="Opening your dashboard…" />;
   if (!state.profile) return <main className={`${styles.page} ${styles.recovery}`}><section className={styles.card}>
     <h1 className={styles.title}>Your profile is unavailable</h1>
     <p role="alert" className={styles.muted}>{state.error}</p>

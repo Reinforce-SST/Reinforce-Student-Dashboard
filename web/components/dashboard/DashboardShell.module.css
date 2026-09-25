@@ -10,5 +10,12 @@
 .close { display: grid; place-items: center; margin: 0 16px 0 auto; min-height: 44px; min-width: 44px; color: var(--member-muted); }
 .authGate { display: grid; place-items: center; min-height: 100dvh; padding: 24px; text-align: center; color: var(--member-muted); }
 .authGate a { color: var(--brand); }
+.memberLoading { min-height: 100dvh; padding: 32px 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--member-bg); text-align: center; }
+.loadingLogo { display: block; width: 190px; height: auto; margin-bottom: 36px; }
+.loadingTrack { position: relative; display: block; width: 112px; height: 2px; overflow: hidden; background: var(--member-line); margin-bottom: 24px; }
+.loadingTrack::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 38%; background: var(--brand); animation: loadingSweep 1.5s ease-in-out infinite; }
+.loadingMessage { margin: 0; color: var(--member-muted); font-size: .875rem; font-weight: 500; letter-spacing: -.01em; }
+@keyframes loadingSweep { from { transform: translateX(-120%); } to { transform: translateX(300%); } }
+@media (prefers-reduced-motion: reduce) { .loadingTrack::before { width: 100%; animation: none; } }
 @media (max-width: 1100px) { .contentArea { padding-inline: 28px; } }
 @media (max-width: 900px) { .desktopSidebar { display: none; } .contentArea { padding: 30px 20px 48px; } }
