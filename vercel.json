@@ -1,8 +1,14 @@
 {
+  "services": {
+    "frontend": {
+      "root": "web/",
+      "outputDirectory": "dist"
+    }
+  },
   "rewrites": [
     {
       "source": "/(.*)",
-      "destination": "/index.html"
+      "destination": { "service": "frontend" }
     }
   ]
 }

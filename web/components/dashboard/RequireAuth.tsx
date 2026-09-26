@@ -3,6 +3,7 @@
 import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/useAuth";
+import MemberLoading from "./MemberLoading";
 import styles from "./DashboardShell.module.css";
 
 /**
@@ -28,11 +29,7 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
   }, [loading, allowed, router]);
 
   if (loading) {
-    return (
-      <div className={styles.authGate}>
-        <p>Checking your session…</p>
-      </div>
-    );
+    return <MemberLoading message="Checking your session…" />;
   }
 
   if (!allowed) {

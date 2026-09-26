@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, backend]
   pull_request:
-    branches: [main, feat/ledger-web]
+    branches: [main, backend, feat/ledger-web]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -52,19 +52,18 @@ jobs:
       - run: npm ci
 
       - name: Lint
-        run: npx eslint .
+        run: npm run lint
 
       - name: Regression tests
         run: npm test
 
-      # Builds without Firebase config on purpose. The app must render its
-      # "not configured" state rather than crash, so a missing environment
-      # variable can never take the public site down.
+      # The public page must render its configured-state message even when a
+      # preview does not have Firebase environment variables.
       - name: Build
         run: npm run build
 
   server:
-    name: Server — regression tests and syntax
+    name: Server — dependencies, syntax and tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -79,14 +78,11 @@ jobs:
       - name: Resolve dependencies
         run: uv sync --locked
 
-      - name: Regression tests
-        run: uv run python -m unittest discover -s tests -v
-
-      # The app initialises Firebase Admin at import time, so it cannot be imported
-      # without credentials. Compile-check instead — this catches syntax and
-      # indentation errors without needing a service account key in CI.
       - name: Compile check
         run: uv run python -m compileall -q app main.py
+
+      - name: Regression tests
+        run: uv run python -m unittest discover -s tests -t .
 
   secrets:
     name: Secret scan

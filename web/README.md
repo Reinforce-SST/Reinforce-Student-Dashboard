@@ -35,8 +35,9 @@ lib/
 ## Two things not to break
 
 **`/auth` is a deep-link target.** The bot sends members to
-`{FRONTEND_AUTH_URL}?discord_id={id}`. That variable lives on Render in the
-bot's repository. Moving or gating this route breaks verification silently.
+`{FRONTEND_AUTH_URL}#link_token={private-token}`. The page also accepts
+`?link_token` for compatibility. The variable lives on Render in
+the bot's repository. Moving or gating this route breaks verification silently.
 
 **The palette is fixed.** `#E5B731` on dark, `#886A11` on light — the same hue,
 darkened so it passes contrast on paper. Do not add a second accent colour.

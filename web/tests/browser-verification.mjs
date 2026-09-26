@@ -1,4 +1,4 @@
-/** Run with Playwright MCP against the local dev server documented in verification.md.
+/** Run with Playwright against the local dev server documented in verification.md.
  * Fixtures live only at the browser/network boundary, never in production code.
  */
 export default async function verify(page, screenshots = '.') {
@@ -20,11 +20,12 @@ export default async function verify(page, screenshots = '.') {
     const path = req.url().split('?')[0];
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': base, 'access-control-allow-headers': 'authorization,content-type', 'access-control-allow-methods': 'GET,POST,PUT,OPTIONS' } });
     check(['Bearer local-review-token', 'Bearer local-review-token-refreshed'].includes(req.headers().authorization), 'API request lost Firebase credential');
-    if (path.endsWith('/me') && profileFails) return route.fulfill({ status: 503, json: { detail: 'Unavailable' } });
-    if (path.endsWith('/sync-user') && syncFails) return route.fulfill({ status: 503, json: { detail: 'Session sync unavailable' } });
-    if (path.endsWith('/profile') && req.method() === 'PUT') {
+    if (path.endsWith('/users/me') && profileFails && req.method() === 'GET') return route.fulfill({ status: 503, json: { detail: 'Unavailable' } });
+    if (path.endsWith('/users/sync') && syncFails) return route.fulfill({ status: 503, json: { detail: 'Session sync unavailable' } });
+    if (path.endsWith('/users/me') && req.method() === 'PATCH') {
       if (saveFails) return route.fulfill({ status: 503, json: { detail: 'Save temporarily unavailable' } });
       profile = { ...profile, ...req.postDataJSON() };
+      return route.fulfill({ json: profile });
     }
     if (path.endsWith('/verify-discord')) {
       const body = req.postDataJSON();
@@ -32,12 +33,15 @@ export default async function verify(page, screenshots = '.') {
       linking.push(body);
       return route.fulfill({ json: { success: true, user: profile, bot_response: { status: 'bot_unreachable', detail: 'The bot could not confirm your role. Run /auth in Discord again to retry.' } } });
     }
-    if (path.endsWith('/tickets')) {
+    if (path.endsWith('/tickets/my')) {
       if (mode === 'error') return route.fulfill({ status: 503, json: { detail: 'Unavailable' } });
-      return route.fulfill({ json: { linked: mode !== 'unlinked', tickets: mode === 'ready' ? [ticket] : [] } });
+      const items = mode === 'ready' ? [ticket] : [];
+      return route.fulfill({ json: { total: items.length, items } });
     }
-    if (path.endsWith('/tickets/review-ticket')) return route.fulfill({ json: { ticket: { ...ticket, description: 'Request submitted through Discord.', fields: [{ label: 'Resources Requested', value: 'A shared GPU session to test our model.' }] }, messages: [{ id: 'message-1', sender_name: 'Review Member', sender_role: 'user', content: 'The model is ready for a training run.', attachments: ['https://example.com/progress.png', 'javascript:alert(1)'], timestamp: '2026-09-24T12:00:00Z' }] } });
-    return route.fulfill({ json: { success: true, user: profile } });
+    if (path.endsWith('/tickets/review-ticket/messages')) return route.fulfill({ json: [{ id: 'message-1', sender_name: 'Review Member', sender_role: 'user', content: 'The model is ready for a training run.', attachments: ['https://example.com/progress.png', 'javascript:alert(1)'], timestamp: '2026-09-24T12:00:00Z' }] });
+    if (path.endsWith('/tickets/review-ticket')) return route.fulfill({ json: { ...ticket, description: 'Request submitted through Discord.', fields: { 'Resources Requested': 'A shared GPU session to test our model.' } } });
+    if (path.endsWith('/users/me') || path.endsWith('/users/sync')) return route.fulfill({ json: mode === 'unlinked' ? { ...profile, discord_id: null, is_verified: false } : profile });
+    return route.fulfill({ status: 404, json: { detail: 'Unexpected API route' } });
   });
   await page.goto(base + '/');
   const now = Date.now();
@@ -111,7 +115,7 @@ export default async function verify(page, screenshots = '.') {
   await shot('profile-desktop');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByLabel('Full name').fill('Draft awaiting token refresh');
-  const refreshed = page.waitForResponse(response => response.url().endsWith('/auth/me') && response.request().headers().authorization === 'Bearer local-review-token-refreshed');
+  const refreshed = page.waitForResponse(response => response.url().endsWith('/users/me') && response.request().headers().authorization === 'Bearer local-review-token-refreshed');
   async function rotateCredential(value) { await page.evaluate(async value => {
     await new Promise((resolve, reject) => {
       const req = indexedDB.open('firebaseLocalStorageDb', 1);

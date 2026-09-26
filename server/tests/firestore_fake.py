@@ -16,6 +16,11 @@ class Ref:
         return Snapshot(self, self.db.data.get(self.path))
     def set(self, data, merge=False):
         self.db.data[self.path] = {**(self.db.data.get(self.path, {}) if merge else {}), **deepcopy(data)}
+    def create(self, data):
+        from google.api_core.exceptions import AlreadyExists
+        if self.path in self.db.data:
+            raise AlreadyExists('Document already exists')
+        self.set(data)
     def delete(self): self.db.data.pop(self.path, None)
     def collection(self, name): return Query(self.db, self.path + '/' + name)
 
@@ -36,6 +41,7 @@ class Query:
                 if path.rsplit('/', 1)[0] == self.path and all(value(data, f) == v for f, v in self.filters)]
         if self.order: docs.sort(key=lambda d: value(d.data, self.order), reverse=self.direction == 'DESCENDING')
         return iter(docs if self.cap is None else docs[:self.cap])
+    def get(self): return list(self.stream())
 
 class Transaction:
     def __init__(self): self.writes = []

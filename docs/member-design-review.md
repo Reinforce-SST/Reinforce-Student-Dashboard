@@ -6,7 +6,7 @@ prioritizes recent requests, with account details alongside them. Tickets use
 readable rows with search and status filters; profile fields are grouped by purpose.
 No mock records, new dependencies, database fields or backend endpoints were added.
 
-Normal landing-page sign-in now opens `/dashboard` after `/auth/sync-user` succeeds.
+Normal landing-page sign-in now opens `/dashboard` after `/users/sync` succeeds.
 Failed sync stays on `/auth` with retry. Private Discord links keep their completion
 or pending-role message visible, and invalid links retain their recovery guidance.
 The route and private-token contract are unchanged.
