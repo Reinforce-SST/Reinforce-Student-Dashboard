@@ -137,7 +137,15 @@ function ProfileClientContent() {
     return false;
   }, [queryId, loggedInProfile]);
 
-  const [activeProfile, setActiveProfile] = useState<StudentProfile | null>(isOwner ? loggedInProfile : null);
+  const [fetchedProfile, setFetchedProfile] = useState<StudentProfile | null>(null);
+  const [profileOverrides, setProfileOverrides] = useState<Partial<StudentProfile>>({});
+
+  const activeProfile = useMemo(() => {
+    const base = isOwner ? loggedInProfile : fetchedProfile;
+    if (!base) return null;
+    return { ...base, ...profileOverrides };
+  }, [isOwner, loggedInProfile, fetchedProfile, profileOverrides]);
+
   const [profileLoading, setProfileLoading] = useState(false);
   const [notFound, setNotFound] = useState(false);
 
@@ -152,15 +160,12 @@ function ProfileClientContent() {
   const [historyTab, setHistoryTab] = useState<"all" | ContributionTrack>("all");
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<"all" | ContributionCategory>("all");
 
-  // Fetch Profile data
+  // Fetch Profile data (only when viewing another user's profile)
   useEffect(() => {
-    if (isOwner) {
-      setActiveProfile(loggedInProfile);
+    if (isOwner || !queryId) {
       setNotFound(false);
       return;
     }
-
-    if (!queryId) return;
 
     let isMounted = true;
     setProfileLoading(true);
@@ -169,7 +174,7 @@ function ProfileClientContent() {
       .then((data) => {
         if (!isMounted) return;
         if (data && (data.id || data.email)) {
-          setActiveProfile(data);
+          setFetchedProfile(data);
           setNotFound(false);
         } else {
           setNotFound(true);
@@ -186,7 +191,7 @@ function ProfileClientContent() {
     return () => {
       isMounted = false;
     };
-  }, [isOwner, queryId, token, loggedInProfile]);
+  }, [isOwner, queryId, token]);
 
   // Fetch Live Contributions from API
   const fetchContributions = useCallback(async () => {
@@ -197,7 +202,7 @@ function ProfileClientContent() {
         const res = await api.getMyContributions(token, 100);
         setLiveContributions(res?.items || []);
       } else {
-        const targetUserId = activeProfile?.id || queryId;
+        const targetUserId = queryId;
         if (targetUserId) {
           const res = await api.getUserContributions(token, targetUserId, 100);
           setLiveContributions(res?.items || []);
@@ -208,7 +213,7 @@ function ProfileClientContent() {
     } finally {
       setContributionsLoading(false);
     }
-  }, [token, isOwner, activeProfile?.id, queryId]);
+  }, [token, isOwner, queryId]);
 
   useEffect(() => {
     fetchContributions();
@@ -326,12 +331,13 @@ function ProfileClientContent() {
       const res = await api.uploadAvatar(token, file);
       if (res && res.avatar_url) {
         setEditFormAvatarUrl(res.avatar_url);
-        setActiveProfile((prev) => (prev ? { ...prev, avatar_url: res.avatar_url } : prev));
+        setProfileOverrides((prev) => ({ ...prev, avatar_url: res.avatar_url }));
         setSaveSuccessMsg("Avatar uploaded successfully!");
         setTimeout(() => setSaveSuccessMsg(""), 4000);
       }
-    } catch (err: any) {
-      setAvatarUploadError(err.message || "Failed to upload avatar image.");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to upload avatar image.";
+      setAvatarUploadError(msg);
     } finally {
       setIsUploadingAvatar(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -373,27 +379,24 @@ function ProfileClientContent() {
         await api.updateProfile(token, payload);
       }
 
-      setActiveProfile((prev) =>
-        prev
-          ? {
-              ...prev,
-              full_name: payload.full_name,
-              avatar_url: payload.avatar_url,
-              bio: payload.bio,
-              batch_year: payload.batch_year,
-              skills: parsedSkills,
-              social_links: updatedSocials,
-            }
-          : prev
-      );
+      setProfileOverrides((prev) => ({
+        ...prev,
+        full_name: payload.full_name,
+        avatar_url: payload.avatar_url,
+        bio: payload.bio,
+        batch_year: payload.batch_year,
+        skills: parsedSkills,
+        social_links: updatedSocials,
+      }));
 
       setIsSaving(false);
       setIsEditModalOpen(false);
       setSaveSuccessMsg("Profile updated successfully!");
       setTimeout(() => setSaveSuccessMsg(""), 4000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setIsSaving(false);
-      setSaveError(err.message || "Failed to update profile details. Please try again.");
+      const msg = err instanceof Error ? err.message : "Failed to update profile details. Please try again.";
+      setSaveError(msg);
     }
   };
 

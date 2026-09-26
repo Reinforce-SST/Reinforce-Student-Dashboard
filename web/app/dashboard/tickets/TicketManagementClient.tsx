@@ -18,7 +18,7 @@ export interface TicketCreatePayload {
   category: TicketCategory;
   title: string;
   description?: string;
-  fields: Record<string, any>;
+  fields: Record<string, unknown>;
   spg_id?: string;
 }
 
@@ -34,7 +34,7 @@ export type TicketItem = {
   updatedAt: string;
   author: string;
   spg_id?: string;
-  fields: Record<string, any>;
+  fields: Record<string, unknown>;
 };
 
 type TicketTypeOption = {
@@ -255,7 +255,7 @@ export default function TicketManagementClient() {
   }, [isModalOpen]);
 
   const buildTicketCreatePayload = (): TicketCreatePayload => {
-    let fieldsObj: Record<string, any> = {};
+    let fieldsObj: Record<string, unknown> = {};
 
     if (selectedCategory === "spg_registration") {
       fieldsObj = {
@@ -800,7 +800,7 @@ export default function TicketManagementClient() {
                         id="modal-spg-track"
                         className={styles.selectInput}
                         value={spgTrack}
-                        onChange={(e) => setSpgTrack(e.target.value as any)}
+                        onChange={(e) => setSpgTrack(e.target.value as "research" | "product" | "kaggle" | "general")}
                       >
                         <option value="research">Research Track (Red)</option>
                         <option value="product">Product Track (Green)</option>
@@ -987,7 +987,7 @@ export default function TicketManagementClient() {
                       id="modal-idea-track"
                       className={styles.selectInput}
                       value={ideaTrack}
-                      onChange={(e) => setIdeaTrack(e.target.value as any)}
+                      onChange={(e) => setIdeaTrack(e.target.value as "research" | "product" | "kaggle" | "general")}
                     >
                       <option value="research">Research Track</option>
                       <option value="product">Product Track</option>

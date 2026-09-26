@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { useMember } from "@/lib/useMember";
-import { useAuth } from "@/lib/useAuth";
 import MemberIcon from "./MemberIcon";
 import styles from "./Header.module.css";
 
@@ -16,6 +15,7 @@ const titles: Record<string, string> = {
   "/dashboard/articles": "Article Hub",
   "/dashboard/ideas": "Idea Jar",
   "/dashboard/leaderboard": "Club Leaderboard",
+  "/dashboard/admin": "Admin Command Center",
   "/profile": "Member Profile",
 };
 
@@ -27,10 +27,8 @@ export default function Header({
   menuOpen: boolean;
 }) {
   const { profile } = useMember();
-  const { signOut } = useAuth();
   const pathname = usePathname();
   const [searchQuery, setSearchQuery] = useState("");
-  const [error, setError] = useState("");
 
   const pageTitle = titles[pathname] || "Dashboard Overview";
 
@@ -99,8 +97,6 @@ export default function Header({
           <div className={styles.userAvatar}>{initials}</div>
         </Link>
       </div>
-
-      {error && <p role="alert" className={styles.error}>{error}</p>}
     </header>
   );
 }

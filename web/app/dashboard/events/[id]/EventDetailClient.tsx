@@ -3,11 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import MemberIcon from "@/components/dashboard/MemberIcon";
-import { type EventDocument } from "@/lib/eventsData";
+import { type EventDocument } from "@/lib/api";
 import styles from "./EventDetail.module.css";
 
 function formatInline(text: string): React.ReactNode[] {
-  // Regex to split by **bold** and `code`
   const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
   return parts.map((part, i) => {
     if (part.startsWith("**") && part.endsWith("**")) {
@@ -48,12 +47,11 @@ function formatInline(text: string): React.ReactNode[] {
   });
 }
 
-function renderMarkdown(md?: string) {
+function renderMarkdown(md?: string | null) {
   if (!md) {
     return <p className={styles.mdParagraph}>No additional specifications published for this event yet.</p>;
   }
 
-  // Safely normalize compacted markdown without corrupting hashes
   const normalized = md
     .replace(/([^\n#])\s*(#{1,6}\s+)/g, "$1\n\n$2")
     .replace(/([^\n])\s*(\d+\.\s+\*\*)/g, "$1\n$2")
@@ -152,9 +150,9 @@ function renderMarkdown(md?: string) {
 
 export default function EventDetailClient({ event }: { event: EventDocument }) {
   const [isRegistered, setIsRegistered] = useState(false);
-  const [registeredCount, setRegisteredCount] = useState(event.stats.registered_count);
+  const [registeredCount, setRegisteredCount] = useState(event.stats?.registered_count ?? 0);
 
-  // Feedback State (conforming to FeedbackSubmitRequest schema)
+  // Feedback State
   const [ratingContent, setRatingContent] = useState(5);
   const [ratingOrg, setRatingOrg] = useState(5);
   const [ratingOverall, setRatingOverall] = useState(5);
@@ -194,16 +192,18 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
     }
   };
 
-  const formattedStartTime = new Date(event.schedule.start_time).toLocaleString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZoneName: "short",
-  });
+  const formattedStartTime = event.schedule?.start_time
+    ? new Date(event.schedule.start_time).toLocaleString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZoneName: "short",
+      })
+    : "TBD";
 
-  const formattedDeadline = event.schedule.registration_deadline
+  const formattedDeadline = event.schedule?.registration_deadline
     ? new Date(event.schedule.registration_deadline).toLocaleString("en-US", {
         month: "short",
         day: "numeric",
@@ -212,7 +212,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
       })
     : "Until start time";
 
-  const capacity = event.participation.max_participants || 100;
+  const capacity = event.participation?.max_participants || 100;
   const fillPercent = Math.min(100, Math.round((registeredCount / capacity) * 100));
 
   return (
@@ -224,9 +224,11 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
         </Link>
 
         <div className={styles.statusChipsRow}>
-          <span className={styles.formatChip}>{event.format.toUpperCase()}</span>
-          <span className={getTrackChipClass(event.track)}>{event.track.toUpperCase()} TRACK</span>
-          <span className={styles.typeChip}>{event.event_type.toUpperCase()}</span>
+          <span className={styles.formatChip}>{(event.format || "ONLINE").toUpperCase()}</span>
+          <span className={getTrackChipClass(event.track || "misc")}>
+            {(event.track || "GENERAL").toUpperCase()} TRACK
+          </span>
+          <span className={styles.typeChip}>{(event.event_type || "EVENT").toUpperCase()}</span>
         </div>
       </div>
 
@@ -254,12 +256,12 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
             ) : (
               <>
                 <MemberIcon name="plus" size={16} />
-                {event.participation.mode === "team" ? "Register Team (RSVP)" : "RSVP for Event"}
+                {event.participation?.mode === "team" ? "Register Team (RSVP)" : "RSVP for Event"}
               </>
             )}
           </button>
 
-          {event.venue_info.meeting_url && (
+          {event.venue_info?.meeting_url && (
             <a
               href={event.venue_info.meeting_url}
               target="_blank"
@@ -267,7 +269,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
               className={styles.discordThreadLink}
             >
               <MemberIcon name="discord" size={16} />
-              Open Discord Stage
+              Open Online Meeting / Stage
             </a>
           )}
         </div>
@@ -284,7 +286,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
               Event Agenda & Specifications
             </h2>
             <div className={styles.sectionBody}>
-              {renderMarkdown(event.detailed_info)}
+              {renderMarkdown(event.detailed_info || event.description)}
             </div>
           </section>
 
@@ -298,9 +300,9 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
             <div className={styles.spgInfoBox}>
               <div className={styles.spgHeader}>
                 <span className={styles.spgTag}>
-                  {event.participation.mode === "team" ? "TEAM EVENT" : "SOLO PARTICIPATION"}
+                  {event.participation?.mode === "team" ? "TEAM EVENT" : "SOLO PARTICIPATION"}
                 </span>
-                {event.participation.requires_event_spg && (
+                {event.participation?.requires_event_spg && (
                   <span style={{ fontSize: "0.72rem", color: "#4ade80", fontWeight: "750" }}>
                     ✓ Auto-provisions temporary Event SPG
                   </span>
@@ -311,8 +313,8 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                 <div className={styles.spgRuleItem}>
                   <span className={styles.ruleLabel}>Team Size</span>
                   <span className={styles.ruleVal}>
-                    {event.participation.mode === "team"
-                      ? `${event.participation.min_team_size} - ${event.participation.max_team_size} Members`
+                    {event.participation?.mode === "team"
+                      ? `${event.participation.min_team_size || 1} - ${event.participation.max_team_size || 4} Members`
                       : "Individual (Solo)"}
                   </span>
                 </div>
@@ -320,8 +322,8 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                 <div className={styles.spgRuleItem}>
                   <span className={styles.ruleLabel}>SPG Auto-Disband</span>
                   <span className={styles.ruleVal}>
-                    {event.participation.requires_event_spg
-                      ? `${event.participation.spg_auto_disband_days} Days after event`
+                    {event.participation?.requires_event_spg
+                      ? `${event.participation?.spg_auto_disband_days || 3} Days after event`
                       : "N/A"}
                   </span>
                 </div>
@@ -329,8 +331,8 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                 <div className={styles.spgRuleItem}>
                   <span className={styles.ruleLabel}>Access Scope</span>
                   <span className={styles.ruleVal}>
-                    {event.eligibility.access_scope === "open_to_all"
-                      ? "Open to All SST Students"
+                    {event.eligibility?.access_scope === "open_to_all"
+                      ? "Open to All Students"
                       : "Members Only"}
                   </span>
                 </div>
@@ -338,7 +340,9 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                 <div className={styles.spgRuleItem}>
                   <span className={styles.ruleLabel}>Eligibility</span>
                   <span className={styles.ruleVal}>
-                    Batches &apos;22-&apos;25 (All Tiers)
+                    {event.eligibility?.allowed_years?.length
+                      ? `Years: ${event.eligibility.allowed_years.join(", ")}`
+                      : "All Batches"}
                   </span>
                 </div>
               </div>
@@ -353,7 +357,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
             </h2>
 
             <div className={styles.resourcesList}>
-              {event.resources.slides_url && (
+              {event.resources?.slides_url && (
                 <a
                   href={event.resources.slides_url}
                   target="_blank"
@@ -361,10 +365,10 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                   className={styles.resourceLinkItem}
                 >
                   <span>📄 Presentation Slides & Technical Brief</span>
-                  <span>Open PDF →</span>
+                  <span>Open Slides →</span>
                 </a>
               )}
-              {event.resources.writeup_url && (
+              {event.resources?.writeup_url && (
                 <a
                   href={event.resources.writeup_url}
                   target="_blank"
@@ -375,7 +379,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                   <span>GitHub →</span>
                 </a>
               )}
-              {event.resources.recording_url && (
+              {event.resources?.recording_url && (
                 <a
                   href={event.resources.recording_url}
                   target="_blank"
@@ -386,109 +390,14 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                   <span>Watch →</span>
                 </a>
               )}
+              {!event.resources?.slides_url &&
+                !event.resources?.writeup_url &&
+                !event.resources?.recording_url && (
+                  <p style={{ color: "#8c8c98", fontSize: "0.82rem", margin: 0 }}>
+                    Artifacts and slides will be uploaded here following the live session.
+                  </p>
+                )}
             </div>
-          </section>
-
-          {/* Member Feedback Form */}
-          <section className={styles.feedbackCard} aria-label="Submit Feedback">
-            <h2 className={styles.sectionTitle}>
-              <MemberIcon name="message" size={18} />
-              Member Feedback & Rating
-            </h2>
-            <p style={{ fontSize: "0.78rem", color: "#8c8c98", margin: 0 }}>
-              Help core leads improve technical depth and organizing quality.
-            </p>
-
-            {feedbackSubmitted ? (
-              <div
-                style={{
-                  background: "rgba(74, 222, 128, 0.15)",
-                  border: "1px solid rgba(74, 222, 128, 0.3)",
-                  color: "#4ade80",
-                  padding: "14px 18px",
-                  borderRadius: "10px",
-                  fontSize: "0.82rem",
-                  fontWeight: "750",
-                }}
-              >
-                ✓ Thank you! Your feedback has been submitted to the organizing ledger.
-              </div>
-            ) : (
-              <form onSubmit={handleSubmitFeedback} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                <div className={styles.ratingGroup}>
-                  <div className={styles.ratingBox}>
-                    <span className={styles.ratingLabel}>Content Depth</span>
-                    <div className={styles.starButtons}>
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <button
-                          key={star}
-                          type="button"
-                          className={`${styles.starBtn} ${ratingContent >= star ? styles.starActive : ""}`}
-                          onClick={() => setRatingContent(star)}
-                        >
-                          ★
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className={styles.ratingBox}>
-                    <span className={styles.ratingLabel}>Organization</span>
-                    <div className={styles.starButtons}>
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <button
-                          key={star}
-                          type="button"
-                          className={`${styles.starBtn} ${ratingOrg >= star ? styles.starActive : ""}`}
-                          onClick={() => setRatingOrg(star)}
-                        >
-                          ★
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className={styles.ratingBox}>
-                    <span className={styles.ratingLabel}>Overall Value</span>
-                    <div className={styles.starButtons}>
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <button
-                          key={star}
-                          type="button"
-                          className={`${styles.starBtn} ${ratingOverall >= star ? styles.starActive : ""}`}
-                          onClick={() => setRatingOverall(star)}
-                        >
-                          ★
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <textarea
-                  className={styles.feedbackTextarea}
-                  placeholder="Key takeaways or technical improvements for next time..."
-                  value={takeaways}
-                  onChange={(e) => setTakeaways(e.target.value)}
-                />
-
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "0.76rem", color: "#a2a2b0", cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      checked={isAnonymous}
-                      onChange={(e) => setIsAnonymous(e.target.checked)}
-                      style={{ accentColor: "var(--brand, #E5B731)" }}
-                    />
-                    Submit anonymously
-                  </label>
-
-                  <button type="submit" className={styles.submitFeedbackBtn}>
-                    Submit Feedback →
-                  </button>
-                </div>
-              </form>
-            )}
           </section>
         </div>
 
@@ -498,7 +407,9 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
           <div className={styles.pointsRewardCard}>
             <div className={styles.pointsTextGroup}>
               <span className={styles.pointsLabel}>Merit Points Reward</span>
-              <span className={styles.pointsAmount}>+{event.points_reward.attendance_points} PTS</span>
+              <span className={styles.pointsAmount}>
+                +{event.points_reward?.attendance_points ?? 0} PTS
+              </span>
             </div>
             <MemberIcon name="award" size={28} />
           </div>
@@ -527,7 +438,9 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                 </div>
                 <div className={styles.specContent}>
                   <span className={styles.specLabel}>Estimated Duration</span>
-                  <span className={styles.specValue}>{event.schedule.duration_minutes || 120} Minutes</span>
+                  <span className={styles.specValue}>
+                    {event.schedule?.duration_minutes || 120} Minutes
+                  </span>
                 </div>
               </div>
 
@@ -538,7 +451,9 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                 <div className={styles.specContent}>
                   <span className={styles.specLabel}>Venue / Stage</span>
                   <span className={styles.specValue}>
-                    {event.venue_info.venue_name || "Virtual (Discord)"} {event.venue_info.room ? `(${event.venue_info.room})` : ""}
+                    {event.venue_info?.venue_name ||
+                      (event.format === "online" ? "Virtual (Discord / Meet)" : "Campus Guild Lab")}
+                    {event.venue_info?.room ? ` (${event.venue_info.room})` : ""}
                   </span>
                 </div>
               </div>
@@ -565,7 +480,9 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
             <div className={styles.statsWidget}>
               <div className={styles.statRow}>
                 <span style={{ color: "#8c8c98" }}>Confirmed Attendees</span>
-                <span className={styles.statValueMono}>{registeredCount} / {capacity}</span>
+                <span className={styles.statValueMono}>
+                  {registeredCount} / {capacity}
+                </span>
               </div>
 
               <div className={styles.progressBar}>
@@ -574,8 +491,14 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
 
               <div className={styles.statRow}>
                 <span style={{ color: "#8c8c98" }}>Average Rating</span>
-                <span style={{ color: "var(--brand, #E5B731)", fontWeight: "800", fontFamily: "var(--font-mono, monospace)" }}>
-                  ⭐ {event.stats.average_rating.toFixed(2)} / 5.0
+                <span
+                  style={{
+                    color: "var(--brand, #E5B731)",
+                    fontWeight: "800",
+                    fontFamily: "var(--font-mono, monospace)",
+                  }}
+                >
+                  ⭐ {(event.stats?.average_rating ?? 5.0).toFixed(1)} / 5.0
                 </span>
               </div>
             </div>

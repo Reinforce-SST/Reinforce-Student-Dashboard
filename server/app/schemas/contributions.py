@@ -49,7 +49,6 @@ class ContributionCategory(str, Enum):
     CONTENT = "content"
     ORGANIZING = "organizing"
     SERVICE = "service"
-    PARTICIPATION = "participation"
     OTHER = "other"
 
 

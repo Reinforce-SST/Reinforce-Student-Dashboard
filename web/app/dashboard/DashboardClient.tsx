@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useMember } from "@/lib/useMember";
+import { api } from "@/lib/api";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import styles from "@/components/dashboard/OverviewDashboard.module.css";
 
@@ -51,28 +53,12 @@ const placeholderProjects: SPGProject[] = [
 
 type UpcomingEvent = {
   id: string;
+  slug?: string;
   month: string;
   day: string;
   title: string;
   location: string;
 };
-
-const placeholderEvents: UpcomingEvent[] = [
-  {
-    id: "ev-1",
-    month: "SEP",
-    day: "10",
-    title: "Reinforce HackSprint v3.0",
-    location: "Guild Main Lab",
-  },
-  {
-    id: "ev-2",
-    month: "SEP",
-    day: "12",
-    title: "Multi-Agent RL Advanced Deep Dive",
-    location: "Virtual • Discord",
-  },
-];
 
 type FeaturedBannerEvent = {
   id: string;
@@ -86,84 +72,146 @@ type FeaturedBannerEvent = {
   alt?: string;
 };
 
-const featuredEvents: FeaturedBannerEvent[] = [
-  {
-    id: "feat-1",
-    badge: "NEW EVENT",
-    date: "SEP 28, 2026 · 5:30 PM",
-    title: "Reinforce Club Orientation 2026–27",
-    description:
-      "Open for all in Classroom A (2nd Floor). Discover Student Project Groups (SPGs), the community server, compute resource grants, and the new web dashboard.",
-    ctaText: "Join Session →",
-    ctaLink: "/dashboard/events",
-    imageSrc: "/banners/orientation-2026.png",
-    alt: "Reinforce AI/ML Club Orientation 2026-27",
-  },
-  {
-    id: "feat-2",
-    badge: "COMPUTE GRANTS",
-    date: "APPLICATIONS OPEN · FALL 2024",
-    title: "A100 / H100 GPU Grants for Project Groups",
-    description:
-      "All active Student Project Groups (SPGs) can request cluster compute, cloud credits, and mentor pairing for ongoing papers and open-source models.",
-    ctaText: "Submit Proposal →",
-    ctaLink: "/dashboard/spg",
-    // No image - renders full-width yellow banner card
-  },
-  {
-    id: "feat-3",
-    badge: "NIGHT SOCIAL",
-    date: "DEC 21 · 09.00 - 12.00",
-    title: "Reinforce Night Club Social & Mixer",
-    description:
-      "End of term networking night. Meet project leads, celebrate shipped hackathon releases, and connect with fellow builders and researchers.",
-    ctaText: "RSVP Now →",
-    ctaLink: "/dashboard/events",
-    imageSrc: "/banners/night-club.jpg",
-    alt: "Reinforce Night Club Event",
-  },
-  {
-    id: "feat-4",
-    badge: "DATATHON 2024",
-    date: "NOV 15 – 17, 2024",
-    title: "Reinforce Datathon & HackSprint",
-    description:
-      "Campus-wide 48-hour competition tackling multimodal sensor prediction and seismic forecasting. Dedicated A100 GPU compute for top teams.",
-    ctaText: "Register Your Team →",
-    ctaLink: "/dashboard/events",
-    imageSrc: "/banners/8198583.jpg",
-    alt: "Reinforce Datathon & HackSprint Banner",
-  },
-];
+const defaultPlaceholderBanner: FeaturedBannerEvent = {
+  id: "placeholder-1",
+  badge: "REINFORCE CLUB",
+  date: "UPCOMING SESSIONS & GRANTS",
+  title: "Reinforce AI/ML Student Hub",
+  description:
+    "Explore Student Project Groups (SPGs), request dedicated cluster compute, join technical workshops, and ship cutting-edge open-source software.",
+  ctaText: "Explore Events →",
+  ctaLink: "/dashboard/events",
+  imageSrc: "/banners/reinforce-placeholder.png",
+  alt: "Reinforce AI/ML Club",
+};
 
 // October 2024 calendar grid days (1 = Tuesday ... 31 = Thursday)
 const calendarDays = Array.from({ length: 31 }, (_, i) => i + 1);
 
-// Extended slides for seamless infinite loop (cloned last item prepended, cloned first item appended)
-const extendedSlides = [
-  { ...featuredEvents[featuredEvents.length - 1], virtualKey: "clone-prev" },
-  ...featuredEvents.map((ev, idx) => ({ ...ev, virtualKey: `slide-${idx}` })),
-  { ...featuredEvents[0], virtualKey: "clone-next" },
-];
-
-
 export default function DashboardClient() {
+  const { token } = useMember();
   const [selectedDay, setSelectedDay] = useState(24);
+  const [dbBanners, setDbBanners] = useState<FeaturedBannerEvent[]>([]);
+  const [upcomingEvents, setUpcomingEvents] = useState<UpcomingEvent[]>([]);
   const [slideIndex, setSlideIndex] = useState(1);
   const [isTransitioning, setIsTransitioning] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
 
+  useEffect(() => {
+    let active = true;
+    async function fetchBannersAndEvents() {
+      try {
+        const res = await api.listEvents(token, { status: "published", limit: 20 });
+        if (!active) return;
+        if (res.events && res.events.length > 0) {
+          // 1. Filter / Map Featured Hero Banners
+          const bannerSource = res.events.filter(
+            (ev) =>
+              ev.event_type?.toLowerCase().includes("banner") ||
+              ev.schedule?.badge === "FEATURED"
+          );
+          const activeBannerList = bannerSource.length > 0 ? bannerSource : res.events;
+
+          const mappedBanners: FeaturedBannerEvent[] = activeBannerList.map((ev) => {
+            let displayDate = ev.schedule?.display_date;
+            if (!displayDate && ev.schedule?.start_time) {
+              try {
+                const dt = new Date(ev.schedule.start_time);
+                displayDate = dt.toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                });
+              } catch {
+                displayDate = ev.schedule.start_time;
+              }
+            }
+
+            return {
+              id: ev.id,
+              badge: ev.schedule?.badge || ev.event_type?.toUpperCase() || "FEATURED",
+              date: displayDate || "UPCOMING",
+              title: ev.title,
+              description: ev.description,
+              ctaText: "Explore Event →",
+              ctaLink: `/dashboard/events/${ev.slug || ev.id}`,
+              imageSrc: ev.banner_url || "/banners/reinforce-placeholder.png",
+              alt: ev.title,
+            };
+          });
+          setDbBanners(mappedBanners);
+
+          // 2. Filter / Map Upcoming Events Widget
+          const regularEvents = res.events.filter(
+            (ev) => !ev.event_type?.toLowerCase().includes("banner")
+          );
+          const mappedUpcoming: UpcomingEvent[] = regularEvents.slice(0, 4).map((ev) => {
+            let month = "UPCOMING";
+            let day = "•";
+            if (ev.schedule?.start_time) {
+              try {
+                const dt = new Date(ev.schedule.start_time);
+                month = dt.toLocaleString("en-US", { month: "short" }).toUpperCase();
+                day = String(dt.getDate());
+              } catch {}
+            }
+            const location =
+              ev.venue_info?.venue_name ||
+              ev.venue_info?.room ||
+              (ev.format === "online" ? "Virtual • Discord" : "Campus Guild");
+
+            return {
+              id: ev.id,
+              slug: ev.slug,
+              month,
+              day,
+              title: ev.title,
+              location,
+            };
+          });
+          setUpcomingEvents(mappedUpcoming);
+        } else {
+          setDbBanners([]);
+          setUpcomingEvents([]);
+        }
+      } catch (err) {
+        console.error("Failed to load dashboard data from database:", err);
+      }
+    }
+    fetchBannersAndEvents();
+    return () => {
+      active = false;
+    };
+  }, [token]);
+
+  const activeSlides = dbBanners.length > 0 ? dbBanners : [defaultPlaceholderBanner];
+
+  // Extended slides for seamless infinite loop (cloned last item prepended, cloned first item appended)
+  const extendedSlides =
+    activeSlides.length > 1
+      ? [
+          { ...activeSlides[activeSlides.length - 1], virtualKey: "clone-prev" },
+          ...activeSlides.map((ev, idx) => ({ ...ev, virtualKey: `slide-${idx}` })),
+          { ...activeSlides[0], virtualKey: "clone-next" },
+        ]
+      : [{ ...activeSlides[0], virtualKey: "slide-single" }];
+
   const handlePrevSlide = () => {
+    if (activeSlides.length <= 1) return;
     setIsTransitioning(true);
     setSlideIndex((prev) => prev - 1);
   };
 
   const handleNextSlide = () => {
+    if (activeSlides.length <= 1) return;
     setIsTransitioning(true);
     setSlideIndex((prev) => prev + 1);
   };
 
   const handleTransitionEnd = () => {
+    if (activeSlides.length <= 1) return;
     if (slideIndex >= extendedSlides.length - 1) {
       // Reached cloned first slide -> instantly snap to real first slide (index 1)
       setIsTransitioning(false);
@@ -171,22 +219,25 @@ export default function DashboardClient() {
     } else if (slideIndex <= 0) {
       // Reached cloned last slide -> instantly snap to real last slide
       setIsTransitioning(false);
-      setSlideIndex(featuredEvents.length);
+      setSlideIndex(activeSlides.length);
     }
   };
 
   // Automatically transition carousel every 8 seconds (paused on hover)
   useEffect(() => {
-    if (isPaused) return;
+    if (isPaused || activeSlides.length <= 1) return;
     const interval = setInterval(() => {
       setIsTransitioning(true);
       setSlideIndex((prev) => prev + 1);
     }, 8000);
 
     return () => clearInterval(interval);
-  }, [isPaused]);
+  }, [isPaused, activeSlides.length]);
 
-  const activeDotIndex = (slideIndex - 1 + featuredEvents.length) % featuredEvents.length;
+  const activeDotIndex =
+    activeSlides.length > 1
+      ? (slideIndex - 1 + activeSlides.length) % activeSlides.length
+      : 0;
 
   return (
     <div className={styles.overviewContainer}>
@@ -206,16 +257,25 @@ export default function DashboardClient() {
                 ? styles.bannerSliderTrack
                 : styles.bannerSliderTrackNoTransition
             }
-            style={{ transform: `translateX(-${slideIndex * 100}%)` }}
+            style={{
+              transform:
+                activeSlides.length > 1
+                  ? `translateX(-${slideIndex * 100}%)`
+                  : `translateX(0%)`,
+            }}
             onTransitionEnd={handleTransitionEnd}
           >
             {extendedSlides.map((ev, index) => {
-              const isNonImage = !ev.imageSrc;
               return (
                 <div
                   key={ev.virtualKey}
                   className={styles.bannerSlide}
-                  aria-hidden={activeDotIndex !== (index - 1 + featuredEvents.length) % featuredEvents.length}
+                  aria-hidden={
+                    activeSlides.length > 1
+                      ? activeDotIndex !==
+                        (index - 1 + activeSlides.length) % activeSlides.length
+                      : false
+                  }
                 >
                   {/* Left Text Side */}
                   <div className={styles.heroContent}>
@@ -240,6 +300,10 @@ export default function DashboardClient() {
                       src={ev.imageSrc || "/banners/reinforce-placeholder.png"}
                       alt={ev.alt || ev.title || "Reinforce Event Banner"}
                       className={styles.coverImage}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src =
+                          "/banners/reinforce-placeholder.png";
+                      }}
                     />
                   </div>
                 </div>
@@ -247,41 +311,46 @@ export default function DashboardClient() {
             })}
           </div>
 
-
-          {/* Navigation Arrows */}
-          <div className={styles.heroNavArrows}>
-            <button
-              className={styles.navArrowBtn}
-              onClick={handlePrevSlide}
-              aria-label="Previous featured event"
-            >
-              <MemberIcon name="chevron-left" size={16} />
-            </button>
-            <button
-              className={styles.navArrowBtn}
-              onClick={handleNextSlide}
-              aria-label="Next featured event"
-            >
-              <MemberIcon name="chevron-right" size={16} />
-            </button>
-          </div>
-
-          {/* Carousel Dots */}
-          <div className={styles.dotsRow} aria-hidden="true">
-            {featuredEvents.map((ev, index) => (
+          {/* Navigation Arrows (Only show if multiple slides) */}
+          {activeSlides.length > 1 && (
+            <div className={styles.heroNavArrows}>
               <button
-                key={ev.id}
-                type="button"
-                onClick={() => {
-                  setIsTransitioning(true);
-                  setSlideIndex(index + 1);
-                }}
-                className={activeDotIndex === index ? styles.dotActive : styles.dot}
-                style={{ border: "none", cursor: "pointer", padding: 0 }}
-                aria-label={`Go to slide ${index + 1}`}
-              />
-            ))}
-          </div>
+                className={styles.navArrowBtn}
+                onClick={handlePrevSlide}
+                aria-label="Previous featured event"
+              >
+                <MemberIcon name="chevron-left" size={16} />
+              </button>
+              <button
+                className={styles.navArrowBtn}
+                onClick={handleNextSlide}
+                aria-label="Next featured event"
+              >
+                <MemberIcon name="chevron-right" size={16} />
+              </button>
+            </div>
+          )}
+
+          {/* Carousel Dots (Only show if multiple slides) */}
+          {activeSlides.length > 1 && (
+            <div className={styles.dotsRow} aria-hidden="true">
+              {activeSlides.map((ev, index) => (
+                <button
+                  key={ev.id}
+                  type="button"
+                  onClick={() => {
+                    setIsTransitioning(true);
+                    setSlideIndex(index + 1);
+                  }}
+                  className={
+                    activeDotIndex === index ? styles.dotActive : styles.dot
+                  }
+                  style={{ border: "none", cursor: "pointer", padding: 0 }}
+                  aria-label={`Go to slide ${index + 1}`}
+                />
+              ))}
+            </div>
+          )}
         </section>
 
         {/* Current Projects (SPG) */}
@@ -396,18 +465,29 @@ export default function DashboardClient() {
           </div>
 
           <div className={styles.eventsList}>
-            {placeholderEvents.map((ev) => (
-              <div key={ev.id} className={styles.eventItem}>
-                <div className={styles.eventDateBox}>
-                  <span className={styles.eventMonth}>{ev.month}</span>
-                  <span className={styles.eventDay}>{ev.day}</span>
-                </div>
-                <div className={styles.eventDetails}>
-                  <h3 className={styles.eventItemTitle}>{ev.title}</h3>
-                  <span className={styles.eventLocation}>{ev.location}</span>
-                </div>
+            {upcomingEvents.length === 0 ? (
+              <div style={{ padding: "16px 8px", textAlign: "center", color: "#8e8e93", fontSize: "12.5px" }}>
+                No upcoming club events scheduled.
               </div>
-            ))}
+            ) : (
+              upcomingEvents.map((ev) => (
+                <Link
+                  key={ev.id}
+                  href={`/dashboard/events/${ev.slug || ev.id}`}
+                  className={styles.eventItem}
+                  style={{ textDecoration: "none" }}
+                >
+                  <div className={styles.eventDateBox}>
+                    <span className={styles.eventMonth}>{ev.month}</span>
+                    <span className={styles.eventDay}>{ev.day}</span>
+                  </div>
+                  <div className={styles.eventDetails}>
+                    <h3 className={styles.eventItemTitle}>{ev.title}</h3>
+                    <span className={styles.eventLocation}>{ev.location}</span>
+                  </div>
+                </Link>
+              ))
+            )}
           </div>
 
           <Link href="/dashboard/events" className={styles.calendarFooterLink}>

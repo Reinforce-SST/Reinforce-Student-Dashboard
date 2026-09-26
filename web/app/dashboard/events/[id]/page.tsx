@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { allEvents } from "@/lib/eventsData";
+import { api, type EventDocument } from "@/lib/api";
 import EventDetailClient from "./EventDetailClient";
 
 export async function generateMetadata({
@@ -9,17 +9,18 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const event = allEvents.find((e) => e.id === id || e.slug === id);
-
-  if (!event) {
-    return {
-      title: "Event Details · Reinforce SST",
-    };
-  }
+  try {
+    const event = await api.getEvent(id);
+    if (event) {
+      return {
+        title: `${event.title} · Reinforce SST`,
+        description: event.description,
+      };
+    }
+  } catch {}
 
   return {
-    title: `${event.title} · Reinforce SST`,
-    description: event.description,
+    title: "Event Details · Reinforce SST",
   };
 }
 
@@ -29,7 +30,12 @@ export default async function EventPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const event = allEvents.find((e) => e.id === id || e.slug === id) || allEvents[0];
+  let event: EventDocument | null = null;
+  try {
+    event = await api.getEvent(id);
+  } catch (err) {
+    notFound();
+  }
 
   if (!event) {
     notFound();
