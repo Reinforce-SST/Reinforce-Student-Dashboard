@@ -1,7 +1,7 @@
 import Image from "next/image";
 import styles from "./DashboardShell.module.css";
 
-export default function MemberLoading({ message }: { message: string }) {
+export default function MemberLoading({ message = "Loading…" }: { message?: string }) {
   return <div className={styles.memberLoading} role="status" aria-live="polite">
     <Image
       className={styles.loadingLogo}

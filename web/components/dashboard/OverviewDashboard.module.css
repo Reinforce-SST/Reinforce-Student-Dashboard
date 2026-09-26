@@ -1,0 +1,806 @@
+/* ==========================================================================
+   Dashboard Overview Layout
+   ========================================================================== */
+.overviewContainer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 28px;
+  align-items: start;
+  max-width: 1360px;
+  margin: 0 auto;
+}
+
+.leftColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-width: 0;
+}
+
+.rightColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+
+/* ==========================================================================
+   Featured Hero Banner (22:9 Ratio)
+   ========================================================================== */
+.heroBanner {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 22 / 9;
+  min-height: 260px;
+  background: #111113;
+  border: 1px solid #232328;
+  border-radius: 16px;
+  padding: 0;
+  overflow: hidden;
+  box-shadow: 0 16px 40px -15px rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+}
+
+/* Sliding Track & Slide Containers */
+.bannerSliderTrack {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.bannerSliderTrackNoTransition {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  transition: none !important;
+  will-change: transform;
+}
+
+.bannerSlide {
+  flex: 0 0 100%;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
+  background: #111113;
+}
+
+
+.heroNavArrows {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  gap: 8px;
+  z-index: 6;
+}
+
+.navArrowBtn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.navArrowBtn:hover {
+  background: rgba(0, 0, 0, 0.85);
+  transform: scale(1.05);
+}
+
+.heroContent {
+  width: 36%;
+  max-width: 370px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  z-index: 4;
+  padding: 24px 28px;
+  position: relative;
+}
+
+.heroContentAnimated {
+  animation: heroContentSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes heroContentSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.heroTopRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.eventBadge {
+  background: var(--brand, #E5B731);
+  color: #0c0c0c;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 3px 8px;
+  border-radius: 5px;
+  text-transform: uppercase;
+}
+
+.eventDate {
+  font-size: 0.72rem;
+  font-weight: 750;
+  color: var(--brand, #E5B731);
+  letter-spacing: 0.03em;
+}
+
+.heroTitle {
+  font-size: clamp(1.1rem, 1.4vw, 1.35rem);
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  margin: 10px 0 6px;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.heroDescription {
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: #d8d8d2;
+  font-weight: 500;
+  margin-bottom: 14px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
+}
+
+.heroCtaBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--brand, #E5B731);
+  color: #0c0c0c;
+  padding: 8px 18px;
+  border-radius: 9px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-decoration: none;
+  width: fit-content;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+  box-shadow: 0 4px 14px rgba(229, 183, 49, 0.35);
+}
+
+.heroCtaBtn:hover {
+  background: #f5cb4a;
+  transform: translateY(-2px);
+}
+
+/* 16:9 Image Cover taking Full Height on Right */
+.heroCoverRight {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  height: 100%;
+  aspect-ratio: 16 / 9;
+  background: transparent;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(0, 0, 0, 0.5) 8%,
+    #000000 20%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(0, 0, 0, 0.5) 8%,
+    #000000 20%
+  );
+}
+
+.coverImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+
+
+
+
+.coverImageAnimated {
+  animation: heroImageFadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes heroImageFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(1.02);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Carousel Dots */
+.dotsRow {
+  position: absolute;
+  bottom: 16px;
+  right: 18px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 5;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), background 0.3s ease;
+}
+
+.dot:hover {
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.dotActive {
+  width: 20px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--brand, #E5B731);
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), background 0.3s ease;
+}
+
+/* ==========================================================================
+   Current Projects (SPG) Section
+   ========================================================================== */
+.spgSection {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.spgHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.spgTitleGroup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.spgBar {
+  width: 4px;
+  height: 18px;
+  background: var(--brand, #E5B731);
+  border-radius: 2px;
+}
+
+.spgTitle {
+  font-size: 1.05rem;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  color: #ffffff;
+  margin: 0;
+}
+
+.viewAllLink {
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: var(--brand, #E5B731);
+  text-decoration: none;
+  transition: opacity 0.15s ease;
+}
+
+.viewAllLink:hover {
+  opacity: 0.85;
+  text-decoration: underline;
+}
+
+.spgCardsList {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px;
+}
+
+.spgCard {
+  background: #141416;
+  border: 1px solid #232328;
+  border-radius: 14px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.spgCard:hover {
+  transform: translateY(-2px);
+  border-color: #35353d;
+  box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.5);
+}
+
+.spgCardTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.trackIdGroup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.trackPill {
+  font-size: 0.65rem;
+  font-weight: 750;
+  padding: 3px 8px;
+  border-radius: 5px;
+  letter-spacing: 0.02em;
+}
+
+.trackKaggle {
+  background: rgba(32, 190, 255, 0.12);
+  color: #38c8ff;
+  border: 1px solid rgba(32, 190, 255, 0.25);
+}
+
+.trackResearch {
+  background: rgba(168, 85, 247, 0.12);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.25);
+}
+
+.trackProduct {
+  background: rgba(229, 183, 49, 0.12);
+  color: var(--brand, #E5B731);
+  border: 1px solid rgba(229, 183, 49, 0.25);
+}
+
+.spgId {
+  font-size: 0.7rem;
+  font-family: var(--font-mono, monospace);
+  color: #7e7e88;
+}
+
+.statusPill {
+  font-size: 0.65rem;
+  font-weight: 750;
+  padding: 3px 8px;
+  border-radius: 5px;
+}
+
+.statusOnTrack {
+  background: rgba(34, 197, 94, 0.12);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+
+.statusAtRisk {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.spgCardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.projectTitle {
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #f2f2f5;
+  margin: 0;
+}
+
+.projectDesc {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #92929e;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.spgCardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid #1e1e22;
+}
+
+.avatarStack {
+  display: flex;
+  align-items: center;
+}
+
+.stackAvatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid #141416;
+  font-size: 0.65rem;
+  font-weight: 750;
+  display: grid;
+  place-items: center;
+  margin-left: -6px;
+}
+
+.stackAvatar:first-child {
+  margin-left: 0;
+}
+
+.avatarGold {
+  background: var(--brand, #E5B731);
+  color: #0c0c0e;
+}
+
+.avatarDark {
+  background: #25252b;
+  color: #e2e2ea;
+}
+
+.avatarCount {
+  background: #32323a;
+  color: #a2a2b0;
+  font-size: 0.6rem;
+}
+
+.reportActionGroup {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.reportMeta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.reportLabel {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #6a6a75;
+}
+
+.reportDue {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #e2e2ea;
+}
+
+.submitReportBtn {
+  font-size: 0.72rem;
+  font-weight: 750;
+  color: #f2f2f5;
+  background: #202026;
+  border: 1px solid #2e2e38;
+  padding: 5px 10px;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.submitReportBtn:hover {
+  background: #2a2a32;
+  border-color: #40404c;
+}
+
+/* ==========================================================================
+   Right Column Widgets: Upcoming Events & Calendar
+   ========================================================================== */
+.widgetCard {
+  background: #141416;
+  border: 1px solid #232328;
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.widgetHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.widgetTitleGroup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.widgetTitleGroup h2 {
+  font-size: 0.95rem;
+  font-weight: 750;
+  color: #ffffff;
+  margin: 0;
+}
+
+.widgetIcon {
+  color: var(--brand, #E5B731);
+  display: grid;
+  place-items: center;
+}
+
+.eventsList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.eventItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #19191d;
+  border: 1px solid #232328;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.eventItem:hover {
+  background: #202026;
+  border-color: #35353f;
+}
+
+.eventDateBox {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: var(--brand, #E5B731);
+  color: #0c0c0e;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-weight: 850;
+}
+
+.eventMonth {
+  font-size: 0.55rem;
+  letter-spacing: 0.05em;
+  line-height: 1;
+}
+
+.eventDay {
+  font-size: 0.92rem;
+  line-height: 1.1;
+}
+
+.eventDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.eventItemTitle {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #f2f2f5;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.eventLocation {
+  font-size: 0.68rem;
+  color: #8c8c98;
+  margin: 0;
+}
+
+.calendarFooterLink {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #a2a2b0;
+  text-decoration: none;
+  text-align: center;
+  padding-top: 4px;
+  transition: color 0.15s ease;
+}
+
+.calendarFooterLink:hover {
+  color: #ffffff;
+}
+
+/* Calendar Widget */
+.calendarCard {
+  background: #141416;
+  border: 1px solid #232328;
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: relative;
+}
+
+.calendarNav {
+  display: flex;
+  gap: 4px;
+}
+
+.calNavBtn {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: #1e1e24;
+  border: 1px solid #2a2a32;
+  color: #e0e0e8;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.calNavBtn:hover {
+  background: #2b2b34;
+}
+
+.weekdaysGrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #6e6e7a;
+  padding-bottom: 4px;
+}
+
+.daysGrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.dayMuted {
+  aspect-ratio: 1;
+}
+
+.dayCell {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #a2a2b0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.dayCell:hover {
+  background: #22222a;
+  color: #ffffff;
+}
+
+.dayActive {
+  background: var(--brand, #E5B731) !important;
+  color: #0c0c0e !important;
+  font-weight: 850 !important;
+  border-color: var(--brand, #E5B731) !important;
+}
+
+.dayBordered {
+  border-color: rgba(229, 183, 49, 0.45);
+  color: #ffffff;
+}
+
+.dayDot {
+  position: absolute;
+  bottom: 3px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--brand, #E5B731);
+}
+
+.dayActive .dayDot {
+  background: #0c0c0e;
+}
+
+.fabAdd {
+  position: absolute;
+  bottom: -14px;
+  right: 20px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--brand, #E5B731);
+  color: #0c0c0e;
+  border: none;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(229, 183, 49, 0.4);
+  transition: transform 0.15s ease, background 0.15s ease;
+  text-decoration: none;
+}
+
+.fabAdd:hover {
+  background: #f5cb4a;
+  transform: scale(1.08);
+}
+
+@media (max-width: 1100px) {
+  .overviewContainer {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .heroBanner {
+    aspect-ratio: auto;
+    flex-direction: column;
+    min-height: auto;
+  }
+
+  .heroContent {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .heroCoverRight {
+    position: static;
+    width: 100%;
+    height: 180px;
+  }
+
+  .spgCardsList {
+    grid-template-columns: 1fr;
+  }
+}
