@@ -148,6 +148,63 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
+}
+
+.publicBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(56, 200, 255, 0.12);
+  border: 1px solid rgba(56, 200, 255, 0.3);
+  color: #38c8ff;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.myProfileBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--brand, #E5B731);
+  color: #0c0c0e;
+  padding: 9px 18px;
+  border-radius: 9px;
+  font-size: 0.8rem;
+  font-weight: 850;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  box-shadow: 0 4px 14px rgba(229, 183, 49, 0.25);
+}
+
+.myProfileBtn:hover {
+  background: #f5cb4a;
+  transform: translateY(-1px);
+}
+
+.backDirBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #19191e;
+  border: 1px solid #282832;
+  color: #a0a0ae;
+  padding: 9px 16px;
+  border-radius: 9px;
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.backDirBtn:hover {
+  background: #22222a;
+  color: #ffffff;
+  border-color: #383848;
 }
 
 .editProfileBtn {

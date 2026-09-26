@@ -1,10 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+
+import Link from "next/link";
 import MemberIcon from "@/components/dashboard/MemberIcon";
+import MemberLoading from "@/components/dashboard/MemberLoading";
 import { useMember } from "@/lib/useMember";
+
 import { api, type StudentProfile, type TrackPoints } from "@/lib/api";
-import { fallbackMembers, type LeaderboardEntry } from "@/lib/leaderboardData";
+import { type LeaderboardEntry } from "@/lib/leaderboardData";
 import styles from "./Leaderboard.module.css";
 
 export default function LeaderboardClient() {
@@ -15,8 +19,8 @@ export default function LeaderboardClient() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedMember, setSelectedMember] = useState<StudentProfile | null>(null);
 
-  const [members, setMembers] = useState<StudentProfile[]>(fallbackMembers);
-  const [loading, setLoading] = useState(false);
+  const [members, setMembers] = useState<StudentProfile[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Fetch live members/leaderboard from backend API
   const fetchDirectoryData = useCallback(async () => {
@@ -29,15 +33,18 @@ export default function LeaderboardClient() {
         tier: selectedTier !== "all" ? selectedTier : undefined,
       }).catch(() => null);
 
-      if (res && res.items && res.items.length > 0) {
+      if (res && res.items) {
         setMembers(res.items);
+      } else {
+        setMembers([]);
       }
     } catch {
-      // Retain fallback data
+      setMembers([]);
     } finally {
       setLoading(false);
     }
   }, [token, searchQuery, selectedTrack, selectedTier]);
+
 
   useEffect(() => {
     fetchDirectoryData();
@@ -120,9 +127,14 @@ export default function LeaderboardClient() {
   const top2 = sortedLeaderboard[1];
   const top3 = sortedLeaderboard[2];
 
+  if (loading && members.length === 0) {
+    return <MemberLoading message="Loading student leaderboard & rankings…" />;
+  }
+
   return (
     <div className={styles.pageContainer}>
       {/* Header Row: Title & View Switcher */}
+
       <div className={styles.headerRow}>
         <div className={styles.titleGroup}>
           <h1 className={styles.pageTitle}>LEADERBOARD & DIRECTORY</h1>
@@ -251,6 +263,13 @@ export default function LeaderboardClient() {
                     <span style={{ color: "#4ade80" }}>P: {top2.points.product}</span>
                     <span style={{ color: "#38c8ff" }}>K: {top2.points.kaggle}</span>
                   </div>
+                  <Link
+                    href={`/dashboard/profile?id=${encodeURIComponent(top2.id)}`}
+                    className={styles.podiumViewProfileBtn}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    View Profile →
+                  </Link>
                 </article>
               )}
 
@@ -276,6 +295,13 @@ export default function LeaderboardClient() {
                     <span style={{ color: "#4ade80" }}>P: {top1.points.product}</span>
                     <span style={{ color: "#38c8ff" }}>K: {top1.points.kaggle}</span>
                   </div>
+                  <Link
+                    href={`/dashboard/profile?id=${encodeURIComponent(top1.id)}`}
+                    className={styles.podiumViewProfileBtn}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    View Profile →
+                  </Link>
                 </article>
               )}
 
@@ -301,6 +327,13 @@ export default function LeaderboardClient() {
                     <span style={{ color: "#4ade80" }}>P: {top3.points.product}</span>
                     <span style={{ color: "#38c8ff" }}>K: {top3.points.kaggle}</span>
                   </div>
+                  <Link
+                    href={`/dashboard/profile?id=${encodeURIComponent(top3.id)}`}
+                    className={styles.podiumViewProfileBtn}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    View Profile →
+                  </Link>
                 </article>
               )}
             </section>
@@ -314,65 +347,83 @@ export default function LeaderboardClient() {
               <span className={styles.tierCol}>TIER</span>
               <span className={styles.trackCol}>TRACK BREAKDOWN</span>
               <span style={{ textAlign: "right" }}>SCORE</span>
+              <span style={{ textAlign: "right" }}>PROFILE</span>
             </div>
 
             <div className={styles.tableBody}>
-              {sortedLeaderboard.map((entry) => {
-                const originalMember = members.find((m) => m.id === entry.id || m.email === entry.id);
-                return (
-                  <div
-                    key={entry.id}
-                    className={styles.tableRow}
-                    onClick={() => openProfileModal(entry.id)}
-                  >
-                    {/* Rank */}
-                    <span className={`${styles.rankNumber} ${entry.rank <= 3 ? styles.rankGold : ""}`}>
-                      {entry.rank === 1 ? "🥇 1" : entry.rank === 2 ? "🥈 2" : entry.rank === 3 ? "🥉 3" : `#${entry.rank}`}
-                    </span>
-
-                    {/* Member Details */}
-                    <div className={styles.memberCol}>
-                      <div className={styles.tableAvatar}>
-                        {getInitials(entry.full_name)}
-                      </div>
-                      <div className={styles.memberNameGroup}>
-                        <span className={styles.memberNameText}>
-                          {entry.full_name}
-                          {originalMember?.is_verified && (
-                            <span style={{ color: "#5865F2", fontSize: "0.8rem" }} title="Verified Discord Member">
-                              ✓
-                            </span>
-                          )}
-                        </span>
-                        <span className={styles.memberBioMuted}>
-                          {originalMember?.bio || "Reinforce Club Member"}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Tier */}
-                    <div className={styles.tierCol}>
-                      <span className={`${styles.tierChip} ${entry.tier === "advanced" ? styles.tierAdvanced : styles.tierBeginner}`}>
-                        {entry.tier.toUpperCase()}
+              {sortedLeaderboard.length === 0 ? (
+                <div style={{ padding: "48px 24px", textAlign: "center", color: "#8c8c98", fontSize: "0.85rem" }}>
+                  No members found on the leaderboard matching your search or filters.
+                </div>
+              ) : (
+                sortedLeaderboard.map((entry) => {
+                  const originalMember = members.find((m) => m.id === entry.id || m.email === entry.id);
+                  return (
+                    <div
+                      key={entry.id}
+                      className={styles.tableRow}
+                      onClick={() => openProfileModal(entry.id)}
+                    >
+                      {/* Rank */}
+                      <span className={`${styles.rankNumber} ${entry.rank <= 3 ? styles.rankGold : ""}`}>
+                        {entry.rank === 1 ? "🥇 1" : entry.rank === 2 ? "🥈 2" : entry.rank === 3 ? "🥉 3" : `#${entry.rank}`}
                       </span>
-                    </div>
 
-                    {/* Track Breakdown */}
-                    <div className={styles.trackCol}>
-                      <div className={styles.trackPillsGroup}>
-                        <span className={styles.trackPillRes}>R: {entry.points.research}</span>
-                        <span className={styles.trackPillProd}>P: {entry.points.product}</span>
-                        <span className={styles.trackPillKag}>K: {entry.points.kaggle}</span>
+                      {/* Member Details */}
+                      <div className={styles.memberCol}>
+                        <div className={styles.tableAvatar}>
+                          {getInitials(entry.full_name)}
+                        </div>
+                        <div className={styles.memberNameGroup}>
+                          <span className={styles.memberNameText}>
+                            {entry.full_name}
+                            {originalMember?.is_verified && (
+                              <span style={{ color: "#5865F2", fontSize: "0.8rem" }} title="Verified Discord Member">
+                                ✓
+                              </span>
+                            )}
+                          </span>
+                          <span className={styles.memberBioMuted}>
+                            {originalMember?.bio || "Reinforce Club Member"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Tier */}
+                      <div className={styles.tierCol}>
+                        <span className={`${styles.tierChip} ${entry.tier === "advanced" ? styles.tierAdvanced : styles.tierBeginner}`}>
+                          {entry.tier.toUpperCase()}
+                        </span>
+                      </div>
+
+                      {/* Track Breakdown */}
+                      <div className={styles.trackCol}>
+                        <div className={styles.trackPillsGroup}>
+                          <span className={styles.trackPillRes}>R: {entry.points.research}</span>
+                          <span className={styles.trackPillProd}>P: {entry.points.product}</span>
+                          <span className={styles.trackPillKag}>K: {entry.points.kaggle}</span>
+                        </div>
+                      </div>
+
+                      {/* Score */}
+                      <div className={styles.scoreCol}>
+                        {entry.points[selectedTrack] ?? entry.points.total} PTS
+                      </div>
+
+                      {/* View Profile Action */}
+                      <div className={styles.actionCol}>
+                        <Link
+                          href={`/dashboard/profile?id=${encodeURIComponent(entry.id)}`}
+                          className={styles.rowViewProfileBtn}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          View Profile →
+                        </Link>
                       </div>
                     </div>
-
-                    {/* Score */}
-                    <div className={styles.scoreCol}>
-                      {entry.points[selectedTrack] ?? entry.points.total} PTS
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
           </section>
         </>
@@ -381,96 +432,100 @@ export default function LeaderboardClient() {
       {/* VIEW MODE 2: BROWSE DIRECTORY */}
       {viewMode === "DIRECTORY" && (
         <section className={styles.directoryGrid} aria-label="Student Member Directory">
-          {filteredDirectory.map((member) => (
-            <article
-              key={member.id || member.email}
-              className={styles.memberCard}
-              onClick={() => setSelectedMember(member)}
-            >
-              {/* Card Top: Avatar & Name */}
-              <div className={styles.memberCardTop}>
-                <div className={styles.memberCardHeader}>
-                  <div className={styles.cardAvatar}>
-                    {getInitials(member.full_name)}
-                  </div>
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                      <h2 style={{ fontSize: "0.96rem", fontWeight: "800", color: "#ffffff", margin: 0 }}>
-                        {member.full_name}
-                      </h2>
-                      {member.is_verified && (
-                        <span style={{ color: "#5865F2", fontSize: "0.8rem" }} title="Verified Discord Member">
-                          ✓
-                        </span>
-                      )}
+          {filteredDirectory.length === 0 ? (
+            <div className={styles.tableCard} style={{ gridColumn: "1 / -1", padding: "48px 24px", textAlign: "center", color: "#8c8c98", fontSize: "0.85rem" }}>
+              No student profiles found matching your search or filters.
+            </div>
+          ) : (
+            filteredDirectory.map((member) => (
+              <article
+                key={member.id || member.email}
+                className={styles.memberCard}
+                onClick={() => setSelectedMember(member)}
+              >
+                {/* Card Top: Avatar & Name */}
+                <div className={styles.memberCardTop}>
+                  <div className={styles.memberCardHeader}>
+                    <div className={styles.cardAvatar}>
+                      {getInitials(member.full_name)}
                     </div>
-                    <span style={{ fontSize: "0.68rem", color: "#8c8c98" }}>
-                      Batch &apos;{member.batch_year ? String(member.batch_year).slice(-2) : "24"} • {member.tier?.toUpperCase() || "MEMBER"}
-                    </span>
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <h2 style={{ fontSize: "0.96rem", fontWeight: "800", color: "#ffffff", margin: 0 }}>
+                          {member.full_name}
+                        </h2>
+                        {member.is_verified && (
+                          <span style={{ color: "#5865F2", fontSize: "0.8rem" }} title="Verified Discord Member">
+                            ✓
+                          </span>
+                        )}
+                      </div>
+                      <span style={{ fontSize: "0.68rem", color: "#8c8c98" }}>
+                        Batch &apos;{member.batch_year ? String(member.batch_year).slice(-2) : "24"} • {member.tier?.toUpperCase() || "MEMBER"}
+                      </span>
+                    </div>
                   </div>
+
+                  <span className={getDominantTrackClass(member.points)}>
+                    {member.points?.total || 0} PTS
+                  </span>
                 </div>
 
-                <span className={getDominantTrackClass(member.points)}>
-                  {member.points?.total || 0} PTS
-                </span>
-              </div>
+                {/* Bio */}
+                <p className={styles.cardBio}>
+                  {member.bio || "Active contributor and project builder in Reinforce SST guild."}
+                </p>
 
-              {/* Bio */}
-              <p className={styles.cardBio}>
-                {member.bio || "Active contributor and project builder in Reinforce SST guild."}
-              </p>
-
-              {/* Skills Tags */}
-              <div className={styles.skillsRow}>
-                {member.skills?.slice(0, 4).map((skill, idx) => (
-                  <span key={idx} className={styles.skillPill}>
-                    {skill}
-                  </span>
-                ))}
-                {(member.skills?.length || 0) > 4 && (
-                  <span className={styles.skillPill}>
-                    +{(member.skills?.length || 0) - 4}
-                  </span>
-                )}
-              </div>
-
-              {/* Card Footer: Social Links & Action */}
-              <div className={styles.cardFooter}>
-                <div className={styles.cardSocialLinks}>
-                  {member.social_links?.github && (
-                    <a
-                      href={member.social_links.github}
-                      target="_blank"
-                      rel="noreferrer"
-                      className={styles.socialIconBtn}
-                      onClick={(e) => e.stopPropagation()}
-                      title="GitHub Profile"
-                    >
-                      <MemberIcon name="github" size={14} />
-                    </a>
-                  )}
-                  {member.social_links?.discord && (
-                    <span className={styles.socialIconBtn} title={`Discord: ${member.social_links.discord}`}>
-                      <MemberIcon name="discord" size={14} />
+                {/* Skills Tags */}
+                <div className={styles.skillsRow}>
+                  {member.skills?.slice(0, 4).map((skill, idx) => (
+                    <span key={idx} className={styles.skillPill}>
+                      {skill}
+                    </span>
+                  ))}
+                  {(member.skills?.length || 0) > 4 && (
+                    <span className={styles.skillPill}>
+                      +{(member.skills?.length || 0) - 4}
                     </span>
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  className={styles.viewProfileTextBtn}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedMember(member);
-                  }}
-                >
-                  VIEW PROFILE →
-                </button>
-              </div>
-            </article>
-          ))}
+                {/* Card Footer: Social Links & Action */}
+                <div className={styles.cardFooter}>
+                  <div className={styles.cardSocialLinks}>
+                    {member.social_links?.github && (
+                      <a
+                        href={member.social_links.github}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={styles.socialIconBtn}
+                        onClick={(e) => e.stopPropagation()}
+                        title="GitHub Profile"
+                      >
+                        <MemberIcon name="github" size={14} />
+                      </a>
+                    )}
+                    {member.social_links?.discord && (
+                      <span className={styles.socialIconBtn} title={`Discord: ${member.social_links.discord}`}>
+                        <MemberIcon name="discord" size={14} />
+                      </span>
+                    )}
+                  </div>
+
+                  <Link
+                    href={`/dashboard/profile?id=${encodeURIComponent(member.id || member.email)}`}
+                    className={styles.rowViewProfileBtn}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    VIEW PROFILE →
+                  </Link>
+                </div>
+              </article>
+            ))
+          )}
         </section>
       )}
+
 
       {/* Member Profile Preview Modal */}
       {selectedMember && (
@@ -605,9 +660,25 @@ export default function LeaderboardClient() {
                 )}
               </div>
 
-              <span style={{ fontSize: "0.72rem", color: "#656570" }}>
-                Reinforce Club SST
-              </span>
+              <Link
+                href={`/dashboard/profile?id=${encodeURIComponent(selectedMember.id || selectedMember.email)}`}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  background: "var(--brand, #E5B731)",
+                  color: "#0c0c0e",
+                  padding: "6px 14px",
+                  borderRadius: "8px",
+                  fontSize: "0.76rem",
+                  fontWeight: "800",
+                  textDecoration: "none",
+                  boxShadow: "0 3px 10px rgba(229, 183, 49, 0.25)",
+                }}
+              >
+                View Full Profile →
+              </Link>
+
             </div>
           </div>
         </div>

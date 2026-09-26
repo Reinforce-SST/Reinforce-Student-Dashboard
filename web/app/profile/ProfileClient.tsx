@@ -1,9 +1,14 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, Suspense } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useMember } from "@/lib/useMember";
+import { api, type StudentProfile, type TrackPoints } from "@/lib/api";
 import MemberIcon, { type IconName } from "@/components/dashboard/MemberIcon";
 import styles from "./Profile.module.css";
+
+
 
 // ---------------------------------------------------------------------------
 // Schemas strictly derived from server/app/schemas/users.py & contributions.py
@@ -161,38 +166,87 @@ function generateHeatmapData() {
   return grid;
 }
 
-export default function ProfileClient() {
-  const { profile, save } = useMember();
+function ProfileClientContent() {
+  const { token, profile: loggedInProfile, save } = useMember();
+  const searchParams = useSearchParams();
+  const queryId = searchParams ? searchParams.get("id") || searchParams.get("uid") : null;
 
-  // Local state initialized from useMember profile or synthetic fallbacks
-  const [fullName, setFullName] = useState(profile?.full_name || "Julian Chen");
-  const [bio, setBio] = useState(
-    profile?.bio ||
-      "AI & Systems Researcher @ Scaler School of Technology. Building autonomous multi-agent drone swarms and scalable LLM inference optimizations."
-  );
-  const [batchYear, setBatchYear] = useState<number>(profile?.batch_year || 2);
-  const [skills, setSkills] = useState<string[]>(
-    profile?.skills?.length
-      ? profile.skills
-      : ["PyTorch", "Reinforcement Learning", "ROS2", "CUDA", "Multi-Agent Systems", "Transformers", "Triton", "Distributed Systems"]
-  );
-  const [socialLinks, setSocialLinks] = useState({
-    github: profile?.social_links?.github || "https://github.com/julianchen-ai",
-    kaggle: profile?.social_links?.kaggle || "https://kaggle.com/julianchen",
-    linkedin: profile?.social_links?.linkedin || "https://linkedin.com/in/julianchen",
-    discord: profile?.social_links?.discord || "julian_chen#8921",
-  });
+  // Determine if viewing own profile or someone else's
+  const isOwner = useMemo(() => {
+    if (!queryId) return true;
+    if (loggedInProfile?.id && loggedInProfile.id === queryId) return true;
+    if (loggedInProfile?.email && loggedInProfile.email.toLowerCase() === queryId.toLowerCase()) return true;
+    if (loggedInProfile?.discord_id && loggedInProfile.discord_id === queryId) return true;
+    return false;
+  }, [queryId, loggedInProfile]);
+
+  const [activeProfile, setActiveProfile] = useState<StudentProfile | null>(loggedInProfile || null);
+  const [loading, setLoading] = useState(false);
+  const [notFound, setNotFound] = useState(false);
+
+  // Sync profile when queryId changes or when own profile updates
+  useEffect(() => {
+    if (isOwner) {
+      setActiveProfile(loggedInProfile);
+      setNotFound(false);
+      return;
+    }
+
+    if (!queryId) return;
+
+    let isMounted = true;
+    setLoading(true);
+
+    // Try pulling user profile from backend API
+    api.getUserProfile(token, queryId)
+      .then((data) => {
+        if (!isMounted) return;
+        if (data && (data.id || data.email)) {
+          setActiveProfile(data);
+          setNotFound(false);
+        } else {
+          setNotFound(true);
+        }
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setNotFound(true);
+      })
+      .finally(() => {
+        if (isMounted) setLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOwner, queryId, token, loggedInProfile]);
+
+
+  // Derived state fields from activeProfile
+  const fullName = activeProfile?.full_name || (isOwner ? "Julian Chen" : "Club Member");
+  const bio = activeProfile?.bio || (isOwner ? "AI & Systems Researcher @ Scaler School of Technology." : "No biography provided yet.");
+  const batchYear = activeProfile?.batch_year || 2024;
+  const skills = activeProfile?.skills && activeProfile.skills.length > 0
+    ? activeProfile.skills
+    : ["PyTorch", "Reinforcement Learning", "Transformers", "Distributed Systems"];
+  const socialLinks = {
+    github: activeProfile?.social_links?.github || "",
+    kaggle: activeProfile?.social_links?.kaggle || "",
+    linkedin: activeProfile?.social_links?.linkedin || "",
+    discord: activeProfile?.social_links?.discord || activeProfile?.discord_id || "",
+  };
 
   // Track Points strictly mapped from schema
-  const trackPoints = useMemo(() => {
+  const trackPoints: TrackPoints = useMemo(() => {
+    const raw = activeProfile?.points || loggedInProfile?.points;
     return {
-      total: profile?.points?.total || 225,
-      research: profile?.points?.research || 110,
-      product: profile?.points?.product || 40,
-      kaggle: profile?.points?.kaggle || 60,
-      misc: profile?.points?.misc || 15,
+      total: raw?.total || 0,
+      research: raw?.research || 0,
+      product: raw?.product || 0,
+      kaggle: raw?.kaggle || 0,
+      misc: raw?.misc || 0,
     };
-  }, [profile?.points]);
+  }, [activeProfile?.points, loggedInProfile?.points]);
 
   // Heatmap state
   const heatmapData = useMemo(() => generateHeatmapData(), []);
@@ -206,7 +260,7 @@ export default function ProfileClient() {
   // History ledger tab filter
   const [historyTab, setHistoryTab] = useState<"all" | "research" | "product" | "kaggle" | "misc">("all");
 
-  // Edit Modal state
+  // Edit Modal state (Owner Only)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editFormName, setEditFormName] = useState(fullName);
   const [editFormBio, setEditFormBio] = useState(bio);
@@ -220,6 +274,7 @@ export default function ProfileClient() {
   const [saveSuccessMsg, setSaveSuccessMsg] = useState("");
 
   const handleOpenEditModal = () => {
+    if (!isOwner) return;
     setEditFormName(fullName);
     setEditFormBio(bio);
     setEditFormBatch(batchYear);
@@ -233,6 +288,7 @@ export default function ProfileClient() {
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isOwner) return;
     setIsSaving(true);
 
     const parsedSkills = editFormSkills
@@ -258,11 +314,18 @@ export default function ProfileClient() {
         });
       }
 
-      setFullName(editFormName.trim());
-      setBio(editFormBio.trim());
-      setBatchYear(Number(editFormBatch));
-      setSkills(parsedSkills);
-      setSocialLinks(updatedSocials as any);
+      setActiveProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              full_name: editFormName.trim(),
+              bio: editFormBio.trim() || null,
+              batch_year: Number(editFormBatch),
+              skills: parsedSkills,
+              social_links: updatedSocials,
+            }
+          : prev
+      );
 
       setIsSaving(false);
       setIsEditModalOpen(false);
@@ -271,11 +334,18 @@ export default function ProfileClient() {
     } catch {
       setIsSaving(false);
       setIsEditModalOpen(false);
-      setFullName(editFormName.trim());
-      setBio(editFormBio.trim());
-      setBatchYear(Number(editFormBatch));
-      setSkills(parsedSkills);
-      setSocialLinks(updatedSocials as any);
+      setActiveProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              full_name: editFormName.trim(),
+              bio: editFormBio.trim() || null,
+              batch_year: Number(editFormBatch),
+              skills: parsedSkills,
+              social_links: updatedSocials,
+            }
+          : prev
+      );
       setSaveSuccessMsg("Profile updated locally.");
       setTimeout(() => setSaveSuccessMsg(""), 4000);
     }
@@ -292,7 +362,33 @@ export default function ProfileClient() {
     .slice(0, 2)
     .map((p) => p[0])
     .join("")
-    .toUpperCase() || "JC";
+    .toUpperCase() || "MB";
+
+  if (notFound) {
+    return (
+      <div className={styles.pageContainer}>
+        <section className={styles.heroCard} style={{ textAlign: "center", padding: "48px 24px" }}>
+          <div style={{ maxWidth: "480px", margin: "0 auto", display: "flex", flexDirection: "column", alignItems: "center", gap: "16px" }}>
+            <div style={{ width: "56px", height: "56px", borderRadius: "50%", background: "#1c1c22", border: "1px solid #282832", display: "grid", placeItems: "center", color: "#f87171" }}>
+              <MemberIcon name="shield" size={24} />
+            </div>
+            <h1 className={styles.fullName} style={{ fontSize: "1.4rem" }}>Member Profile Not Found</h1>
+            <p className={styles.bioText} style={{ textAlign: "center" }}>
+              No student profile could be found for ID <code>&quot;{queryId}&quot;</code>. The user might not have joined the platform yet.
+            </p>
+            <div style={{ display: "flex", gap: "12px", marginTop: "8px" }}>
+              <Link href="/dashboard/profile" className={styles.myProfileBtn}>
+                Go to My Profile
+              </Link>
+              <Link href="/dashboard/leaderboard" className={styles.backDirBtn}>
+                Browse Member Directory
+              </Link>
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.pageContainer}>
@@ -311,23 +407,35 @@ export default function ProfileClient() {
               <div className={styles.nameRow}>
                 <h1 className={styles.fullName}>{fullName}</h1>
                 <span className={styles.tierBadge}>
-                  {profile?.tier ? `${profile.tier.toUpperCase()} MEMBER` : "ADVANCED MEMBER"}
+                  {activeProfile?.tier ? `${activeProfile.tier.toUpperCase()} MEMBER` : "BEGINNER MEMBER"}
                 </span>
+                {activeProfile?.is_admin && (
+                  <span style={{ fontSize: "0.65rem", fontWeight: "850", padding: "3px 8px", borderRadius: "5px", background: "rgba(248, 113, 113, 0.15)", color: "#f87171", border: "1px solid rgba(248, 113, 113, 0.35)", textTransform: "uppercase" }}>
+                    ADMIN
+                  </span>
+                )}
               </div>
 
               <div className={styles.metaRow}>
                 <span className={styles.metaItem}>
                   <MemberIcon name="calendar" size={14} />
-                  Batch &apos;24 (Year {batchYear})
+                  Batch &apos;{batchYear ? String(batchYear).slice(-2) : "24"} (Year {batchYear})
                 </span>
                 <span className={styles.metaItem}>
                   <MemberIcon name="shield" size={14} />
-                  {profile?.email || "student@sst.scaler.com"}
+                  {activeProfile?.email || "student@sst.scaler.com"}
                 </span>
-                <span className={styles.verifiedChip}>
-                  <MemberIcon name="check" size={13} />
-                  Verified Discord: {socialLinks.discord || "julian_chen#8921"}
-                </span>
+                {socialLinks.discord ? (
+                  <span className={styles.verifiedChip}>
+                    <MemberIcon name="check" size={13} />
+                    Discord: {socialLinks.discord}
+                  </span>
+                ) : (
+                  <span className={styles.metaItem} style={{ color: "#71717a" }}>
+                    <MemberIcon name="discord" size={13} />
+                    Unlinked Discord
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -338,15 +446,30 @@ export default function ProfileClient() {
                 ✓ {saveSuccessMsg}
               </span>
             )}
-            <button
-              type="button"
-              className={styles.editProfileBtn}
-              onClick={handleOpenEditModal}
-              aria-label="Edit your profile details"
-            >
-              <MemberIcon name="edit" size={16} />
-              Edit Profile
-            </button>
+            {isOwner ? (
+              <button
+                type="button"
+                className={styles.editProfileBtn}
+                onClick={handleOpenEditModal}
+                aria-label="Edit your profile details"
+              >
+                <MemberIcon name="edit" size={16} />
+                Edit Profile
+              </button>
+            ) : (
+              <>
+                <span className={styles.publicBadge}>
+                  <MemberIcon name="profile" size={13} />
+                  Public Member View
+                </span>
+                <Link href="/dashboard/profile" className={styles.myProfileBtn}>
+                  My Profile
+                </Link>
+                <Link href="/dashboard/leaderboard" className={styles.backDirBtn}>
+                  ← Directory
+                </Link>
+              </>
+            )}
           </div>
         </div>
 
@@ -411,7 +534,7 @@ export default function ProfileClient() {
           <span className={`${styles.trackPointsVal} ${styles.colorResearch}`}>
             {trackPoints.research} <span style={{ fontSize: "0.9rem", color: "#8c8c98" }}>PTS</span>
           </span>
-          <span className={styles.trackCardFooter}>Autonomous Swarms (SP-1)</span>
+          <span className={styles.trackCardFooter}>Research & AI Algorithms</span>
         </div>
 
         <div className={`${styles.trackCard} ${styles.trackBorderProduct}`}>
@@ -422,7 +545,7 @@ export default function ProfileClient() {
           <span className={`${styles.trackPointsVal} ${styles.colorProduct}`}>
             {trackPoints.product} <span style={{ fontSize: "0.9rem", color: "#8c8c98" }}>PTS</span>
           </span>
-          <span className={styles.trackCardFooter}>Decentralized Compute (SP-2)</span>
+          <span className={styles.trackCardFooter}>Full-Stack & Systems Engineering</span>
         </div>
 
         <div className={`${styles.trackCard} ${styles.trackBorderKaggle}`}>
@@ -433,7 +556,7 @@ export default function ProfileClient() {
           <span className={`${styles.trackPointsVal} ${styles.colorKaggle}`}>
             {trackPoints.kaggle} <span style={{ fontSize: "0.9rem", color: "#8c8c98" }}>PTS</span>
           </span>
-          <span className={styles.trackCardFooter}>Grandmaster Silver Tier</span>
+          <span className={styles.trackCardFooter}>Competitions & Benchmarks</span>
         </div>
 
         <div className={`${styles.trackCard} ${styles.trackBorderMisc}`}>
@@ -820,3 +943,18 @@ export default function ProfileClient() {
     </div>
   );
 }
+
+export default function ProfileClient() {
+  return (
+    <Suspense
+      fallback={
+        <div style={{ padding: "48px 24px", color: "#8c8c96", textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
+          Loading student profile...
+        </div>
+      }
+    >
+      <ProfileClientContent />
+    </Suspense>
+  );
+}
+
