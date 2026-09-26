@@ -1,12 +1,12 @@
 .theme {
-  --member-bg: #110f0a;
-  --member-deep: #0b0a07;
-  --member-panel: #19160f;
-  --member-line: #353023;
-  --member-muted: #c0b8a7;
-  --member-faint: #a89e89;
+  --member-bg: #0c0c0c;
+  --member-deep: #080808;
+  --member-panel: #151515;
+  --member-line: #222222;
+  --member-muted: #b5b5b0;
+  --member-faint: #6e6e68;
   min-height: 100dvh;
-  background: var(--member-bg);
-  color: var(--ink);
+  background: #0c0c0c;
+  color: var(--ink, #ffffff);
   font-family: var(--font-sans);
 }

@@ -1,0 +1,712 @@
+/* ==========================================================================
+   SPG Management Page Layout & Styles
+   ========================================================================== */
+
+.pageContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  max-width: 1360px;
+  margin: 0 auto;
+  padding-bottom: 40px;
+}
+
+/* Header & Filter Controls */
+.headerRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.titleGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pageTitle {
+  font-size: clamp(1.4rem, 2vw, 1.75rem);
+  font-weight: 850;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.pageSubtitle {
+  font-size: 0.82rem;
+  color: #8c8c96;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Scope Switcher Tabs (My SPGs vs All Public SPGs) */
+.scopeTabsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-bottom: 4px;
+}
+
+.scopeTabs {
+  display: flex;
+  align-items: center;
+  background: #111113;
+  border: 1px solid #232328;
+  border-radius: 12px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.scopeTabBtn {
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 8px 18px;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  color: #8c8c98;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-transform: uppercase;
+  transition: all 0.15s ease;
+}
+
+.scopeTabBtn:hover {
+  color: #ffffff;
+  background: #1a1a1f;
+}
+
+.scopeTabActive {
+  background: var(--brand, #E5B731) !important;
+  color: #0c0c0e !important;
+}
+
+.scopeCountBadge {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  font-weight: 850;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+}
+
+/* Secondary Filter Bar */
+.subFilterRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.searchBox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #141416;
+  border: 1px solid #232328;
+  border-radius: 9px;
+  padding: 7px 12px;
+  min-width: 240px;
+}
+
+.searchInput {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #ffffff;
+  font-size: 0.8rem;
+  width: 100%;
+}
+
+.searchInput::placeholder {
+  color: #656570;
+}
+
+.filterTabs {
+  display: flex;
+  align-items: center;
+  background: #141416;
+  border: 1px solid #232328;
+  border-radius: 10px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.tabBtn {
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  padding: 6px 14px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: #7e7e88;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.tabBtn:hover {
+  color: #ffffff;
+}
+
+.tabActive {
+  background: var(--brand, #E5B731) !important;
+  color: #0c0c0e !important;
+  font-weight: 850 !important;
+}
+
+.filterIconBtn {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: #141416;
+  border: 1px solid #232328;
+  color: #a2a2b0;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.filterIconBtn:hover {
+  background: #1e1e24;
+  border-color: #35353f;
+  color: #ffffff;
+}
+
+/* ==========================================================================
+   Metrics Stat Cards Row (4 Columns)
+   ========================================================================== */
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+}
+
+.metricCard {
+  background: #141416;
+  border: 1px solid #232328;
+  border-radius: 14px;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.metricCard:hover {
+  transform: translateY(-2px);
+  border-color: #35353f;
+}
+
+.metricLabel {
+  font-size: 0.65rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  color: #70707a;
+  text-transform: uppercase;
+}
+
+.metricValue {
+  font-size: 1.7rem;
+  font-weight: 850;
+  font-family: var(--font-mono, monospace);
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  line-height: 1.1;
+}
+
+.metricValueSmall {
+  font-size: 1.05rem !important;
+  font-weight: 850;
+  font-family: var(--font-mono, monospace);
+  letter-spacing: -0.01em;
+  color: #ffffff;
+  line-height: 1.2;
+}
+
+.metricSubtext {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #7a7a88;
+}
+
+.metricVelocity {
+  color: #4ade80;
+}
+
+.metricPending {
+  color: var(--brand, #E5B731);
+}
+
+.metricBlue {
+  color: #38c8ff;
+}
+
+/* Skills and Tag Row in Project Card */
+.cardTagsRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.recruitingChip {
+  font-size: 0.62rem;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(229, 183, 49, 0.15);
+  color: var(--brand, #E5B731);
+  border: 1px solid rgba(229, 183, 49, 0.3);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.skillPill {
+  font-size: 0.62rem;
+  font-weight: 700;
+  background: #111113;
+  border: 1px solid #23232c;
+  color: #a2a2b0;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.linkedPill {
+  font-size: 0.62rem;
+  font-weight: 750;
+  background: rgba(56, 200, 255, 0.1);
+  border: 1px solid rgba(56, 200, 255, 0.25);
+  color: #38c8ff;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+/* ==========================================================================
+   Projects Grid (3 Columns)
+   ========================================================================== */
+.projectsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.projectCard {
+  background: #141416;
+  border: 1px solid #232328;
+  border-radius: 16px;
+  padding: 22px 20px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.projectCard:hover {
+  transform: translateY(-3px);
+  border-color: #383842;
+  box-shadow: 0 14px 30px -10px rgba(0, 0, 0, 0.6);
+}
+
+/* Left-Side Colored Curved Bracket Bar - Exact 3 Track Palette */
+.projectCard::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 32px;
+  border-top-left-radius: 16px;
+  border-bottom-left-radius: 16px;
+  border-left: 2.5px solid transparent;
+  border-top: 2.5px solid transparent;
+  border-bottom: 2.5px solid transparent;
+  pointer-events: none;
+  transition: border-color 0.2s ease, filter 0.2s ease;
+}
+
+.projectCard:hover::before {
+  filter: drop-shadow(0 0 6px currentColor);
+}
+
+/* Research Track = Red */
+.accentBarRed::before {
+  border-left-color: #f87171;
+  border-top-color: #f87171;
+  border-bottom-color: #f87171;
+  color: #f87171;
+}
+
+/* Product Track = Green */
+.accentBarGreen::before {
+  border-left-color: #4ade80;
+  border-top-color: #4ade80;
+  border-bottom-color: #4ade80;
+  color: #4ade80;
+}
+
+/* Kaggle Track = Blue */
+.accentBarBlue::before {
+  border-left-color: #38c8ff;
+  border-top-color: #38c8ff;
+  border-bottom-color: #38c8ff;
+  color: #38c8ff;
+}
+
+/* Card Header (Status + Cluster Code) */
+.cardTopRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.statusPill {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 3px 8px;
+  border-radius: 5px;
+  text-transform: uppercase;
+}
+
+/* Research = Red */
+.statusResearch {
+  background: rgba(239, 68, 68, 0.14);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* Product = Green */
+.statusProduct {
+  background: rgba(34, 197, 94, 0.14);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+/* Kaggle = Blue */
+.statusKaggle {
+  background: rgba(56, 200, 255, 0.14);
+  color: #38c8ff;
+  border: 1px solid rgba(56, 200, 255, 0.3);
+}
+
+.clusterCode {
+  font-size: 0.68rem;
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+  color: #656570;
+  letter-spacing: 0.04em;
+}
+
+/* Project Info */
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.projectTitle {
+  font-size: 1.08rem;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.projectDesc {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #8e8e9c;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 2 Requested Rows: Report Submitted & Last Submitted */
+.reportRowsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: #19191d;
+  border: 1px solid #232328;
+  border-radius: 8px;
+}
+
+.reportRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.72rem;
+}
+
+.reportRowLabel {
+  color: #727280;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.reportRowValue {
+  color: #e2e2ea;
+  font-weight: 750;
+  font-family: var(--font-mono, monospace);
+}
+
+.reportHighlight {
+  color: var(--brand, #E5B731);
+}
+
+/* Card Footer (Avatars + Open Suite CTA) */
+.cardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid #1e1e22;
+}
+
+.avatarStack {
+  display: flex;
+  align-items: center;
+}
+
+.stackAvatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid #141416;
+  font-size: 0.65rem;
+  font-weight: 750;
+  display: grid;
+  place-items: center;
+  margin-left: -6px;
+}
+
+.stackAvatar:first-child {
+  margin-left: 0;
+}
+
+.avatarGold {
+  background: var(--brand, #E5B731);
+  color: #0c0c0e;
+}
+
+.avatarDark {
+  background: #272730;
+  color: #e2e2ea;
+}
+
+.avatarExtra {
+  background: #363640;
+  color: #b5b5c2;
+  font-size: 0.6rem;
+}
+
+.openSuiteBtn {
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: #e0e0e8;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.openSuiteBtn:hover {
+  color: var(--brand, #E5B731);
+  transform: translateX(2px);
+}
+
+/* ==========================================================================
+   Propose New SPG Card
+   ========================================================================== */
+.proposeCard {
+  background: #141416;
+  border: 1px dashed #2f2f38;
+  border-radius: 16px;
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+  min-height: 240px;
+  text-decoration: none;
+}
+
+.proposeCard:hover {
+  border-color: var(--brand, #E5B731);
+  background: rgba(229, 183, 49, 0.03);
+  transform: translateY(-2px);
+}
+
+.proposeIconBox {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(229, 183, 49, 0.12);
+  border: 1px solid rgba(229, 183, 49, 0.3);
+  color: var(--brand, #E5B731);
+  display: grid;
+  place-items: center;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.proposeCard:hover .proposeIconBox {
+  transform: scale(1.1);
+  background: var(--brand, #E5B731);
+  color: #0c0c0e;
+}
+
+.proposeTitle {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0;
+}
+
+/* Empty State Card */
+.emptyStateCard {
+  grid-column: 1 / -1;
+  background: #141416;
+  border: 1px dashed #282832;
+  border-radius: 16px;
+  padding: 48px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 14px;
+}
+
+.emptyStateIcon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #1c1c22;
+  border: 1px solid #2a2a34;
+  color: var(--brand, #E5B731);
+  display: grid;
+  place-items: center;
+}
+
+.emptyStateTitle {
+  font-size: 1.15rem;
+  font-weight: 850;
+  color: #ffffff;
+  margin: 0;
+}
+
+.emptyStateDesc {
+  font-size: 0.84rem;
+  color: #8c8c98;
+  max-width: 440px;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.emptyStateActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.emptyPrimaryBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--brand, #E5B731);
+  color: #0c0c0e;
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 850;
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.emptyPrimaryBtn:hover {
+  background: #f5cb4a;
+  transform: translateY(-1px);
+}
+
+.emptySecondaryBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #1c1c22;
+  border: 1px solid #282832;
+  color: #e2e2ea;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 750;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.emptySecondaryBtn:hover {
+  background: #25252e;
+  color: #ffffff;
+}
+
+/* Responsive Breakpoints */
+@media (max-width: 1100px) {
+  .projectsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .metricsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .projectsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .metricsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .headerRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .controlsGroup {
+    justify-content: space-between;
+  }
+}

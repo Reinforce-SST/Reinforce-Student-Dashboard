@@ -25,13 +25,20 @@ const marker = Caveat({
   display: "swap",
 });
 
-const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL ??
-  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+function getSiteUrl(): string {
+  const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (raw) {
+    return raw.startsWith("http://") || raw.startsWith("https://") ? raw : `https://${raw}`;
+  }
+  if (process.env.VERCEL_URL?.trim()) {
+    return `https://${process.env.VERCEL_URL.trim()}`;
+  }
+  return "http://localhost:3000";
+}
+
+const SITE_URL = getSiteUrl();
 
 export const metadata: Metadata = {
-  // Env-driven so this does not go stale when the site is renamed. Vercel
-  // provides VERCEL_URL automatically for preview deployments.
   metadataBase: new URL(SITE_URL),
   title: {
     default: "Reinforce — the AI/ML club at SST",

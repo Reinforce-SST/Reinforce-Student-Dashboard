@@ -1,0 +1,709 @@
+/* ==========================================================================
+   Leaderboard & Member Directory Styles
+   ========================================================================== */
+
+.pageContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  max-width: 1360px;
+  width: 100%;
+  margin: 0 auto;
+  padding-bottom: 56px;
+  box-sizing: border-box;
+}
+
+/* Header & View Switcher */
+.headerRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.titleGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pageTitle {
+  font-size: clamp(1.4rem, 2vw, 1.75rem);
+  font-weight: 850;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.pageSubtitle {
+  font-size: 0.82rem;
+  color: #8c8c96;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* View Switcher Tabs (Leaderboard vs Directory) */
+.viewSwitcher {
+  display: flex;
+  align-items: center;
+  background: #111113;
+  border: 1px solid #232328;
+  border-radius: 12px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.viewTabBtn {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 8px 18px;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  color: #8c8c98;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-transform: uppercase;
+  transition: all 0.15s ease;
+}
+
+.viewTabBtn:hover {
+  color: #ffffff;
+  background: #1a1a1f;
+}
+
+.viewTabActive {
+  background: var(--brand, #E5B731) !important;
+  color: #0c0c0e !important;
+}
+
+/* Secondary Filter & Search Row */
+.filterRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.trackTabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.trackBtn {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid #232328;
+  background: #141416;
+  color: #8c8c96;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: all 0.15s ease;
+}
+
+.trackBtn:hover {
+  color: #ffffff;
+  border-color: #35353f;
+  background: #1c1c22;
+}
+
+.trackBtnActiveTotal {
+  background: var(--brand, #E5B731) !important;
+  color: #0c0c0e !important;
+  border-color: var(--brand, #E5B731) !important;
+}
+
+.trackBtnActiveResearch {
+  background: rgba(248, 113, 113, 0.18) !important;
+  color: #f87171 !important;
+  border-color: rgba(248, 113, 113, 0.4) !important;
+}
+
+.trackBtnActiveProduct {
+  background: rgba(74, 222, 128, 0.18) !important;
+  color: #4ade80 !important;
+  border-color: rgba(74, 222, 128, 0.4) !important;
+}
+
+.trackBtnActiveKaggle {
+  background: rgba(56, 200, 255, 0.18) !important;
+  color: #38c8ff !important;
+  border-color: rgba(56, 200, 255, 0.4) !important;
+}
+
+.searchBox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #141416;
+  border: 1px solid #232328;
+  border-radius: 9px;
+  padding: 7px 14px;
+  min-width: 260px;
+}
+
+.searchInput {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #ffffff;
+  font-size: 0.8rem;
+  width: 100%;
+}
+
+.searchInput::placeholder {
+  color: #656570;
+}
+
+/* ==========================================================================
+   Top 3 Podium Section
+   ========================================================================== */
+.podiumSection {
+  display: grid;
+  grid-template-columns: 1fr 1.1fr 1fr;
+  gap: 20px;
+  align-items: flex-end;
+  padding: 10px 0 10px;
+}
+
+.podiumCard {
+  background: #141416;
+  border: 1px solid #232328;
+  border-radius: 18px;
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.podiumCard:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.7);
+}
+
+.podiumFirst {
+  border-color: rgba(229, 183, 49, 0.4);
+  background: linear-gradient(180deg, rgba(229, 183, 49, 0.09) 0%, #141416 100%);
+  padding-top: 32px;
+  padding-bottom: 28px;
+}
+
+.podiumSecond {
+  border-color: rgba(200, 200, 215, 0.3);
+  background: linear-gradient(180deg, rgba(200, 200, 215, 0.05) 0%, #141416 100%);
+}
+
+.podiumThird {
+  border-color: rgba(205, 127, 50, 0.3);
+  background: linear-gradient(180deg, rgba(205, 127, 50, 0.05) 0%, #141416 100%);
+}
+
+.podiumRankBadge {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  font-weight: 900;
+  padding: 3px 9px;
+  border-radius: 6px;
+}
+
+.rankFirstBadge {
+  background: rgba(229, 183, 49, 0.2);
+  color: var(--brand, #E5B731);
+  border: 1px solid rgba(229, 183, 49, 0.4);
+}
+
+.rankSecondBadge {
+  background: rgba(200, 200, 215, 0.15);
+  color: #e2e2ea;
+  border: 1px solid rgba(200, 200, 215, 0.3);
+}
+
+.rankThirdBadge {
+  background: rgba(205, 127, 50, 0.15);
+  color: #d97706;
+  border: 1px solid rgba(205, 127, 50, 0.3);
+}
+
+.podiumAvatar {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: #1e1e24;
+  border: 2px solid #2a2a34;
+  display: grid;
+  place-items: center;
+  font-size: 1.1rem;
+  font-weight: 850;
+  color: #ffffff;
+}
+
+.podiumFirst .podiumAvatar {
+  width: 68px;
+  height: 68px;
+  border-color: var(--brand, #E5B731);
+  box-shadow: 0 0 20px rgba(229, 183, 49, 0.3);
+}
+
+.podiumName {
+  font-size: 1rem;
+  font-weight: 850;
+  color: #ffffff;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.podiumScore {
+  font-size: 1.45rem;
+  font-weight: 900;
+  font-family: var(--font-mono, monospace);
+  color: var(--brand, #E5B731);
+  line-height: 1;
+}
+
+.podiumPointsMeta {
+  display: flex;
+  gap: 8px;
+  font-size: 0.65rem;
+  font-weight: 750;
+  color: #8c8c98;
+}
+
+/* ==========================================================================
+   Rankings List Table
+   ========================================================================== */
+.tableCard {
+  background: #141416;
+  border: 1px solid #232328;
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.tableHeader {
+  display: grid;
+  grid-template-columns: 80px 1fr 140px 220px 120px;
+  padding: 14px 20px;
+  background: #111113;
+  border-bottom: 1px solid #1e1e24;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #70707a;
+  text-transform: uppercase;
+}
+
+.tableBody {
+  display: flex;
+  flex-direction: column;
+}
+
+.tableRow {
+  display: grid;
+  grid-template-columns: 80px 1fr 140px 220px 120px;
+  padding: 14px 20px;
+  align-items: center;
+  border-bottom: 1px solid #18181d;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.tableRow:last-child {
+  border-bottom: none;
+}
+
+.tableRow:hover {
+  background: #1a1a20;
+}
+
+.rankNumber {
+  font-family: var(--font-mono, monospace);
+  font-weight: 850;
+  font-size: 0.85rem;
+  color: #8c8c98;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rankGold {
+  color: var(--brand, #E5B731);
+}
+
+.memberCol {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.tableAvatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #1e1e24;
+  border: 1px solid #282832;
+  display: grid;
+  place-items: center;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #e2e2ea;
+  flex-shrink: 0;
+}
+
+.memberNameGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.memberNameText {
+  font-size: 0.84rem;
+  font-weight: 800;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.memberBioMuted {
+  font-size: 0.7rem;
+  color: #787884;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tierChip {
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  width: fit-content;
+}
+
+.tierAdvanced {
+  background: rgba(229, 183, 49, 0.12);
+  color: var(--brand, #E5B731);
+  border: 1px solid rgba(229, 183, 49, 0.28);
+}
+
+.tierBeginner {
+  background: rgba(56, 200, 255, 0.12);
+  color: #38c8ff;
+  border: 1px solid rgba(56, 200, 255, 0.28);
+}
+
+.trackPillsGroup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.trackPillRes {
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(248, 113, 113, 0.25);
+}
+
+.trackPillProd {
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(74, 222, 128, 0.25);
+}
+
+.trackPillKag {
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: #38c8ff;
+  background: rgba(56, 200, 255, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(56, 200, 255, 0.25);
+}
+
+.scoreCol {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.95rem;
+  font-weight: 850;
+  color: var(--brand, #E5B731);
+  text-align: right;
+}
+
+/* ==========================================================================
+   Member Directory Cards Grid
+   ========================================================================== */
+.directoryGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.memberCard {
+  background: #141416;
+  border: 1px solid #232328;
+  border-radius: 16px;
+  padding: 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: relative;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.memberCard:hover {
+  transform: translateY(-3px);
+  border-color: #383844;
+  box-shadow: 0 12px 28px -8px rgba(0, 0, 0, 0.6);
+}
+
+.memberCardTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.memberCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cardAvatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #1e1e24;
+  border: 1.5px solid #2e2e38;
+  display: grid;
+  place-items: center;
+  font-size: 0.85rem;
+  font-weight: 850;
+  color: #ffffff;
+}
+
+.cardBio {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #8c8c98;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.skillsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.skillPill {
+  font-size: 0.64rem;
+  font-weight: 700;
+  background: #111113;
+  border: 1px solid #23232c;
+  color: #b2b2be;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.cardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  border-top: 1px solid #1a1a20;
+}
+
+.cardSocialLinks {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.socialIconBtn {
+  color: #727280;
+  transition: color 0.12s ease;
+}
+
+.socialIconBtn:hover {
+  color: #ffffff;
+}
+
+.viewProfileTextBtn {
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: var(--brand, #E5B731);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* ==========================================================================
+   Profile Modal Preview Drawer
+   ========================================================================== */
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: grid;
+  place-items: center;
+  z-index: 1000;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.modalContent {
+  background: #141416;
+  border: 1px solid #282832;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 580px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  position: relative;
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.85);
+}
+
+.modalCloseBtn {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  background: #1e1e24;
+  border: 1px solid #2a2a34;
+  color: #8c8c98;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.modalCloseBtn:hover {
+  color: #ffffff;
+  background: #282832;
+}
+
+.profileHero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.profileAvatarLarge {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: #1e1e24;
+  border: 2px solid var(--brand, #E5B731);
+  display: grid;
+  place-items: center;
+  font-size: 1.3rem;
+  font-weight: 850;
+  color: #ffffff;
+}
+
+.profilePointsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.pointsBox {
+  background: #111113;
+  border: 1px solid #1e1e24;
+  border-radius: 10px;
+  padding: 10px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pointsBoxLabel {
+  font-size: 0.62rem;
+  font-weight: 750;
+  color: #70707a;
+  text-transform: uppercase;
+}
+
+.pointsBoxValue {
+  font-size: 1.05rem;
+  font-weight: 850;
+  font-family: var(--font-mono, monospace);
+  color: #ffffff;
+}
+
+/* Responsive */
+@media (max-width: 1050px) {
+  .directoryGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .podiumSection {
+    grid-template-columns: 1fr;
+  }
+
+  .directoryGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .tableHeader,
+  .tableRow {
+    grid-template-columns: 50px 1fr 100px;
+  }
+
+  .tierCol,
+  .trackCol {
+    display: none;
+  }
+}

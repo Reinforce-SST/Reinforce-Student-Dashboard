@@ -67,7 +67,18 @@ export type SocialLinks = {
   linkedin?: string | null;
 };
 
+export type TrackPoints = {
+  total: number;
+  kaggle: number;
+  product: number;
+  research: number;
+  misc: number;
+};
+
+export type MemberTier = "beginner" | "advanced";
+
 export type StudentProfile = {
+  id?: string;
   email: string;
   full_name: string;
   avatar_url?: string | null;
@@ -75,8 +86,17 @@ export type StudentProfile = {
   is_verified: boolean;
   discord_link_version?: number | null;
   verified_at?: string | null;
+  is_admin?: boolean;
+  is_member?: boolean;
+  tier?: MemberTier;
+  batch_year?: number | null;
+  bio?: string | null;
+  points?: TrackPoints;
   skills: string[];
   social_links: SocialLinks;
+  created_at?: string | null;
+  updated_at?: string | null;
+  last_login?: string | null;
 };
 
 /**
@@ -225,6 +245,138 @@ export const api = {
       token,
       { method: "POST" },
     ),
+
+  listSpgs: async (
+    token: string,
+    params?: {
+      status?: string;
+      type?: string;
+      track?: string;
+      recruiting?: boolean;
+      limit?: number;
+      cursor?: string;
+    }
+  ) => {
+    const query = new URLSearchParams();
+    if (params?.status) query.set("status", params.status);
+    if (params?.type) query.set("type", params.type);
+    if (params?.track && params.track !== "all") query.set("track", params.track);
+    if (params?.recruiting !== undefined) query.set("recruiting", String(params.recruiting));
+    if (params?.limit) query.set("limit", String(params.limit));
+    if (params?.cursor) query.set("cursor", params.cursor);
+
+    const qs = query.toString();
+    return request<{ items: any[]; next_cursor?: string | null }>(
+      `/spgs${qs ? `?${qs}` : ""}`,
+      token
+    );
+  },
+
+  getSpg: (token: string, spgId: string) =>
+    request<any>(`/spgs/${encodeURIComponent(spgId)}`, token),
+
+  listSpgReports: (
+    token: string,
+    spgId: string,
+    params?: { report_type?: string; limit?: number; cursor?: string }
+  ) => {
+    const query = new URLSearchParams();
+    if (params?.report_type) query.set("report_type", params.report_type);
+    if (params?.limit) query.set("limit", String(params.limit));
+    if (params?.cursor) query.set("cursor", params.cursor);
+
+    const qs = query.toString();
+    return request<{ items: any[]; next_cursor?: string | null }>(
+      `/spgs/${encodeURIComponent(spgId)}/reports${qs ? `?${qs}` : ""}`,
+      token
+    );
+  },
+
+  submitFormReport: (
+    token: string,
+    spgId: string,
+    submission: {
+      heading: string;
+      short_description: string;
+      report_type?: "progress" | "final";
+      summary: string;
+      milestones?: string[];
+      blockers?: string;
+      next_steps?: string;
+    }
+  ) =>
+    request<any>(`/spgs/${encodeURIComponent(spgId)}/reports/form`, token, {
+      method: "POST",
+      body: JSON.stringify(submission),
+    }),
+
+  submitPdfReport: async (
+    token: string,
+    spgId: string,
+    formData: FormData
+  ) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+    try {
+      const res = await fetch(`${BASE}/spgs/${encodeURIComponent(spgId)}/reports/pdf`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        let detail = `Upload failed with status ${res.status}`;
+        try {
+          const body = await res.json();
+          if (typeof body?.detail === "string") detail = body.detail;
+        } catch {}
+        throw new ApiError(detail, res.status);
+      }
+
+      return res.json();
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+
+  leaderboard: (token: string, track: string = "total", limit: number = 50) =>
+    request<{ track: string; total: number; entries: any[] }>(
+      `/users/leaderboard?track=${encodeURIComponent(track)}&limit=${limit}`,
+      token
+    ),
+
+  browseUsers: async (
+    token: string,
+    params?: {
+      search?: string;
+      track?: string;
+      tier?: string;
+      is_member?: boolean;
+      page?: number;
+      page_size?: number;
+    }
+  ) => {
+    const query = new URLSearchParams();
+    if (params?.search) query.set("search", params.search);
+    if (params?.track && params.track !== "all") query.set("track", params.track);
+    if (params?.tier && params.tier !== "all") query.set("tier", params.tier);
+    if (params?.is_member !== undefined) query.set("is_member", String(params.is_member));
+    if (params?.page) query.set("page", String(params.page));
+    if (params?.page_size) query.set("page_size", String(params.page_size));
+
+    const qs = query.toString();
+    return request<{ items: StudentProfile[]; total: number; page: number; page_size: number; has_more: boolean }>(
+      `/users${qs ? `?${qs}` : ""}`,
+      token
+    );
+  },
+
+  getUserProfile: (token: string, idOrEmail: string) =>
+    request<StudentProfile>(`/users/${encodeURIComponent(idOrEmail)}`, token),
 };
 
 /**
@@ -232,9 +384,12 @@ export const api = {
  * must be sent every time — omitting one clears it.
  */
 export type ProfileUpdate = {
+  full_name?: string;
+  avatar_url?: string | null;
+  bio?: string | null;
+  batch_year?: number | null;
   skills?: string[];
   social_links?: SocialLinks;
-  full_name?: string;
 };
 
 /* ---------------------------------------------------------------- display */

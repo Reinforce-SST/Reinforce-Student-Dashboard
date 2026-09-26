@@ -105,6 +105,34 @@ button { background: none; border: none; cursor: pointer; }
 a { color: inherit; text-decoration: none; }
 ul, ol { list-style: none; }
 
+/* ----------------------------------------------------------- scrollbar -- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #111113;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #282832;
+  border-radius: 999px;
+  border: 2px solid #111113;
+  transition: background 0.15s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--brand, #E5B731);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #282832 transparent;
+}
+
 /* Visible, never removed. Focus is an accessibility feature, not a style bug. */
 :focus-visible {
   outline: 2px solid var(--brand);
