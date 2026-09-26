@@ -11,17 +11,20 @@ import {
 } from './firebase';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
-const BOT_INTERNAL_URL = import.meta.env.VITE_BOT_INTERNAL_URL || 'http://localhost:8001/internal/verify-success';
+
+const getInitialDiscordId = () => (
+  new URLSearchParams(window.location.search).get('discord_id')?.trim() || ''
+);
 
 export default function App() {
   // Auth state
   const [authUser, setAuthUser] = useState(null);
   const [authToken, setAuthToken] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
-  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [isAuthLoading, setIsAuthLoading] = useState(Boolean(isFirebaseConfigured && auth));
 
   // Verification & Linking state
-  const [discordId, setDiscordId] = useState('');
+  const [discordId] = useState(getInitialDiscordId);
   const [status, setStatus] = useState('idle'); // 'idle' | 'signing-in' | 'verifying' | 'success' | 'error'
   const [errorMessage, setErrorMessage] = useState('');
   const [successData, setSuccessData] = useState(null);
@@ -31,7 +34,7 @@ export default function App() {
   
   // Link Discord modal / input inside dashboard
   const [showLinkModal, setShowLinkModal] = useState(false);
-  const [manualDiscordInput, setManualDiscordInput] = useState('');
+  const [manualDiscordInput, setManualDiscordInput] = useState(getInitialDiscordId);
 
   // Edit Profile Form state
   const [skillInput, setSkillInput] = useState('');
@@ -48,21 +51,10 @@ export default function App() {
   const [testEmail, setTestEmail] = useState('student@sst.scaler.com');
   const [testName, setTestName] = useState('Arya Sharma');
 
-  // 1. Listen for URL Discord ID param (e.g. /?discord_id=123456789012345678)
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const idFromQuery = params.get('discord_id');
-    if (idFromQuery) {
-      const cleanId = idFromQuery.trim();
-      setDiscordId(cleanId);
-      setManualDiscordInput(cleanId);
-    }
-  }, []);
-
-  // 2. Fetch or Sync User Profile with Backend API
+  // 1. Fetch or Sync User Profile with Backend API
   const syncUserProfile = useCallback(async (token, fallbackUser = null) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/sync-user`, {
+      const response = await fetch(`${API_BASE_URL}/users/sync`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -72,18 +64,18 @@ export default function App() {
 
       if (response.ok) {
         const data = await response.json();
-        if (data.user) {
-          setUserProfile(data.user);
-          if (data.user.skills) {
+        if (data.id) {
+          setUserProfile(data);
+          if (data.skills) {
             setProfileForm(prev => ({
               ...prev,
-              skills: data.user.skills || [],
-              github: data.user.social_links?.github || '',
-              linkedin: data.user.social_links?.linkedin || '',
-              kaggle: data.user.social_links?.kaggle || ''
+              skills: data.skills || [],
+              github: data.social_links?.github || '',
+              linkedin: data.social_links?.linkedin || '',
+              kaggle: data.social_links?.kaggle || ''
             }));
           }
-          return data.user;
+          return data;
         }
       }
     } catch (err) {
@@ -107,10 +99,70 @@ export default function App() {
     return null;
   }, []);
 
+  // 2. Link Discord Account through the authenticated dashboard backend.
+  const linkDiscordAccount = useCallback(async (targetId, token, user, fallbackEmail = '') => {
+    const idToLink = targetId.trim();
+    if (!idToLink || !/^\d+$/.test(idToLink)) {
+      setStatus('error');
+      setErrorMessage('Please enter a valid numeric Discord User ID (snowflake).');
+      return;
+    }
+
+    setStatus('verifying');
+    setErrorMessage('');
+
+    const email = user?.email || fallbackEmail;
+
+    if (!token) {
+      setStatus('error');
+      setErrorMessage('Sign in before linking your Discord account.');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/users/verify-discord`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ discord_id: idToLink })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || `Backend server returned status ${response.status}`);
+      }
+
+      setSuccessData({
+        ...data,
+        email,
+        discord_id: idToLink,
+        role_granted: data.role_granted || 'Verified Member'
+      });
+
+      if (data.user) {
+        setUserProfile(data.user);
+      } else {
+        setUserProfile(prev => ({
+          ...prev,
+          discord_id: idToLink,
+          is_verified: true
+        }));
+      }
+
+      setStatus('success');
+      setShowLinkModal(false);
+    } catch (backendErr) {
+      console.warn(`[Verification] Backend (${API_BASE_URL}) attempt:`, backendErr.message);
+      setStatus('error');
+      setErrorMessage(backendErr.message);
+    }
+  }, []);
+
   // 3. Persistent Firebase Auth Listener & Redirect Result Handler
   useEffect(() => {
     if (!isFirebaseConfigured || !auth) {
-      setIsAuthLoading(false);
       return;
     }
 
@@ -119,7 +171,7 @@ export default function App() {
       if (result?.user) {
         const user = result.user;
         const email = (user.email || '').toLowerCase().trim();
-        const isSstDomain = email.endsWith('@sst.scaler.com') || email.endsWith('@sst.edu.in');
+        const isSstDomain = email.endsWith('@sst.scaler.com') || email.endsWith('@scaler.com');
         if (!isSstDomain) {
           await signOut(auth);
           setStatus('error');
@@ -162,7 +214,7 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, [syncUserProfile, discordId]);
+  }, [syncUserProfile, discordId, linkDiscordAccount]);
 
   // 4. Handle Direct Google Sign In (with Popup + Automatic Redirect Fallback for Zen/Opera)
   const handleGoogleSignIn = async () => {
@@ -183,7 +235,7 @@ export default function App() {
       const user = result.user;
       const email = (user.email || '').toLowerCase().trim();
 
-      const isSstDomain = email.endsWith('@sst.scaler.com') || email.endsWith('@sst.edu.in');
+      const isSstDomain = email.endsWith('@sst.scaler.com') || email.endsWith('@scaler.com');
       if (!isSstDomain) {
         await signOut(auth);
         setStatus('error');
@@ -233,114 +285,7 @@ export default function App() {
     }
   };
 
-  // 5. Link Discord Account (calls backend /auth/verify-discord)
-  const linkDiscordAccount = async (targetId, token = authToken, user = authUser) => {
-    const idToLink = (targetId || manualDiscordInput || discordId).trim();
-    if (!idToLink || !/^\d+$/.test(idToLink)) {
-      setStatus('error');
-      setErrorMessage('Please enter a valid numeric Discord User ID (snowflake).');
-      return;
-    }
-
-    setStatus('verifying');
-    setErrorMessage('');
-
-    const email = user?.email || testEmail;
-    const name = user?.displayName || testName || 'SST Student';
-
-    // 1. First Attempt: Call Dashboard Backend API (/api/v1/auth/verify-discord)
-    if (token) {
-      try {
-        const response = await fetch(`${API_BASE_URL}/auth/verify-discord`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({ discord_id: idToLink })
-        });
-
-        const data = await response.json();
-        if (response.ok) {
-          setSuccessData({
-            ...data,
-            email: email,
-            discord_id: idToLink,
-            role_granted: data.role_granted || 'Verified Member'
-          });
-
-          if (data.user) {
-            setUserProfile(data.user);
-          } else {
-            setUserProfile(prev => ({
-              ...prev,
-              discord_id: idToLink,
-              is_verified: true
-            }));
-          }
-
-          setStatus('success');
-          setShowLinkModal(false);
-          return;
-        } else {
-          throw new Error(data.detail || `Backend server returned status ${response.status}`);
-        }
-      } catch (backendErr) {
-        console.warn(`[Verification] Primary Backend (${API_BASE_URL}) attempt:`, backendErr.message);
-        
-        // If it was a 4xx/5xx error returned by the server with a specific message, don't silently bypass unless it's a connection failure
-        if (!backendErr.message.includes('Failed to fetch') && !backendErr.message.includes('NetworkError')) {
-          setStatus('error');
-          setErrorMessage(backendErr.message);
-          return;
-        }
-      }
-    }
-
-    // 2. Fallback Attempt: Direct call to YUVI Bot Server (:8000/internal/verify-success)
-    try {
-      const botPayload = {
-        discord_id: idToLink,
-        email: email,
-        name: name
-      };
-
-      const botRes = await fetch(BOT_INTERNAL_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(botPayload)
-      });
-
-      const botData = await botRes.json();
-      if (!botRes.ok) {
-        throw new Error(botData.detail || `Discord Bot returned error status ${botRes.status}`);
-      }
-
-      setSuccessData({
-        ...botData,
-        email: email,
-        discord_id: idToLink,
-        role_granted: botData.role_granted || 'Verified Member'
-      });
-      setUserProfile(prev => ({
-        ...prev,
-        discord_id: idToLink,
-        is_verified: true
-      }));
-      setStatus('success');
-      setShowLinkModal(false);
-      setShowConfigModal(false);
-
-    } catch (fallbackErr) {
-      console.error('[Verification] Both backend and direct bot endpoints failed:', fallbackErr);
-      setStatus('error');
-      setErrorMessage(
-        `Unable to connect to servers: Neither Dashboard API (${API_BASE_URL}) nor YUVI Bot (${BOT_INTERNAL_URL}) could be reached. Please ensure at least one server is running locally.`
-      );
-    }
-  };
-
-  // 6. Unlink Discord Account
+  // 5. Unlink Discord Account
   const handleUnlinkDiscord = async () => {
     if (!authToken) {
       setUserProfile(prev => ({ ...prev, discord_id: null, is_verified: false }));
@@ -348,7 +293,7 @@ export default function App() {
     }
 
     try {
-      const res = await fetch(`${API_BASE_URL}/auth/unlink-discord`, {
+      const res = await fetch(`${API_BASE_URL}/users/unlink-discord`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${authToken}`,
@@ -364,15 +309,15 @@ export default function App() {
     }
   };
 
-  // 7. Save Profile Settings
+  // 6. Save Profile Settings
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     setProfileSaveStatus('saving');
 
     try {
       if (authToken) {
-        const res = await fetch(`${API_BASE_URL}/auth/profile`, {
-          method: 'PUT',
+        const res = await fetch(`${API_BASE_URL}/users/me`, {
+          method: 'PATCH',
           headers: {
             'Authorization': `Bearer ${authToken}`,
             'Content-Type': 'application/json'
@@ -388,7 +333,7 @@ export default function App() {
         });
         if (res.ok) {
           const data = await res.json();
-          setUserProfile(data.user);
+          setUserProfile(data);
           setProfileSaveStatus('saved');
           setTimeout(() => setProfileSaveStatus(''), 3000);
           return;
@@ -447,8 +392,8 @@ export default function App() {
   const handleSimulatedDevLogin = async (e) => {
     e.preventDefault();
     const email = testEmail.trim().toLowerCase();
-    if (!email.endsWith('@sst.scaler.com') && !email.endsWith('@sst.edu.in')) {
-      setErrorMessage('Test email must end with @sst.scaler.com or @sst.edu.in');
+    if (!email.endsWith('@sst.scaler.com') && !email.endsWith('@scaler.com')) {
+      setErrorMessage('Test email must end with @sst.scaler.com or @scaler.com');
       return;
     }
 
@@ -676,7 +621,7 @@ export default function App() {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <button
-              onClick={() => linkDiscordAccount(discordId)}
+              onClick={() => linkDiscordAccount(discordId, authToken, authUser, testEmail)}
               disabled={status === 'verifying'}
               className="btn-primary"
               style={{ width: '100%', padding: '12px' }}
@@ -1509,7 +1454,7 @@ export default function App() {
               <button
                 type="button"
                 disabled={status === 'verifying'}
-                onClick={() => linkDiscordAccount(manualDiscordInput)}
+                onClick={() => linkDiscordAccount(manualDiscordInput, authToken, authUser, testEmail)}
                 className="btn-primary"
                 style={{ flex: 1 }}
               >

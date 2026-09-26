@@ -12,14 +12,13 @@ The Reinforce Club (SST) platform. Three surfaces, one codebase:
 
 | Surface | State | Path |
 |---|---|---|
-| Public website | Not built | — |
-| Member dashboard | Login + profile only | `client/` |
-| Admin console | Not built | — |
-| API | Auth routes only | `server/` |
+| Public website | Landing page and project/track browsing | `web/` |
+| Member dashboard | Auth, profile, tickets, and member navigation | `web/` |
+| Legacy frontend | Vite client; still deployed by the existing Vercel project | `client/` |
+| API | Users, tickets, SPGs, events, ideas, blogs, contributions | `server/` |
 
-The product specification is the PRD. The gap between the PRD and what exists is
-large — roughly 12% of the PRD is implemented. **Do not assume a feature exists
-because the PRD describes it.** Check the code.
+The product specification is the PRD. **Do not assume a feature exists because
+the PRD describes it.** Check the code and deployment.
 
 ## Deployment topology
 
@@ -27,7 +26,8 @@ This is the part that surprises people. Three separate services, two repositorie
 one shared database.
 
 ```
-  reinforce-student-dashboard.vercel.app      Vercel   (this repo, client/)
+  reinforce-student-dashboard.vercel.app      Vercel   (currently client/)
+  Next.js web/ must be selected as project root for the integrated release
                  │
                  ▼
   reinforce-student-dashboard.onrender.com    Render   (this repo, server/)
@@ -50,11 +50,12 @@ Read these before changing anything structural.
 
 ### 1. `/auth` is a bot deep-link target
 
-YUVI builds its verification link as `{FRONTEND_AUTH_URL}?discord_id={id}` and sends
-it to members as an ephemeral Discord message. `FRONTEND_AUTH_URL` is an environment
+YUVI builds its verification link as `{FRONTEND_AUTH_URL}#link_token={one-time-token}`
+and sends it as an ephemeral Discord message. The Next.js `/auth` page accepts
+both query and fragment tokens. `FRONTEND_AUTH_URL` is an environment
 variable **on Render, in the bot's repo** — not in this codebase, not greppable here.
 
-If you move, rename, or gate the route that handles `?discord_id=`, member
+If you move, rename, or gate the route that handles the private link token, member
 verification breaks silently for everyone, and nothing in this repo errors. Changing
 it requires a coordinated change to the bot's Render environment.
 
@@ -67,12 +68,12 @@ The full document shapes are written down in [`docs/DATA_CONTRACT.md`](docs/DATA
 **That file is the source of truth for anything crossing the boundary.** Derive from
 it; do not guess field names from the UI.
 
-### 3. The user document is written twice
+### 3. The user record has bot compatibility aliases
 
-`server/app/api/v1/endpoints/auth.py` writes the same payload to both
-`users/{email}` and `users/{discord_id}`. Two documents, one person, no transaction.
-They can and will drift. Be aware when reading either one. Consolidating this is a
-known task, not an accident to be fixed in passing.
+The website's authoritative profile is `users/{firebase_uid}`. Linking writes
+`users/{email}` and `users/{discord_id}` aliases for YUVI in one transaction.
+Ticket access from a legacy Discord ID requires a reciprocal link; a raw ID
+is not ownership proof. See docs/DATA_CONTRACT.md.
 
 ## Known defects — do not "fix in passing"
 
@@ -84,17 +85,11 @@ drive-by edit inside an unrelated change.
   simulated token — but it must be gated behind an environment check.
 - **Events and Projects tabs render hardcoded fake content.** Invented workshops with
   invented dates, shipped to real users. They have no data source behind them.
-- **`allow_origins=["*"]`** on the API (`server/main.py`).
-- **Discord linking accepts a typed snowflake**, not OAuth. A user can link an ID
-  they do not own.
-- **`server/app/firebase.py` calls `storage.bucket()` at import time** with an empty
-  default. Crashes on import for anyone without the env var set — this is why local
-  backend setup fails for new contributors.
-- **Empty schema files are committed**: `schemas/blogs.py`, `schemas/events.py`,
-  `schemas/tickets.py` are zero bytes. They are placeholders, not deleted code.
-- **`utils/ticket_manager.py` in the YUVI repo** references `TicketCategory` without
-  importing it — passing a category filter raises `NameError`. Different repo; noted
-  because it affects the same collection you will be reading.
+- **Legacy Discord records need reverification.** Raw-ID links no longer grant
+  access; members must open a fresh private YUVI token link. See docs/verification.md.
+- **Deployment still selects the Vite client.** The existing Vercel project must
+  select `web/` for the Next.js release. The root Vite rewrite is not suitable
+  for Next.js. Coordinate this with the backend and bot rollout.
 
 ## Conventions
 

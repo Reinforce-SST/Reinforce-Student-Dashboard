@@ -1,0 +1,538 @@
+/* ==========================================================================
+   Events Calendar Page Styles
+   ========================================================================== */
+
+.pageContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  max-width: 1360px;
+  margin: 0 auto;
+  padding-bottom: 40px;
+}
+
+/* Header Area */
+.headerRow {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.titleGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pageTitle {
+  font-size: clamp(1.4rem, 2vw, 1.75rem);
+  font-weight: 850;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.pageSubtitle {
+  font-size: 0.82rem;
+  color: #8c8c96;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Category Filter Tabs */
+.filterTabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tabBtn {
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  padding: 7px 16px;
+  border-radius: 999px;
+  border: 1px solid #232328;
+  background: #141416;
+  color: #8c8c96;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.tabBtn:hover {
+  background: #1c1c22;
+  color: #ffffff;
+  border-color: #35353f;
+}
+
+.tabActive {
+  background: var(--brand, #E5B731) !important;
+  color: #0c0c0e !important;
+  border-color: var(--brand, #E5B731) !important;
+  font-weight: 850 !important;
+}
+
+/* 2-Column Main Content */
+.mainLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 28px;
+  align-items: start;
+}
+
+/* Left Column: Events Stack */
+.eventsStack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.eventCard {
+  background: #141416;
+  border: 1px solid #232328;
+  border-radius: 14px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.eventCard:hover {
+  transform: translateY(-2px);
+  border-color: #35353f;
+  box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.5);
+}
+
+.eventLeftArea {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+}
+
+/* Date Badge on Left */
+.dateBox {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  background: #1c1c22;
+  border: 1px solid #2a2a34;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  gap: 2px;
+}
+
+.dateMonth {
+  font-size: 0.58rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  color: #727280;
+  text-transform: uppercase;
+}
+
+.dateDay {
+  font-size: 1.15rem;
+  font-weight: 850;
+  color: var(--brand, #E5B731);
+  line-height: 1;
+  font-family: var(--font-mono, monospace);
+}
+
+/* Main Event Details */
+.eventDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.typeTag {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  width: fit-content;
+}
+
+.typeHackathon {
+  color: #38c8ff;
+}
+
+.typeWorkshop {
+  color: #4ade80;
+}
+
+.typeMeetup {
+  color: #f59e0b;
+}
+
+.eventTitle {
+  font-size: 0.98rem;
+  font-weight: 750;
+  color: #ffffff;
+  margin: 0;
+  line-height: 1.3;
+}
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 0.72rem;
+  color: #8c8c98;
+  flex-wrap: wrap;
+}
+
+.metaItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Right Action & Status Area */
+.eventRightArea {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-shrink: 0;
+}
+
+.statusCol {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 90px;
+}
+
+.statusHeader {
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #555560;
+  text-transform: uppercase;
+}
+
+.statusValue {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.statusRegistered {
+  color: #4ade80;
+}
+
+.statusSlots {
+  color: #e2e2ea;
+}
+
+.statusAvailable {
+  color: #a2a2b0;
+}
+
+.statusLimited {
+  color: var(--brand, #E5B731);
+}
+
+.statusFull {
+  color: #f87171;
+}
+
+/* Action Buttons */
+.actionBtn {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 7px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  text-decoration: none;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 84px;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.btnJoined {
+  background: rgba(229, 183, 49, 0.15);
+  color: var(--brand, #E5B731);
+  border-color: rgba(229, 183, 49, 0.35);
+}
+
+.btnJoined:hover {
+  background: rgba(229, 183, 49, 0.25);
+}
+
+.btnRsvp {
+  background: #1c1c22;
+  color: #e2e2ea;
+  border-color: #2e2e38;
+}
+
+.btnRsvp:hover {
+  background: var(--brand, #E5B731);
+  color: #0c0c0e;
+  border-color: var(--brand, #E5B731);
+}
+
+.btnClosed {
+  background: #141416;
+  color: #555560;
+  border-color: #222228;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* ==========================================================================
+   Right Column Widgets
+   ========================================================================== */
+.rightWidgets {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* Calendar Widget */
+.calendarWidget {
+  background: #141416;
+  border: 1px solid #232328;
+  border-radius: 16px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.calendarTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.calMonthTitle {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0;
+}
+
+.calScheduleSubtitle {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #6a6a75;
+  text-transform: uppercase;
+  margin-top: 3px;
+  display: block;
+}
+
+.calNavGroup {
+  display: flex;
+  gap: 6px;
+}
+
+.calNavBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: #1e1e24;
+  border: 1px solid #2a2a34;
+  color: #e0e0e8;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.calNavBtn:hover {
+  background: #2b2b34;
+}
+
+.weekdaysHeader {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 0.62rem;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  color: #656570;
+  padding-bottom: 6px;
+}
+
+.daysGrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.dayMuted {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  color: #353540;
+  font-size: 0.72rem;
+}
+
+.dayCell {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #a2a2b0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.dayCell:hover {
+  background: #22222a;
+  color: #ffffff;
+}
+
+.daySelected {
+  background: var(--brand, #E5B731) !important;
+  color: #0c0c0e !important;
+  font-weight: 850 !important;
+}
+
+.dayDotIndicator {
+  position: absolute;
+  bottom: 3px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #38c8ff;
+}
+
+.daySelected .dayDotIndicator {
+  background: #0c0c0e;
+}
+
+/* Event Statistics Widget */
+.statsWidget {
+  background: #141416;
+  border: 1px solid #232328;
+  border-radius: 16px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.statsTitle {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #727280;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.statsRowsList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.statRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+}
+
+.statRowLabel {
+  color: #a2a2b0;
+  font-weight: 550;
+}
+
+.statRowValue {
+  font-weight: 850;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.92rem;
+}
+
+.valGold {
+  color: var(--brand, #E5B731);
+}
+
+.valGreen {
+  color: #4ade80;
+}
+
+.valBlue {
+  color: #38c8ff;
+}
+
+.progressSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #1e1e24;
+}
+
+.progressTrack {
+  width: 100%;
+  height: 5px;
+  background: #202026;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--brand, #E5B731);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.progressFootnote {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #656570;
+  text-transform: uppercase;
+}
+
+/* Responsive Breakpoints */
+@media (max-width: 1050px) {
+  .mainLayout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .eventCard {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .eventRightArea {
+    width: 100%;
+    justify-content: space-between;
+    padding-top: 10px;
+    border-top: 1px solid #1e1e24;
+  }
+
+  .statusCol {
+    align-items: flex-start;
+  }
+}

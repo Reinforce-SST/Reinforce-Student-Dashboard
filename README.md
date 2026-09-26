@@ -6,9 +6,7 @@
 
 **The public website, member dashboard, and API for the Reinforce AI/ML club at SST.**
 
-[![Website](https://img.shields.io/badge/site-live-E5B731?style=flat-square)](https://reinforce-student-dashboard.vercel.app)
-[![API](https://img.shields.io/badge/API-live-E5B731?style=flat-square)](https://reinforce-student-dashboard.onrender.com/docs)
-[![Bot](https://img.shields.io/badge/YUVI-online-E5B731?style=flat-square)](https://github.com/Reinforce-SST/YUVI)
+[Website](https://reinforce-student-dashboard.vercel.app) · [YUVI repository](https://github.com/Reinforce-SST/YUVI)
 
 </div>
 
@@ -28,9 +26,10 @@ the club's Discord bot. Anything a member files in Discord — an SPG registrati
 resource request, an idea — appears on the website. One source of truth, two front
 doors.
 
-> **Current state:** authentication and member profiles are live. The public website,
-> the Discord mirror, and the admin console are in active development. See
-> [`AGENTS.md`](AGENTS.md) for an honest map of what exists versus what is specified.
+> **Deployment note:** `web/` contains the Next.js landing page and member
+> dashboard, while the existing Vercel project has served the legacy `client/`
+> app. Deploy the integrated API and select `web/` as the Vercel root before
+> treating the new sign-in flow as live. See [`docs/verification.md`](docs/verification.md).
 
 ## Architecture
 
@@ -52,16 +51,18 @@ server-side only; every read and write goes through the API.
 
 | Layer | Technology |
 |---|---|
-| Client | React 19, Vite |
+| Website and dashboard | Next.js 16, React 19 |
+| Legacy client | React 19, Vite |
 | API | FastAPI, Python 3.13+ |
 | Database | Cloud Firestore |
 | Auth | Firebase Auth — Google OAuth, pinned to `@sst.scaler.com` |
-| Hosting | Vercel (client), Render (API + bot) |
+| Hosting | Vercel (frontend), Render (API + bot) |
 
 ## Repository layout
 
 ```
-client/          Web client
+web/             Next.js public website and member dashboard
+client/          Legacy Vite client
 server/          FastAPI service
   app/api/       Route handlers
   app/schemas/   Pydantic request/response models
@@ -77,16 +78,16 @@ CONTRIBUTING.md  How to make a change here
 **Prerequisites:** Node 20+, Python 3.13+, [`uv`](https://docs.astral.sh/uv/).
 
 ```bash
-# Client
-cd client
-cp .env.example .env          # values come from a core member
-npm install
-npm run dev                   # http://localhost:5173
+# Website and dashboard
+cd web
+cp .env.example .env.local    # client configuration from a core member
+npm ci
+npm run dev                   # http://localhost:3000
 
 # API
 cd server
-uv sync
-# place serviceAccountKey.json here — ask a core member, never commit it
+uv sync --locked
+# Configure Firebase Admin credentials outside the repository.
 uv run uvicorn main:app --reload --port 8080
 ```
 

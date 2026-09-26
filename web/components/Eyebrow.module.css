@@ -1,0 +1,18 @@
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  color: var(--ink-4);
+  margin-bottom: 18px;
+}
+.center { justify-content: center; }
+
+.slash,
+.index { color: var(--brand); }
+
+:global(.on-light) .slash,
+:global(.on-light) .index { color: var(--brand-ink); }
+
+:global(.on-light) .eyebrow { color: var(--paper-ink-3); }
+
+.dot { opacity: 0.55; }

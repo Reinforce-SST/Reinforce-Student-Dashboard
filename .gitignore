@@ -2,6 +2,11 @@
 .env
 .env.*
 !.env.example
+# Firebase admin keys. The middle pattern is the filename Firebase actually
+# gives you on download (reinforce-sst-...-firebase-adminsdk-fbsvc-....json),
+# which the two conventional names below would not have caught.
+**/*serviceAccount*.json
+**/*firebase-adminsdk*.json
 **/serviceAccountKey.json
 **/firebase_credentials.json
 *.pem
