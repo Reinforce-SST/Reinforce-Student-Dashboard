@@ -13,33 +13,48 @@ import {
   type ContributionTrack,
   CONTRIBUTION_CATEGORY_INDEX,
   ALL_CATEGORIES,
+  CATEGORY_HIERARCHY,
+  CATEGORY_RANK_MAP,
+  ACTIVITY_INTENSITY_LEVELS,
   getCategoryConfig,
   getTrackColor,
-  demoContributions,
+  getDominantCategory,
+  getHeatmapCellStyle,
 } from "@/lib/contributionData";
 import styles from "./Profile.module.css";
 
+export interface HeatmapDayCell {
+  level: number;
+  date: string;
+  count: number;
+  points: number;
+  activityNote?: string;
+  category?: ContributionCategory;
+}
+
 // Dynamic 52-week Contribution Heatmap generator from actual contribution records
-function buildHeatmapGrid(contributions: ContributionRecord[]) {
+function buildHeatmapGrid(contributions: ContributionRecord[]): HeatmapDayCell[][] {
   const weeks = 52;
   const daysPerWeek = 7;
-  const grid: { level: number; date: string; count: number; points: number }[][] = [];
+  const grid: HeatmapDayCell[][] = [];
 
   // Start 52 weeks ago
   const today = new Date();
   const startDate = new Date(today);
   startDate.setDate(today.getDate() - 52 * 7 + 1);
 
-  // Group contributions by date string YYYY-MM-DD
-  const dateMap = new Map<string, { count: number; points: number }>();
+  // Live real contributions grouping
+  const dateMap = new Map<string, { count: number; points: number; categories: ContributionCategory[]; titles: string[] }>();
   for (const contrib of contributions) {
     if (contrib.occurred_at) {
       try {
         const d = new Date(contrib.occurred_at);
         const key = d.toISOString().slice(0, 10);
-        const existing = dateMap.get(key) || { count: 0, points: 0 };
+        const existing = dateMap.get(key) || { count: 0, points: 0, categories: [], titles: [] };
         existing.count += 1;
         existing.points += contrib.points || 0;
+        if (contrib.category) existing.categories.push(contrib.category);
+        if (contrib.title) existing.titles.push(contrib.title);
         dateMap.set(key, existing);
       } catch {
         // ignore invalid date
@@ -48,7 +63,7 @@ function buildHeatmapGrid(contributions: ContributionRecord[]) {
   }
 
   for (let w = 0; w < weeks; w++) {
-    const weekDays = [];
+    const weekDays: HeatmapDayCell[] = [];
     for (let d = 0; d < daysPerWeek; d++) {
       const cur = new Date(startDate);
       cur.setDate(startDate.getDate() + (w * 7 + d));
@@ -59,18 +74,23 @@ function buildHeatmapGrid(contributions: ContributionRecord[]) {
         year: "numeric",
       });
 
-      const dayData = dateMap.get(key) || { count: 0, points: 0 };
+      const dayData = dateMap.get(key) || { count: 0, points: 0, categories: [], titles: [] };
       let level = 0;
       if (dayData.points >= 50) level = 4;
       else if (dayData.points >= 30) level = 3;
       else if (dayData.points >= 15) level = 2;
       else if (dayData.points > 0 || dayData.count > 0) level = 1;
 
+      const dominantCat = getDominantCategory(dayData.categories) || (level > 0 ? "other" : undefined);
+      const note = dayData.titles.length > 0 ? dayData.titles.join(", ") : undefined;
+
       weekDays.push({
         level,
         date: dateStr,
         count: dayData.count,
         points: dayData.points,
+        category: dominantCat,
+        activityNote: note,
       });
     }
     grid.push(weekDays);
@@ -125,8 +145,8 @@ function ProfileClientContent() {
   const [liveContributions, setLiveContributions] = useState<ContributionRecord[]>([]);
   const [contributionsLoading, setContributionsLoading] = useState(false);
 
-  // Demo Mode Switch (allows showcasing all 9 categories with colors and workflows)
-  const [isDemoMode, setIsDemoMode] = useState(false);
+  // Collapsible Activity & Category Hierarchy Guide toggle
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   // Filters
   const [historyTab, setHistoryTab] = useState<"all" | ContributionTrack>("all");
@@ -194,13 +214,8 @@ function ProfileClientContent() {
     fetchContributions();
   }, [fetchContributions]);
 
-  // Resolved active contributions (live or demo)
-  const activeContributions = useMemo(() => {
-    if (isDemoMode) {
-      return demoContributions;
-    }
-    return liveContributions;
-  }, [isDemoMode, liveContributions]);
+  // Active contributions strictly backed by live ledger
+  const activeContributions = liveContributions;
 
   // Filtered contributions
   const filteredContributions = useMemo(() => {
@@ -230,11 +245,8 @@ function ProfileClientContent() {
 
   const batchDisplay = formatBatchDisplay(derivedBatchYear);
 
-  // Track Points strictly mapped from schema
+  // Track Points strictly mapped from schema (Live API)
   const trackPoints: TrackPoints = useMemo(() => {
-    if (isDemoMode) {
-      return { total: 320, kaggle: 75, product: 75, research: 125, misc: 45 };
-    }
     const raw = activeProfile?.points || loggedInProfile?.points;
     return {
       total: raw?.total || 0,
@@ -243,15 +255,14 @@ function ProfileClientContent() {
       kaggle: raw?.kaggle || 0,
       misc: raw?.misc || 0,
     };
-  }, [isDemoMode, activeProfile?.points, loggedInProfile?.points]);
+  }, [activeProfile?.points, loggedInProfile?.points]);
 
-  // Dynamic Heatmap
-  const heatmapData = useMemo(() => buildHeatmapGrid(activeContributions), [activeContributions]);
-  const [hoveredCell, setHoveredCell] = useState<{
-    date: string;
-    count: number;
-    points: number;
-  } | null>(null);
+  // Dynamic Heatmap computed strictly from verified live contributions
+  const heatmapData = useMemo(
+    () => buildHeatmapGrid(activeContributions),
+    [activeContributions]
+  );
+  const [hoveredCell, setHoveredCell] = useState<HeatmapDayCell | null>(null);
 
   // Edit Modal state (Owner Only)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -687,19 +698,9 @@ function ProfileClientContent() {
             <MemberIcon name="award" size={16} />
             Contribution Categories
           </h2>
-
-          <div className={styles.demoToggleWrap}>
-            <button
-              type="button"
-              onClick={() => setIsDemoMode(!isDemoMode)}
-              className={`${styles.demoToggleBtn} ${isDemoMode ? styles.demoToggleBtnActive : ""}`}
-              style={{ padding: "4px 10px", fontSize: "0.72rem" }}
-              title="Toggle between Live API Ledger and 9-Category Demo"
-            >
-              <MemberIcon name="lightning" size={12} />
-              {isDemoMode ? "Showing 9-Category Demo" : "Switch to 9-Category Demo"}
-            </button>
-          </div>
+          <span style={{ fontSize: "0.72rem", color: "#71717a" }}>
+            9 Verified Categories • Select to filter ledger
+          </span>
         </div>
 
         {/* Compact 9-Category Chip Row */}
@@ -738,25 +739,30 @@ function ProfileClientContent() {
       <section className={styles.heatmapCard} aria-label="52-Week Contribution Activity Heatmap">
         <div className={styles.heatmapHeader}>
           <div className={styles.heatmapTitleGroup}>
-            <h2 className={styles.heatmapTitle}>Activity &amp; Commit Matrix</h2>
+            <h2 className={styles.heatmapTitle}>
+              <MemberIcon name="calendar" size={18} />
+              Activity &amp; Commit Matrix
+            </h2>
             <span className={styles.heatmapSubtitle}>
               {activeContributions.length} verified contribution{activeContributions.length !== 1 ? "s" : ""} recorded in past 52 weeks
             </span>
           </div>
 
-          <div className={styles.heatmapFilterRow}>
-            {(["all", "research", "product", "kaggle", "misc"] as const).map((track) => (
-              <button
-                key={track}
-                type="button"
-                onClick={() => setHistoryTab(track)}
-                className={`${styles.heatmapFilterBtn} ${
-                  historyTab === track ? styles.heatmapFilterBtnActive : ""
-                }`}
-              >
-                {track === "all" ? "ALL TRACKS" : track.toUpperCase()}
-              </button>
-            ))}
+          <div className={styles.heatmapHeaderActions}>
+            <div className={styles.heatmapFilterRow}>
+              {(["all", "research", "product", "kaggle", "misc"] as const).map((track) => (
+                <button
+                  key={track}
+                  type="button"
+                  onClick={() => setHistoryTab(track)}
+                  className={`${styles.heatmapFilterBtn} ${
+                    historyTab === track ? styles.heatmapFilterBtnActive : ""
+                  }`}
+                >
+                  {track === "all" ? "ALL TRACKS" : track.toUpperCase()}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -788,25 +794,21 @@ function ProfileClientContent() {
               <div className={styles.weeksColumns}>
                 {heatmapData.map((week, wIdx) => (
                   <div key={wIdx} className={styles.weekColumn}>
-                    {week.map((day, dIdx) => (
-                      <div
-                        key={dIdx}
-                        className={`${styles.dayCell} ${
-                          day.level === 0
-                            ? styles.level0
-                            : day.level === 1
-                            ? styles.level1
-                            : day.level === 2
-                            ? styles.level2
-                            : day.level === 3
-                            ? styles.level3
-                            : styles.level4
-                        }`}
-                        onMouseEnter={() => setHoveredCell(day)}
-                        onMouseLeave={() => setHoveredCell(null)}
-                        title={`${day.date}: ${day.count} contributions (+${day.points} pts)`}
-                      />
-                    ))}
+                    {week.map((day, dIdx) => {
+                      const cellStyle = getHeatmapCellStyle(day.category, day.level);
+                      const catConfig = day.category ? getCategoryConfig(day.category) : null;
+
+                      return (
+                        <div
+                          key={dIdx}
+                          className={styles.dayCell}
+                          style={cellStyle}
+                          onMouseEnter={() => setHoveredCell(day)}
+                          onMouseLeave={() => setHoveredCell(null)}
+                          title={`${day.date}: ${day.count} contributions (+${day.points} pts)${catConfig ? ` [${catConfig.label}]` : ""}${day.activityNote ? ` — ${day.activityNote}` : ""}`}
+                        />
+                      );
+                    })}
                   </div>
                 ))}
               </div>
@@ -816,26 +818,163 @@ function ProfileClientContent() {
 
         {/* Heatmap Footer with Hover Meta & Legend */}
         <div className={styles.heatmapFooter}>
-          <div>
+          <div style={{ flex: 1, minWidth: "260px" }}>
             {hoveredCell ? (
-              <span style={{ color: "#ffffff", fontWeight: "750" }}>
-                {hoveredCell.date} — {hoveredCell.count} contribution{hoveredCell.count !== 1 ? "s" : ""} (+{hoveredCell.points} merit pts)
+              <span style={{ color: "#ffffff", fontWeight: "750", display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                <span>
+                  {hoveredCell.date} — {hoveredCell.count > 0 ? `${hoveredCell.count} contribution${hoveredCell.count !== 1 ? "s" : ""} (+${hoveredCell.points} merit pts)` : "No contributions"}
+                </span>
+                {hoveredCell.category && hoveredCell.level > 0 && (
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "5px",
+                      padding: "2px 7px",
+                      borderRadius: "4px",
+                      fontSize: "0.68rem",
+                      background: getCategoryConfig(hoveredCell.category).bg,
+                      color: getCategoryConfig(hoveredCell.category).color,
+                      border: `1px solid ${getCategoryConfig(hoveredCell.category).color}50`,
+                      fontWeight: "800",
+                    }}
+                  >
+                    <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: getCategoryConfig(hoveredCell.category).color }} />
+                    {getCategoryConfig(hoveredCell.category).label} (Rank #{CATEGORY_RANK_MAP[hoveredCell.category]})
+                  </span>
+                )}
+                {hoveredCell.activityNote && (
+                  <span style={{ color: "#a1a1aa", fontWeight: "500" }}>
+                    • {hoveredCell.activityNote}
+                  </span>
+                )}
               </span>
             ) : (
-              <span>Hover over any day cell to view verified contributions.</span>
+              <span>Hover over any day cell to view category color &amp; verified contributions.</span>
             )}
           </div>
 
           <div className={styles.legendScale}>
             <span>Less</span>
-            <span className={`${styles.legendDot} ${styles.level0}`} />
-            <span className={`${styles.legendDot} ${styles.level1}`} />
-            <span className={`${styles.legendDot} ${styles.level2}`} />
-            <span className={`${styles.legendDot} ${styles.level3}`} />
-            <span className={`${styles.legendDot} ${styles.level4}`} />
+            <span className={`${styles.legendDot} ${styles.level0}`} title="Level 0 (0 pts)" />
+            <span className={`${styles.legendDot} ${styles.level1}`} title="Level 1 (1–14 pts)" />
+            <span className={`${styles.legendDot} ${styles.level2}`} title="Level 2 (15–29 pts)" />
+            <span className={`${styles.legendDot} ${styles.level3}`} title="Level 3 (30–49 pts)" />
+            <span className={`${styles.legendDot} ${styles.level4}`} title="Level 4 (50+ pts)" />
             <span>More</span>
+
+            {/* Info Icon Button to toggle Collapsible Hierarchy Guide */}
+            <button
+              type="button"
+              onClick={() => setIsGuideOpen(!isGuideOpen)}
+              className={`${styles.infoGuideToggleBtn} ${isGuideOpen ? styles.infoGuideToggleBtnActive : ""}`}
+              title={isGuideOpen ? "Collapse Hierarchy & Intensity Guide" : "Expand Category Hierarchy & Color Guide"}
+              aria-expanded={isGuideOpen}
+              aria-label="Toggle Category Hierarchy and Intensity Guide"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+              <span>{isGuideOpen ? "Hide Guide" : "Hierarchy Guide"}</span>
+            </button>
           </div>
         </div>
+
+        {/* Collapsible Category & Level Intensity Hierarchy Guide */}
+        {isGuideOpen && (
+          <div className={styles.intensityGuideCard}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+              <div className={styles.intensityGuideTitle}>
+                <MemberIcon name="award" size={13} />
+                <span>Category Color Hierarchy (Rank 1 to 9)</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "0.68rem", color: "#8e8e9c" }}>
+                  Highest category priority on a day dictates cell hue
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsGuideOpen(false)}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "#71717a",
+                    fontSize: "0.72rem",
+                    cursor: "pointer",
+                    padding: "2px 6px",
+                    borderRadius: "4px",
+                  }}
+                  title="Close Guide"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className={styles.categoryHierarchyGrid}>
+              {CATEGORY_HIERARCHY.map((item) => {
+                const config = getCategoryConfig(item.category);
+                return (
+                  <div key={item.category} className={styles.catHierarchyItem}>
+                    <div className={styles.catHierarchyTop}>
+                      <span
+                        style={{
+                          width: "8px",
+                          height: "8px",
+                          borderRadius: "2px",
+                          background: config.color,
+                          boxShadow: `0 0 6px ${config.color}80`,
+                        }}
+                      />
+                      <span className={styles.catRankBadge}>#{item.rank}</span>
+                    </div>
+                    <span className={styles.catName}>{config.label}</span>
+                    <span className={styles.catPoints}>{item.typicalPoints}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ borderTop: "1px solid #1f1f26", paddingTop: "10px", marginTop: "4px" }}>
+              <div className={styles.intensityGuideTitle} style={{ marginBottom: "8px" }}>
+                <MemberIcon name="lightning" size={13} />
+                <span>Activity Intensity Saturation &amp; Glow Levels</span>
+              </div>
+              <div className={styles.intensityHierarchyGrid}>
+                {ACTIVITY_INTENSITY_LEVELS.map((tier) => (
+                  <div key={tier.level} className={styles.intensityItem}>
+                    <div className={styles.intensityTopRow}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <span
+                          className={styles.intensityDot}
+                          style={{
+                            background:
+                              tier.level === 4
+                                ? "#E5B731"
+                                : tier.level === 3
+                                ? "rgba(229, 183, 49, 0.85)"
+                                : tier.level === 2
+                                ? "rgba(229, 183, 49, 0.55)"
+                                : tier.level === 1
+                                ? "rgba(229, 183, 49, 0.28)"
+                                : "#18181d",
+                            boxShadow: tier.level === 4 ? "0 0 8px rgba(229, 183, 49, 0.8)" : "none",
+                            border: tier.level === 0 ? "1px solid #202026" : "none",
+                          }}
+                        />
+                        <span className={styles.intensityName}>{tier.label.split(" ")[0]} {tier.label.split(" ")[1]}</span>
+                      </div>
+                      <span className={styles.intensityPoints}>{tier.points}</span>
+                    </div>
+                    <span className={styles.intensityDesc}>{tier.description}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* 5. Contribution History Area Below (Ledger Feed) */}
@@ -915,25 +1054,6 @@ function ProfileClientContent() {
           })}
         </div>
 
-        {/* Demo notification banner when demo mode is active */}
-        {isDemoMode && (
-          <div className={styles.demoBanner}>
-            <div className={styles.demoBannerText}>
-              <MemberIcon name="lightning" size={16} />
-              <span>
-                <strong>Demo Mode Active:</strong> Displaying representative ledger items across all 9 contribution categories with live color palettes.
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsDemoMode(false)}
-              className={styles.demoToggleBtn}
-            >
-              Return to Live API
-            </button>
-          </div>
-        )}
-
         {/* Contributions List */}
         {contributionsLoading ? (
           <MemberLoading message="Syncing contribution ledger…" />
@@ -948,17 +1068,6 @@ function ProfileClientContent() {
                 ? "You haven't recorded any club contributions yet. Work on SPGs, teach workshops, or compete on Kaggle to earn verified ledger merit."
                 : "This member has no recorded contributions on the ledger yet."}
             </p>
-            {!isDemoMode && (
-              <button
-                type="button"
-                onClick={() => setIsDemoMode(true)}
-                className={styles.myProfileBtn}
-                style={{ marginTop: "8px" }}
-              >
-                <MemberIcon name="lightning" size={14} />
-                Explore 9-Category Demo
-              </button>
-            )}
           </div>
         ) : (
           <div className={styles.contributionsList}>
