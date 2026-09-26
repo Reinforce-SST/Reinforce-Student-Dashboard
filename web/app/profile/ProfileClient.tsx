@@ -1,175 +1,112 @@
 "use client";
 
-import { useState, useMemo, useEffect, Suspense } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMember } from "@/lib/useMember";
 import { api, type StudentProfile, type TrackPoints } from "@/lib/api";
-import MemberIcon, { type IconName } from "@/components/dashboard/MemberIcon";
+import MemberIcon from "@/components/dashboard/MemberIcon";
+import MemberLoading from "@/components/dashboard/MemberLoading";
+import {
+  type ContributionRecord,
+  type ContributionCategory,
+  type ContributionTrack,
+  CONTRIBUTION_CATEGORY_INDEX,
+  ALL_CATEGORIES,
+  getCategoryConfig,
+  getTrackColor,
+  demoContributions,
+} from "@/lib/contributionData";
 import styles from "./Profile.module.css";
 
-
-
-// ---------------------------------------------------------------------------
-// Schemas strictly derived from server/app/schemas/users.py & contributions.py
-// ---------------------------------------------------------------------------
-export type ContributionTrack = "research" | "product" | "kaggle" | "misc";
-
-export type ContributionCategory =
-  | "achievement"
-  | "project_work"
-  | "teaching"
-  | "mentorship"
-  | "content"
-  | "organizing"
-  | "service"
-  | "other";
-
-export interface ContributionItem {
-  id: string;
-  title: string;
-  track: ContributionTrack;
-  category: ContributionCategory;
-  categoryLabel: string;
-  points: number;
-  occurredAt: string;
-  status: "approved" | "pending" | "reviewed";
-  description: string;
-  sourceType?: "project" | "blog" | "trophy_item";
-  sourceId?: string;
-  spgId?: string;
-}
-
-const mockContributions: ContributionItem[] = [
-  {
-    id: "cnt_99a8b1",
-    title: "Shipped Autonomous Drone Swarms v2.1 RL Policy",
-    track: "research",
-    category: "project_work",
-    categoryLabel: "Project Work",
-    points: 50,
-    occurredAt: "Sep 24, 2025",
-    status: "approved",
-    description: "Completed distributed policy rollout iteration with 4x A100 GPU cluster allocation for SP-1.",
-    sourceType: "project",
-    spgId: "SP-1 Autonomous Drone Swarms",
-  },
-  {
-    id: "cnt_88c7d2",
-    title: "Kaggle Multimodal Video Grounding Grandmaster Silver Medal",
-    track: "kaggle",
-    category: "achievement",
-    categoryLabel: "Achievement",
-    points: 60,
-    occurredAt: "Sep 18, 2025",
-    status: "approved",
-    description: "Ranked Top 2% globally among 1,400+ international teams with vision-language temporal grounding model.",
-    sourceType: "trophy_item",
-  },
-  {
-    id: "cnt_77e6f3",
-    title: "Built Decentralized Compute Resource Broker Prototype",
-    track: "product",
-    category: "project_work",
-    categoryLabel: "Product Work",
-    points: 40,
-    occurredAt: "Sep 10, 2025",
-    status: "approved",
-    description: "Engineered student workstation GPU pooling daemon and telemetry bridge for SP-2.",
-    sourceType: "project",
-    spgId: "SP-2 Decentralized Compute",
-  },
-  {
-    id: "cnt_66a5b4",
-    title: "Authored Deep-Dive: Deploying LLMs with vLLM & Triton Kernels",
-    track: "research",
-    category: "content",
-    categoryLabel: "Technical Content",
-    points: 30,
-    occurredAt: "Aug 29, 2025",
-    status: "approved",
-    description: "Published peer-reviewed guide on custom paged-attention kernels in the Reinforce Article Hub.",
-    sourceType: "blog",
-  },
-  {
-    id: "cnt_55c4d5",
-    title: "Conducted Hands-on Workshop: PyTorch Distributed Data Parallel",
-    track: "misc",
-    category: "teaching",
-    categoryLabel: "Teaching & Workshop",
-    points: 25,
-    occurredAt: "Aug 15, 2025",
-    status: "approved",
-    description: "Taught 45+ club members multi-GPU training, gradient synchronization, and NCCL tuning.",
-  },
-  {
-    id: "cnt_44e3f6",
-    title: "Mentored 3 Junior SPG Teams for Reinforce HackSprint v3.0",
-    track: "misc",
-    category: "mentorship",
-    categoryLabel: "Mentorship",
-    points: 20,
-    occurredAt: "Jul 28, 2025",
-    status: "approved",
-    description: "Provided architecture reviews and debugging guidance for freshman teams.",
-  },
-];
-
-// 52-week Contribution Heatmap generator with realistic activity distribution
-function generateHeatmapData() {
+// Dynamic 52-week Contribution Heatmap generator from actual contribution records
+function buildHeatmapGrid(contributions: ContributionRecord[]) {
   const weeks = 52;
   const daysPerWeek = 7;
   const grid: { level: number; date: string; count: number; points: number }[][] = [];
 
-  const startDate = new Date(2024, 9, 1); // Approx 1 year ago
+  // Start 52 weeks ago
+  const today = new Date();
+  const startDate = new Date(today);
+  startDate.setDate(today.getDate() - 52 * 7 + 1);
+
+  // Group contributions by date string YYYY-MM-DD
+  const dateMap = new Map<string, { count: number; points: number }>();
+  for (const contrib of contributions) {
+    if (contrib.occurred_at) {
+      try {
+        const d = new Date(contrib.occurred_at);
+        const key = d.toISOString().slice(0, 10);
+        const existing = dateMap.get(key) || { count: 0, points: 0 };
+        existing.count += 1;
+        existing.points += contrib.points || 0;
+        dateMap.set(key, existing);
+      } catch {
+        // ignore invalid date
+      }
+    }
+  }
 
   for (let w = 0; w < weeks; w++) {
     const weekDays = [];
     for (let d = 0; d < daysPerWeek; d++) {
-      const currentDate = new Date(startDate);
-      currentDate.setDate(startDate.getDate() + (w * 7 + d));
-      
-      const dateStr = currentDate.toLocaleDateString("en-US", {
+      const cur = new Date(startDate);
+      cur.setDate(startDate.getDate() + (w * 7 + d));
+      const key = cur.toISOString().slice(0, 10);
+      const dateStr = cur.toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
         year: "numeric",
       });
 
-      // Synthetic density pattern
-      const rand = (w * 13 + d * 7 + (w % 3) * 11) % 100;
+      const dayData = dateMap.get(key) || { count: 0, points: 0 };
       let level = 0;
-      let count = 0;
-      let points = 0;
+      if (dayData.points >= 50) level = 4;
+      else if (dayData.points >= 30) level = 3;
+      else if (dayData.points >= 15) level = 2;
+      else if (dayData.points > 0 || dayData.count > 0) level = 1;
 
-      if (rand > 82) {
-        level = 4;
-        count = 3 + (rand % 3);
-        points = count * 15;
-      } else if (rand > 65) {
-        level = 3;
-        count = 2;
-        points = 25;
-      } else if (rand > 45) {
-        level = 2;
-        count = 1;
-        points = 15;
-      } else if (rand > 25) {
-        level = 1;
-        count = 1;
-        points = 5;
-      }
-
-      weekDays.push({ level, date: dateStr, count, points });
+      weekDays.push({
+        level,
+        date: dateStr,
+        count: dayData.count,
+        points: dayData.points,
+      });
     }
     grid.push(weekDays);
   }
   return grid;
 }
 
+export function deriveBatchYear(batchYear?: number | null, email?: string | null): number | null {
+  if (batchYear && batchYear >= 2000) {
+    return batchYear;
+  }
+  if (batchYear && batchYear >= 1 && batchYear <= 5) {
+    return 2028 - batchYear + 1;
+  }
+  if (email) {
+    const match = email.toLowerCase().match(/(?:^|\.)(\d{2})[a-zA-Z]/);
+    if (match && match[1]) {
+      const prefix = parseInt(match[1], 10);
+      if (prefix >= 20 && prefix <= 40) {
+        return 2000 + prefix + 4;
+      }
+    }
+  }
+  return null;
+}
+
+function formatBatchDisplay(batchYear?: number | null): string | null {
+  if (!batchYear) return null;
+  return `Batch ${batchYear}`;
+}
+
 function ProfileClientContent() {
   const { token, profile: loggedInProfile, save } = useMember();
   const searchParams = useSearchParams();
   const queryId = searchParams ? searchParams.get("id") || searchParams.get("uid") : null;
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Determine if viewing own profile or someone else's
   const isOwner = useMemo(() => {
@@ -180,11 +117,22 @@ function ProfileClientContent() {
     return false;
   }, [queryId, loggedInProfile]);
 
-  const [activeProfile, setActiveProfile] = useState<StudentProfile | null>(loggedInProfile || null);
-  const [loading, setLoading] = useState(false);
+  const [activeProfile, setActiveProfile] = useState<StudentProfile | null>(isOwner ? loggedInProfile : null);
+  const [profileLoading, setProfileLoading] = useState(false);
   const [notFound, setNotFound] = useState(false);
 
-  // Sync profile when queryId changes or when own profile updates
+  // Live Contributions State
+  const [liveContributions, setLiveContributions] = useState<ContributionRecord[]>([]);
+  const [contributionsLoading, setContributionsLoading] = useState(false);
+
+  // Demo Mode Switch (allows showcasing all 9 categories with colors and workflows)
+  const [isDemoMode, setIsDemoMode] = useState(false);
+
+  // Filters
+  const [historyTab, setHistoryTab] = useState<"all" | ContributionTrack>("all");
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<"all" | ContributionCategory>("all");
+
+  // Fetch Profile data
   useEffect(() => {
     if (isOwner) {
       setActiveProfile(loggedInProfile);
@@ -195,9 +143,8 @@ function ProfileClientContent() {
     if (!queryId) return;
 
     let isMounted = true;
-    setLoading(true);
+    setProfileLoading(true);
 
-    // Try pulling user profile from backend API
     api.getUserProfile(token, queryId)
       .then((data) => {
         if (!isMounted) return;
@@ -213,7 +160,7 @@ function ProfileClientContent() {
         setNotFound(true);
       })
       .finally(() => {
-        if (isMounted) setLoading(false);
+        if (isMounted) setProfileLoading(false);
       });
 
     return () => {
@@ -221,14 +168,54 @@ function ProfileClientContent() {
     };
   }, [isOwner, queryId, token, loggedInProfile]);
 
+  // Fetch Live Contributions from API
+  const fetchContributions = useCallback(async () => {
+    if (!token) return;
+    setContributionsLoading(true);
+    try {
+      if (isOwner) {
+        const res = await api.getMyContributions(token, 100);
+        setLiveContributions(res?.items || []);
+      } else {
+        const targetUserId = activeProfile?.id || queryId;
+        if (targetUserId) {
+          const res = await api.getUserContributions(token, targetUserId, 100);
+          setLiveContributions(res?.items || []);
+        }
+      }
+    } catch {
+      setLiveContributions([]);
+    } finally {
+      setContributionsLoading(false);
+    }
+  }, [token, isOwner, activeProfile?.id, queryId]);
+
+  useEffect(() => {
+    fetchContributions();
+  }, [fetchContributions]);
+
+  // Resolved active contributions (live or demo)
+  const activeContributions = useMemo(() => {
+    if (isDemoMode) {
+      return demoContributions;
+    }
+    return liveContributions;
+  }, [isDemoMode, liveContributions]);
+
+  // Filtered contributions
+  const filteredContributions = useMemo(() => {
+    return activeContributions.filter((item) => {
+      if (historyTab !== "all" && item.track !== historyTab) return false;
+      if (selectedCategoryFilter !== "all" && item.category !== selectedCategoryFilter) return false;
+      return true;
+    });
+  }, [activeContributions, historyTab, selectedCategoryFilter]);
 
   // Derived state fields from activeProfile
-  const fullName = activeProfile?.full_name || (isOwner ? "Julian Chen" : "Club Member");
-  const bio = activeProfile?.bio || (isOwner ? "AI & Systems Researcher @ Scaler School of Technology." : "No biography provided yet.");
-  const batchYear = activeProfile?.batch_year || 2024;
-  const skills = activeProfile?.skills && activeProfile.skills.length > 0
-    ? activeProfile.skills
-    : ["PyTorch", "Reinforcement Learning", "Transformers", "Distributed Systems"];
+  const fullName = activeProfile?.full_name || (isOwner ? "Member Profile" : "Club Member");
+  const avatarUrl = activeProfile?.avatar_url || null;
+  const bio = activeProfile?.bio || "";
+  const skills = activeProfile?.skills || [];
   const socialLinks = {
     github: activeProfile?.social_links?.github || "",
     kaggle: activeProfile?.social_links?.kaggle || "",
@@ -236,8 +223,18 @@ function ProfileClientContent() {
     discord: activeProfile?.social_links?.discord || activeProfile?.discord_id || "",
   };
 
+  // Derive 4-digit graduation batch year from email or profile (e.g. 25bcs -> 2029, 26bcs -> 2030)
+  const derivedBatchYear = useMemo(() => {
+    return deriveBatchYear(activeProfile?.batch_year, activeProfile?.email || loggedInProfile?.email);
+  }, [activeProfile?.batch_year, activeProfile?.email, loggedInProfile?.email]);
+
+  const batchDisplay = formatBatchDisplay(derivedBatchYear);
+
   // Track Points strictly mapped from schema
   const trackPoints: TrackPoints = useMemo(() => {
+    if (isDemoMode) {
+      return { total: 320, kaggle: 75, product: 75, research: 125, misc: 45 };
+    }
     const raw = activeProfile?.points || loggedInProfile?.points;
     return {
       total: raw?.total || 0,
@@ -246,50 +243,96 @@ function ProfileClientContent() {
       kaggle: raw?.kaggle || 0,
       misc: raw?.misc || 0,
     };
-  }, [activeProfile?.points, loggedInProfile?.points]);
+  }, [isDemoMode, activeProfile?.points, loggedInProfile?.points]);
 
-  // Heatmap state
-  const heatmapData = useMemo(() => generateHeatmapData(), []);
+  // Dynamic Heatmap
+  const heatmapData = useMemo(() => buildHeatmapGrid(activeContributions), [activeContributions]);
   const [hoveredCell, setHoveredCell] = useState<{
     date: string;
     count: number;
     points: number;
   } | null>(null);
-  const [selectedTrackFilter, setSelectedTrackFilter] = useState<"all" | "research" | "product" | "kaggle">("all");
-
-  // History ledger tab filter
-  const [historyTab, setHistoryTab] = useState<"all" | "research" | "product" | "kaggle" | "misc">("all");
 
   // Edit Modal state (Owner Only)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editFormName, setEditFormName] = useState(fullName);
+  const [editFormAvatarUrl, setEditFormAvatarUrl] = useState(avatarUrl || "");
   const [editFormBio, setEditFormBio] = useState(bio);
-  const [editFormBatch, setEditFormBatch] = useState(batchYear);
   const [editFormSkills, setEditFormSkills] = useState(skills.join(", "));
   const [editFormGithub, setEditFormGithub] = useState(socialLinks.github || "");
   const [editFormKaggle, setEditFormKaggle] = useState(socialLinks.kaggle || "");
   const [editFormLinkedin, setEditFormLinkedin] = useState(socialLinks.linkedin || "");
   const [editFormDiscord, setEditFormDiscord] = useState(socialLinks.discord || "");
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [avatarUploadError, setAvatarUploadError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [saveSuccessMsg, setSaveSuccessMsg] = useState("");
 
   const handleOpenEditModal = () => {
     if (!isOwner) return;
-    setEditFormName(fullName);
-    setEditFormBio(bio);
-    setEditFormBatch(batchYear);
+    setEditFormName(activeProfile?.full_name || "");
+    setEditFormAvatarUrl(activeProfile?.avatar_url || "");
+    setEditFormBio(activeProfile?.bio || "");
     setEditFormSkills(skills.join(", "));
     setEditFormGithub(socialLinks.github || "");
     setEditFormKaggle(socialLinks.kaggle || "");
     setEditFormLinkedin(socialLinks.linkedin || "");
     setEditFormDiscord(socialLinks.discord || "");
+    setSaveError("");
+    setAvatarUploadError("");
     setIsEditModalOpen(true);
   };
 
+  // Upload Avatar File to /users/me/avatar
+  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setAvatarUploadError("Please select a valid image file (.png, .jpg, .webp).");
+      return;
+    }
+
+    // Size limit: 5MB
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarUploadError("Image size must be under 5MB.");
+      return;
+    }
+
+    try {
+      setIsUploadingAvatar(true);
+      setAvatarUploadError("");
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setEditFormAvatarUrl(event.target.result as string);
+        }
+      };
+      reader.readAsDataURL(file);
+
+      const res = await api.uploadAvatar(token, file);
+      if (res && res.avatar_url) {
+        setEditFormAvatarUrl(res.avatar_url);
+        setActiveProfile((prev) => (prev ? { ...prev, avatar_url: res.avatar_url } : prev));
+        setSaveSuccessMsg("Avatar uploaded successfully!");
+        setTimeout(() => setSaveSuccessMsg(""), 4000);
+      }
+    } catch (err: any) {
+      setAvatarUploadError(err.message || "Failed to upload avatar image.");
+    } finally {
+      setIsUploadingAvatar(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  // Form Submit Handler (PATCH /users/me)
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isOwner) return;
     setIsSaving(true);
+    setSaveError("");
 
     const parsedSkills = editFormSkills
       .split(",")
@@ -303,24 +346,30 @@ function ProfileClientContent() {
       discord: editFormDiscord.trim() || null,
     };
 
+    const payload = {
+      full_name: editFormName.trim(),
+      avatar_url: editFormAvatarUrl.trim() || null,
+      bio: editFormBio.trim() || null,
+      batch_year: derivedBatchYear || null,
+      skills: parsedSkills,
+      social_links: updatedSocials,
+    };
+
     try {
       if (save) {
-        await save({
-          full_name: editFormName.trim(),
-          bio: editFormBio.trim() || null,
-          batch_year: Number(editFormBatch),
-          skills: parsedSkills,
-          social_links: updatedSocials,
-        });
+        await save(payload);
+      } else {
+        await api.updateProfile(token, payload);
       }
 
       setActiveProfile((prev) =>
         prev
           ? {
               ...prev,
-              full_name: editFormName.trim(),
-              bio: editFormBio.trim() || null,
-              batch_year: Number(editFormBatch),
+              full_name: payload.full_name,
+              avatar_url: payload.avatar_url,
+              bio: payload.bio,
+              batch_year: payload.batch_year,
               skills: parsedSkills,
               social_links: updatedSocials,
             }
@@ -331,30 +380,11 @@ function ProfileClientContent() {
       setIsEditModalOpen(false);
       setSaveSuccessMsg("Profile updated successfully!");
       setTimeout(() => setSaveSuccessMsg(""), 4000);
-    } catch {
+    } catch (err: any) {
       setIsSaving(false);
-      setIsEditModalOpen(false);
-      setActiveProfile((prev) =>
-        prev
-          ? {
-              ...prev,
-              full_name: editFormName.trim(),
-              bio: editFormBio.trim() || null,
-              batch_year: Number(editFormBatch),
-              skills: parsedSkills,
-              social_links: updatedSocials,
-            }
-          : prev
-      );
-      setSaveSuccessMsg("Profile updated locally.");
-      setTimeout(() => setSaveSuccessMsg(""), 4000);
+      setSaveError(err.message || "Failed to update profile details. Please try again.");
     }
   };
-
-  const filteredContributions = mockContributions.filter((item) => {
-    if (historyTab === "all") return true;
-    return item.track === historyTab;
-  });
 
   const initials = fullName
     .split(/\s+/)
@@ -363,6 +393,14 @@ function ProfileClientContent() {
     .map((p) => p[0])
     .join("")
     .toUpperCase() || "MB";
+
+  if (profileLoading) {
+    return (
+      <div className={styles.pageContainer}>
+        <MemberLoading message="Loading member profile…" />
+      </div>
+    );
+  }
 
   if (notFound) {
     return (
@@ -374,7 +412,7 @@ function ProfileClientContent() {
             </div>
             <h1 className={styles.fullName} style={{ fontSize: "1.4rem" }}>Member Profile Not Found</h1>
             <p className={styles.bioText} style={{ textAlign: "center" }}>
-              No student profile could be found for ID <code>&quot;{queryId}&quot;</code>. The user might not have joined the platform yet.
+              No student profile could be found for ID <code>&quot;{queryId}&quot;</code>.
             </p>
             <div style={{ display: "flex", gap: "12px", marginTop: "8px" }}>
               <Link href="/dashboard/profile" className={styles.myProfileBtn}>
@@ -398,8 +436,35 @@ function ProfileClientContent() {
 
         <div className={styles.heroTopRow}>
           <div className={styles.userMainInfo}>
-            <div className={styles.avatarWrapper}>
-              <span className={styles.avatarInitials}>{initials}</span>
+            {/* Avatar Circle with Picture and Owner Edit Trigger */}
+            <div
+              className={styles.avatarWrapper}
+              onClick={isOwner ? handleOpenEditModal : undefined}
+              title={isOwner ? "Click to change profile picture or details" : undefined}
+              style={{ cursor: isOwner ? "pointer" : "default" }}
+            >
+              {avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={avatarUrl}
+                  alt={fullName}
+                  className={styles.avatarImg}
+                  onError={(e) => {
+                    // Fallback to initials if broken image
+                    (e.currentTarget as HTMLElement).style.display = "none";
+                  }}
+                />
+              ) : (
+                <span className={styles.avatarInitials}>{initials}</span>
+              )}
+
+              {isOwner && (
+                <div className={styles.avatarOverlay} aria-hidden="true">
+                  <MemberIcon name="edit" size={16} />
+                  <span>Edit</span>
+                </div>
+              )}
+
               <span className={styles.avatarOnlineBadge} title="Active Member" />
             </div>
 
@@ -417,14 +482,18 @@ function ProfileClientContent() {
               </div>
 
               <div className={styles.metaRow}>
-                <span className={styles.metaItem}>
-                  <MemberIcon name="calendar" size={14} />
-                  Batch &apos;{batchYear ? String(batchYear).slice(-2) : "24"} (Year {batchYear})
-                </span>
-                <span className={styles.metaItem}>
-                  <MemberIcon name="shield" size={14} />
-                  {activeProfile?.email || "student@sst.scaler.com"}
-                </span>
+                {batchDisplay && (
+                  <span className={styles.metaItem}>
+                    <MemberIcon name="calendar" size={14} />
+                    {batchDisplay}
+                  </span>
+                )}
+                {activeProfile?.email && (
+                  <span className={styles.metaItem}>
+                    <MemberIcon name="shield" size={14} />
+                    {activeProfile.email}
+                  </span>
+                )}
                 {socialLinks.discord ? (
                   <span className={styles.verifiedChip}>
                     <MemberIcon name="check" size={13} />
@@ -475,21 +544,29 @@ function ProfileClientContent() {
 
         {/* Bio & Skills */}
         <div className={styles.bioSection}>
-          <p className={styles.bioText}>{bio}</p>
+          {bio ? (
+            <p className={styles.bioText}>{bio}</p>
+          ) : (
+            <p className={styles.bioText} style={{ color: "#6b6b7a", fontStyle: "italic" }}>
+              {isOwner ? "No biography added yet. Click 'Edit Profile' to add your bio and technical background." : "No biography provided."}
+            </p>
+          )}
 
-          <div className={styles.skillsContainer}>
-            {skills.map((skill) => (
-              <span key={skill} className={styles.skillPill}>
-                #{skill}
-              </span>
-            ))}
-          </div>
+          {skills.length > 0 && (
+            <div className={styles.skillsContainer}>
+              {skills.map((skill) => (
+                <span key={skill} className={styles.skillPill}>
+                  #{skill}
+                </span>
+              ))}
+            </div>
+          )}
 
           {/* Social Links */}
           <div className={styles.socialRow}>
             {socialLinks.github && (
               <a
-                href={socialLinks.github}
+                href={socialLinks.github.startsWith("http") ? socialLinks.github : `https://github.com/${socialLinks.github}`}
                 target="_blank"
                 rel="noreferrer"
                 className={styles.socialBtn}
@@ -500,7 +577,7 @@ function ProfileClientContent() {
             )}
             {socialLinks.kaggle && (
               <a
-                href={socialLinks.kaggle}
+                href={socialLinks.kaggle.startsWith("http") ? socialLinks.kaggle : `https://kaggle.com/${socialLinks.kaggle}`}
                 target="_blank"
                 rel="noreferrer"
                 className={styles.socialBtn}
@@ -511,7 +588,7 @@ function ProfileClientContent() {
             )}
             {socialLinks.linkedin && (
               <a
-                href={socialLinks.linkedin}
+                href={socialLinks.linkedin.startsWith("http") ? socialLinks.linkedin : `https://linkedin.com/in/${socialLinks.linkedin}`}
                 target="_blank"
                 rel="noreferrer"
                 className={styles.socialBtn}
@@ -524,76 +601,174 @@ function ProfileClientContent() {
         </div>
       </section>
 
-      {/* 2. Track Points Breakdown Grid (Strict Track Colors) */}
-      <section className={styles.tracksGrid} aria-label="Track Points Breakdown">
-        <div className={`${styles.trackCard} ${styles.trackBorderResearch}`}>
-          <div className={styles.trackCardHeader}>
-            <span className={styles.trackName}>Research Track</span>
-            <MemberIcon name="rocket" size={16} />
-          </div>
-          <span className={`${styles.trackPointsVal} ${styles.colorResearch}`}>
-            {trackPoints.research} <span style={{ fontSize: "0.9rem", color: "#8c8c98" }}>PTS</span>
-          </span>
-          <span className={styles.trackCardFooter}>Research & AI Algorithms</span>
-        </div>
+      {/* 2. Merit Track Breakdown Cards */}
+      <section className={styles.tracksSection} aria-label="Merit Points Across Tracks">
+        <div className={styles.tracksGrid}>
+          {/* Total Merit */}
+          <article className={`${styles.trackCard} ${styles.cardTotal}`}>
+            <div className={styles.cardHeader}>
+              <span className={styles.cardLabel}>OVERALL MERIT</span>
+              <div className={`${styles.iconWrap} ${styles.iconWrapTotal}`}>
+                <MemberIcon name="award" size={16} />
+              </div>
+            </div>
+            <div className={styles.pointsValue}>{trackPoints.total}</div>
+            <div className={styles.progressBarBg}>
+              <div
+                className={`${styles.progressBarFill} ${styles.fillTotal}`}
+                style={{ width: `${Math.min(100, Math.max(10, (trackPoints.total / 400) * 100))}%` }}
+              />
+            </div>
+            <div className={styles.tierSubtext}>
+              {activeProfile?.tier ? `${activeProfile.tier.toUpperCase()} TIER` : "ACTIVE MEMBER"}
+            </div>
+          </article>
 
-        <div className={`${styles.trackCard} ${styles.trackBorderProduct}`}>
-          <div className={styles.trackCardHeader}>
-            <span className={styles.trackName}>Product Track</span>
-            <MemberIcon name="lightning" size={16} />
-          </div>
-          <span className={`${styles.trackPointsVal} ${styles.colorProduct}`}>
-            {trackPoints.product} <span style={{ fontSize: "0.9rem", color: "#8c8c98" }}>PTS</span>
-          </span>
-          <span className={styles.trackCardFooter}>Full-Stack & Systems Engineering</span>
-        </div>
+          {/* Research Track */}
+          <article className={`${styles.trackCard} ${styles.cardResearch}`}>
+            <div className={styles.cardHeader}>
+              <span className={styles.cardLabel}>RESEARCH TRACK</span>
+              <div className={`${styles.iconWrap} ${styles.iconWrapResearch}`}>
+                <MemberIcon name="articles" size={16} />
+              </div>
+            </div>
+            <div className={styles.pointsValue}>{trackPoints.research}</div>
+            <div className={styles.progressBarBg}>
+              <div
+                className={`${styles.progressBarFill} ${styles.fillResearch}`}
+                style={{ width: `${Math.min(100, (trackPoints.research / 150) * 100)}%` }}
+              />
+            </div>
+            <div className={styles.trackSubtext}>Papers, Triton Kernels & Architectures</div>
+          </article>
 
-        <div className={`${styles.trackCard} ${styles.trackBorderKaggle}`}>
-          <div className={styles.trackCardHeader}>
-            <span className={styles.trackName}>Kaggle Track</span>
-            <MemberIcon name="award" size={16} />
-          </div>
-          <span className={`${styles.trackPointsVal} ${styles.colorKaggle}`}>
-            {trackPoints.kaggle} <span style={{ fontSize: "0.9rem", color: "#8c8c98" }}>PTS</span>
-          </span>
-          <span className={styles.trackCardFooter}>Competitions & Benchmarks</span>
-        </div>
+          {/* Product Track */}
+          <article className={`${styles.trackCard} ${styles.cardProduct}`}>
+            <div className={styles.cardHeader}>
+              <span className={styles.cardLabel}>PRODUCT TRACK</span>
+              <div className={`${styles.iconWrap} ${styles.iconWrapProduct}`}>
+                <MemberIcon name="rocket" size={16} />
+              </div>
+            </div>
+            <div className={styles.pointsValue}>{trackPoints.product}</div>
+            <div className={styles.progressBarBg}>
+              <div
+                className={`${styles.progressBarFill} ${styles.fillProduct}`}
+                style={{ width: `${Math.min(100, (trackPoints.product / 150) * 100)}%` }}
+              />
+            </div>
+            <div className={styles.trackSubtext}>SPGs, Deployments & Infrastructure</div>
+          </article>
 
-        <div className={`${styles.trackCard} ${styles.trackBorderMisc}`}>
-          <div className={styles.trackCardHeader}>
-            <span className={styles.trackName}>Total Merit Score</span>
-            <MemberIcon name="flame" size={16} />
-          </div>
-          <span className={`${styles.trackPointsVal} ${styles.colorMisc}`}>
-            {trackPoints.total} <span style={{ fontSize: "0.9rem", color: "#8c8c98" }}>PTS</span>
-          </span>
-          <span className={styles.trackCardFooter}>Audited by Reinforce Ledger</span>
+          {/* Kaggle Track */}
+          <article className={`${styles.trackCard} ${styles.cardKaggle}`}>
+            <div className={styles.cardHeader}>
+              <span className={styles.cardLabel}>KAGGLE TRACK</span>
+              <div className={`${styles.iconWrap} ${styles.iconWrapKaggle}`}>
+                <MemberIcon name="flame" size={16} />
+              </div>
+            </div>
+            <div className={styles.pointsValue}>{trackPoints.kaggle}</div>
+            <div className={styles.progressBarBg}>
+              <div
+                className={`${styles.progressBarFill} ${styles.fillKaggle}`}
+                style={{ width: `${Math.min(100, (trackPoints.kaggle / 150) * 100)}%` }}
+              />
+            </div>
+            <div className={styles.trackSubtext}>Competitions & Benchmarks</div>
+          </article>
         </div>
       </section>
 
-      {/* 3. GitHub-Style Contribution Heatmap Calendar */}
-      <section className={styles.heatmapSection} aria-label="Contribution Activity Heatmap">
-        <div className={styles.heatmapHeaderRow}>
-          <div className={styles.heatmapTitleGroup}>
-            <h2 className={styles.heatmapTitle}>
-              <MemberIcon name="calendar" size={18} />
-              Contribution Activity Calendar
+      {/* 3. CONTRIBUTION CATEGORY INDEX / LEGEND */}
+      <section className={styles.categoryIndexCard} aria-label="Contribution Category Index">
+        <div className={styles.categoryIndexHeader}>
+          <div>
+            <h2 className={styles.categoryIndexTitle}>
+              <MemberIcon name="award" size={18} />
+              Contribution Category Index &amp; Workflow
             </h2>
-            <p className={styles.heatmapSubtitle}>
-              Daily ledger activity across SPGs, competitions, research papers, and technical workshops.
+            <p className={styles.categoryIndexSubtitle}>
+              Points are auditable ledger records awarded across 9 distinct categories. Click any category to filter the ledger below.
             </p>
           </div>
 
-          <div className={styles.heatmapStatsRow}>
-            <span className={styles.heatmapStatItem}>
-              <span className={styles.heatmapStatVal}>168</span> Contributions
+          <div className={styles.demoToggleWrap}>
+            <button
+              type="button"
+              onClick={() => setIsDemoMode(!isDemoMode)}
+              className={`${styles.demoToggleBtn} ${isDemoMode ? styles.demoToggleBtnActive : ""}`}
+              title="Toggle between Live API Ledger and 9-Category Demo"
+            >
+              <MemberIcon name="lightning" size={14} />
+              {isDemoMode ? "Showing 9-Category Demo" : "Switch to 9-Category Demo"}
+            </button>
+          </div>
+        </div>
+
+        {/* 9 Category Visual Index Grid */}
+        <div className={styles.categoryGrid}>
+          {ALL_CATEGORIES.map((catKey) => {
+            const config = CONTRIBUTION_CATEGORY_INDEX[catKey];
+            const isSelected = selectedCategoryFilter === catKey;
+
+            return (
+              <button
+                key={catKey}
+                type="button"
+                className={`${styles.categoryIndexItem} ${isSelected ? styles.categoryIndexItemActive : ""}`}
+                onClick={() => setSelectedCategoryFilter(isSelected ? "all" : catKey)}
+                style={{
+                  borderLeft: `4px solid ${config.color}`,
+                }}
+              >
+                <div className={styles.categoryTopLine}>
+                  <span
+                    className={styles.categoryPill}
+                    style={{
+                      background: config.bg,
+                      color: config.color,
+                      border: `1px solid ${config.border}`,
+                    }}
+                  >
+                    <MemberIcon name={config.icon} size={12} />
+                    {config.label}
+                  </span>
+                  <span
+                    className={styles.categoryDot}
+                    style={{ background: config.color, boxShadow: `0 0 8px ${config.color}` }}
+                  />
+                </div>
+                <p className={styles.categoryItemDesc}>{config.description}</p>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* 4. Contribution Activity Heatmap */}
+      <section className={styles.heatmapCard} aria-label="52-Week Contribution Activity Heatmap">
+        <div className={styles.heatmapHeader}>
+          <div className={styles.heatmapTitleGroup}>
+            <h2 className={styles.heatmapTitle}>Activity &amp; Commit Matrix</h2>
+            <span className={styles.heatmapSubtitle}>
+              {activeContributions.length} verified contribution{activeContributions.length !== 1 ? "s" : ""} recorded in past 52 weeks
             </span>
-            <span className={styles.heatmapStatItem}>
-              <span className={styles.heatmapStatVal}>19 Days</span> Longest Streak
-            </span>
-            <span className={styles.heatmapStatItem}>
-              <span className={styles.heatmapStatVal}>4 Days</span> Current Streak
-            </span>
+          </div>
+
+          <div className={styles.heatmapFilterRow}>
+            {(["all", "research", "product", "kaggle", "misc"] as const).map((track) => (
+              <button
+                key={track}
+                type="button"
+                onClick={() => setHistoryTab(track)}
+                className={`${styles.heatmapFilterBtn} ${
+                  historyTab === track ? styles.heatmapFilterBtnActive : ""
+                }`}
+              >
+                {track === "all" ? "ALL TRACKS" : track.toUpperCase()}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -675,11 +850,11 @@ function ProfileClientContent() {
         </div>
       </section>
 
-      {/* 4. Contribution History Area Below (Ledger Feed) */}
+      {/* 5. Contribution History Area Below (Ledger Feed) */}
       <section className={styles.historySection} aria-label="Contribution Ledger History">
         <div className={styles.historyHeaderRow}>
           <div>
-            <h2 className={styles.heatmapTitle}>Contribution History & Ledger</h2>
+            <h2 className={styles.heatmapTitle}>Auditable Contribution Ledger</h2>
             <p className={styles.heatmapSubtitle}>
               Immutable record of awarded points, project milestones, and club achievements.
             </p>
@@ -688,7 +863,7 @@ function ProfileClientContent() {
           <div className={styles.historyFilterTabs} role="tablist">
             {(
               [
-                { id: "all", label: "ALL" },
+                { id: "all", label: "ALL TRACKS" },
                 { id: "research", label: "RESEARCH" },
                 { id: "product", label: "PRODUCT" },
                 { id: "kaggle", label: "KAGGLE" },
@@ -711,67 +886,207 @@ function ProfileClientContent() {
           </div>
         </div>
 
-        <div className={styles.contributionsList}>
-          {filteredContributions.map((contrib) => (
-            <article key={contrib.id} className={styles.contributionCard}>
-              <div className={styles.contribTopRow}>
-                <div className={styles.contribBadges}>
-                  <span
-                    className={`${styles.trackTag} ${
-                      contrib.track === "research"
-                        ? styles.colorResearch
-                        : contrib.track === "product"
-                        ? styles.colorProduct
-                        : contrib.track === "kaggle"
-                        ? styles.colorKaggle
-                        : styles.colorMisc
-                    }`}
-                    style={{
-                      background:
-                        contrib.track === "research"
-                          ? "rgba(248, 113, 113, 0.12)"
-                          : contrib.track === "product"
-                          ? "rgba(74, 222, 128, 0.12)"
-                          : contrib.track === "kaggle"
-                          ? "rgba(56, 200, 255, 0.12)"
-                          : "rgba(229, 183, 49, 0.12)",
-                    }}
-                  >
-                    {contrib.track.toUpperCase()} TRACK
-                  </span>
-                  <span className={styles.categoryTag}>{contrib.categoryLabel}</span>
-                  {contrib.spgId && (
+        {/* Category Filter Chips */}
+        <div className={styles.categoryFilterRow}>
+          <button
+            type="button"
+            onClick={() => setSelectedCategoryFilter("all")}
+            className={`${styles.categoryFilterChip} ${
+              selectedCategoryFilter === "all" ? styles.categoryFilterChipActive : ""
+            }`}
+          >
+            All Categories ({activeContributions.length})
+          </button>
+          {ALL_CATEGORIES.map((catKey) => {
+            const config = CONTRIBUTION_CATEGORY_INDEX[catKey];
+            const count = activeContributions.filter((c) => c.category === catKey).length;
+            if (count === 0 && selectedCategoryFilter !== catKey) return null;
+
+            return (
+              <button
+                key={catKey}
+                type="button"
+                onClick={() =>
+                  setSelectedCategoryFilter(selectedCategoryFilter === catKey ? "all" : catKey)
+                }
+                className={`${styles.categoryFilterChip} ${
+                  selectedCategoryFilter === catKey ? styles.categoryFilterChipActive : ""
+                }`}
+              >
+                <span
+                  style={{
+                    width: "6px",
+                    height: "6px",
+                    borderRadius: "50%",
+                    background: config.color,
+                  }}
+                />
+                {config.label} ({count})
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Demo notification banner when demo mode is active */}
+        {isDemoMode && (
+          <div className={styles.demoBanner}>
+            <div className={styles.demoBannerText}>
+              <MemberIcon name="lightning" size={16} />
+              <span>
+                <strong>Demo Mode Active:</strong> Displaying representative ledger items across all 9 contribution categories with live color palettes.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsDemoMode(false)}
+              className={styles.demoToggleBtn}
+            >
+              Return to Live API
+            </button>
+          </div>
+        )}
+
+        {/* Contributions List */}
+        {contributionsLoading ? (
+          <MemberLoading message="Syncing contribution ledger…" />
+        ) : filteredContributions.length === 0 ? (
+          <div className={styles.emptyStateCard}>
+            <MemberIcon name="award" size={32} />
+            <h3 className={styles.emptyStateTitle}>No Contributions Found</h3>
+            <p className={styles.emptyStateText}>
+              {selectedCategoryFilter !== "all" || historyTab !== "all"
+                ? "No verified records match the selected category and track filters."
+                : isOwner
+                ? "You haven't recorded any club contributions yet. Work on SPGs, teach workshops, or compete on Kaggle to earn verified ledger merit."
+                : "This member has no recorded contributions on the ledger yet."}
+            </p>
+            {!isDemoMode && (
+              <button
+                type="button"
+                onClick={() => setIsDemoMode(true)}
+                className={styles.myProfileBtn}
+                style={{ marginTop: "8px" }}
+              >
+                <MemberIcon name="lightning" size={14} />
+                Explore 9-Category Demo
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className={styles.contributionsList}>
+            {filteredContributions.map((contrib) => {
+              const catConfig = getCategoryConfig(contrib.category);
+              const trackConfig = getTrackColor(contrib.track);
+
+              const formattedDate = contrib.occurred_at
+                ? new Date(contrib.occurred_at).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })
+                : "Verified Date";
+
+              return (
+                <article
+                  key={contrib.id}
+                  className={styles.contributionCard}
+                  style={{
+                    borderLeft: `4px solid ${catConfig.color}`,
+                  }}
+                >
+                  <div className={styles.contribTopRow}>
+                    <div className={styles.contribBadges}>
+                      {/* Track Tag */}
+                      <span
+                        className={styles.trackTag}
+                        style={{
+                          background: trackConfig.bg,
+                          color: trackConfig.color,
+                          border: `1px solid ${trackConfig.color}40`,
+                        }}
+                      >
+                        {trackConfig.label} TRACK
+                      </span>
+
+                      {/* Category Badge with custom color */}
+                      <span
+                        className={styles.categoryTag}
+                        style={{
+                          background: catConfig.bg,
+                          color: catConfig.color,
+                          border: `1px solid ${catConfig.border}`,
+                          fontWeight: "800",
+                        }}
+                      >
+                        <MemberIcon name={catConfig.icon} size={12} />
+                        {catConfig.label}
+                      </span>
+
+                      {/* SPG Badge */}
+                      {contrib.spg_id && (
+                        <span
+                          style={{
+                            fontSize: "0.68rem",
+                            fontFamily: "var(--font-mono, monospace)",
+                            color: "#9ca3af",
+                            background: "#18181f",
+                            padding: "3px 8px",
+                            borderRadius: "5px",
+                            border: "1px solid #282834",
+                          }}
+                        >
+                          [{contrib.spg_id}]
+                        </span>
+                      )}
+
+                      {/* Event ID */}
+                      {contrib.event_id && (
+                        <span
+                          style={{
+                            fontSize: "0.68rem",
+                            fontFamily: "var(--font-mono, monospace)",
+                            color: "#9ca3af",
+                            background: "#18181f",
+                            padding: "3px 8px",
+                            borderRadius: "5px",
+                            border: "1px solid #282834",
+                          }}
+                        >
+                          Event: {contrib.event_id}
+                        </span>
+                      )}
+                    </div>
+
                     <span
+                      className={styles.pointsBadge}
                       style={{
-                        fontSize: "0.65rem",
-                        fontFamily: "var(--font-mono, monospace)",
-                        color: "#7e7e8a",
+                        background: catConfig.bg,
+                        color: catConfig.color,
+                        borderColor: catConfig.border,
                       }}
                     >
-                      [{contrib.spgId}]
+                      +{contrib.points} PTS
                     </span>
-                  )}
-                </div>
+                  </div>
 
-                <span className={styles.pointsBadge}>+{contrib.points} PTS</span>
-              </div>
+                  <h3 className={styles.contribTitle}>{contrib.title}</h3>
+                  {contrib.description && <p className={styles.contribDesc}>{contrib.description}</p>}
 
-              <h3 className={styles.contribTitle}>{contrib.title}</h3>
-              <p className={styles.contribDesc}>{contrib.description}</p>
-
-              <div className={styles.contribFooter}>
-                <span className={styles.statusApproved}>
-                  <MemberIcon name="check" size={13} />
-                  Verified on Ledger
-                </span>
-                <span>{contrib.occurredAt}</span>
-              </div>
-            </article>
-          ))}
-        </div>
+                  <div className={styles.contribFooter}>
+                    <span className={styles.statusApproved}>
+                      <MemberIcon name="check" size={13} />
+                      Verified on Ledger ({contrib.status.toUpperCase()})
+                    </span>
+                    <span>{formattedDate}</span>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
       </section>
 
-      {/* 5. Edit Profile Popup Modal */}
+      {/* 6. Edit Profile Popup Modal (Owner Only) */}
       {isEditModalOpen && (
         <div
           className={styles.modalBackdrop}
@@ -797,99 +1112,177 @@ function ProfileClientContent() {
                 Edit Member Profile
               </h2>
               <p className={styles.modalSubtitle}>
-                Update your public profile, bio, skills, and linked platform handles.
+                Update your public profile, bio, skills, profile picture, and linked handles.
               </p>
             </div>
 
-            <form onSubmit={handleSaveProfile} className={styles.formStack}>
-              <div className={styles.fieldsRow}>
-                <div className={styles.formGroup}>
-                  <label className={styles.inputLabel} htmlFor="edit-name">
-                    Full Name
-                  </label>
-                  <input
-                    id="edit-name"
-                    type="text"
-                    required
-                    maxLength={100}
-                    className={styles.textInput}
-                    value={editFormName}
-                    onChange={(e) => setEditFormName(e.target.value)}
-                  />
-                </div>
+            {/* Error Message */}
+            {saveError && (
+              <div style={{ background: "rgba(248, 113, 113, 0.15)", border: "1px solid rgba(248, 113, 113, 0.4)", borderRadius: "8px", padding: "10px 14px", color: "#f87171", fontSize: "0.78rem", fontWeight: "700" }}>
+                ✕ {saveError}
+              </div>
+            )}
 
-                <div className={styles.formGroup}>
-                  <label className={styles.inputLabel} htmlFor="edit-batch">
-                    Batch Year
-                  </label>
-                  <select
-                    id="edit-batch"
-                    className={styles.selectInput}
-                    value={editFormBatch}
-                    onChange={(e) => setEditFormBatch(Number(e.target.value))}
-                  >
-                    <option value={1}>Batch &apos;25 (Year 1)</option>
-                    <option value={2}>Batch &apos;24 (Year 2)</option>
-                    <option value={3}>Batch &apos;23 (Year 3)</option>
-                    <option value={4}>Batch &apos;22 (Year 4)</option>
-                  </select>
-                </div>
+            {/* Avatar Upload Section */}
+            <div className={styles.avatarEditSection}>
+              <div className={styles.modalAvatarPreview}>
+                {editFormAvatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={editFormAvatarUrl}
+                    alt="Preview"
+                    className={styles.modalAvatarImg}
+                    onError={(e) => {
+                      (e.currentTarget as HTMLElement).style.display = "none";
+                    }}
+                  />
+                ) : (
+                  <span className={styles.avatarInitials} style={{ fontSize: "1.3rem" }}>
+                    {initials}
+                  </span>
+                )}
               </div>
 
+              <div className={styles.avatarEditControls}>
+                <span style={{ fontSize: "0.78rem", fontWeight: "800", color: "#ffffff" }}>
+                  Profile Picture
+                </span>
+                <div className={styles.avatarBtnRow}>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleAvatarFileChange}
+                    style={{ display: "none" }}
+                    id="avatar-file-input"
+                  />
+                  <button
+                    type="button"
+                    disabled={isUploadingAvatar}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={styles.avatarUploadBtn}
+                  >
+                    <MemberIcon name="edit" size={13} />
+                    {isUploadingAvatar ? "Uploading…" : "Upload New Photo"}
+                  </button>
+
+                  {editFormAvatarUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setEditFormAvatarUrl("")}
+                      className={styles.avatarRemoveBtn}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+                <span className={styles.avatarHint}>
+                  {avatarUploadError ? (
+                    <span style={{ color: "#f87171", fontWeight: "700" }}>{avatarUploadError}</span>
+                  ) : (
+                    "Supports JPG, PNG, WebP up to 5MB. Uploads directly to platform storage."
+                  )}
+                </span>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveProfile} className={styles.editForm}>
               <div className={styles.formGroup}>
-                <label className={styles.inputLabel} htmlFor="edit-bio">
-                  Bio / Statement
+                <label className={styles.inputLabel} htmlFor="edit-name">
+                  Full Name *
                 </label>
-                <textarea
-                  id="edit-bio"
-                  maxLength={1000}
-                  className={styles.textareaInput}
-                  value={editFormBio}
-                  onChange={(e) => setEditFormBio(e.target.value)}
-                  placeholder="Tell the club about your engineering focus, research tracks, or goals..."
+                <input
+                  id="edit-name"
+                  type="text"
+                  required
+                  placeholder="Your full name"
+                  value={editFormName}
+                  onChange={(e) => setEditFormName(e.target.value)}
+                  className={styles.textInput}
                 />
               </div>
 
+              {derivedBatchYear && (
+                <div className={styles.formGroup}>
+                  <label className={styles.inputLabel}>
+                    Graduation Batch
+                  </label>
+                  <div
+                    style={{
+                      padding: "9px 12px",
+                      background: "#18181d",
+                      border: "1px solid #282832",
+                      borderRadius: "8px",
+                      color: "#e4e4e7",
+                      fontSize: "0.8rem",
+                      fontWeight: "750",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <MemberIcon name="calendar" size={14} />
+                    <span>Batch {derivedBatchYear}</span>
+                    <span style={{ color: "#71717a", fontSize: "0.72rem", fontWeight: "500", marginLeft: "auto" }}>
+                      Auto-derived from college email (Locked)
+                    </span>
+                  </div>
+                </div>
+              )}
+
               <div className={styles.formGroup}>
                 <label className={styles.inputLabel} htmlFor="edit-skills">
-                  Skills (comma-separated)
+                  Technical Skills (Comma separated)
                 </label>
                 <input
                   id="edit-skills"
                   type="text"
-                  className={styles.textInput}
+                  placeholder="PyTorch, Transformers, CUDA, Triton"
                   value={editFormSkills}
                   onChange={(e) => setEditFormSkills(e.target.value)}
-                  placeholder="e.g. PyTorch, CUDA, ROS2, Reinforcement Learning, Next.js"
+                  className={styles.textInput}
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.inputLabel} htmlFor="edit-bio">
+                  Bio / Research Focus
+                </label>
+                <textarea
+                  id="edit-bio"
+                  placeholder="Share your technical interests, papers, research focus, or club SPGs..."
+                  value={editFormBio}
+                  onChange={(e) => setEditFormBio(e.target.value)}
+                  className={styles.textareaInput}
                 />
               </div>
 
               <div className={styles.fieldsRow}>
                 <div className={styles.formGroup}>
                   <label className={styles.inputLabel} htmlFor="edit-github">
-                    GitHub Profile URL
+                    GitHub Handle / URL
                   </label>
                   <input
                     id="edit-github"
-                    type="url"
-                    className={styles.textInput}
+                    type="text"
+                    placeholder="github_username"
                     value={editFormGithub}
                     onChange={(e) => setEditFormGithub(e.target.value)}
-                    placeholder="https://github.com/username"
+                    className={styles.textInput}
                   />
                 </div>
 
                 <div className={styles.formGroup}>
                   <label className={styles.inputLabel} htmlFor="edit-kaggle">
-                    Kaggle Profile URL
+                    Kaggle Handle / URL
                   </label>
                   <input
                     id="edit-kaggle"
-                    type="url"
-                    className={styles.textInput}
+                    type="text"
+                    placeholder="kaggle_username"
                     value={editFormKaggle}
                     onChange={(e) => setEditFormKaggle(e.target.value)}
-                    placeholder="https://kaggle.com/username"
+                    className={styles.textInput}
                   />
                 </div>
               </div>
@@ -897,29 +1290,29 @@ function ProfileClientContent() {
               <div className={styles.fieldsRow}>
                 <div className={styles.formGroup}>
                   <label className={styles.inputLabel} htmlFor="edit-linkedin">
-                    LinkedIn URL
+                    LinkedIn Handle / URL
                   </label>
                   <input
                     id="edit-linkedin"
-                    type="url"
-                    className={styles.textInput}
+                    type="text"
+                    placeholder="linkedin_handle or URL"
                     value={editFormLinkedin}
                     onChange={(e) => setEditFormLinkedin(e.target.value)}
-                    placeholder="https://linkedin.com/in/username"
+                    className={styles.textInput}
                   />
                 </div>
 
                 <div className={styles.formGroup}>
                   <label className={styles.inputLabel} htmlFor="edit-discord">
-                    Discord Handle
+                    Discord Username
                   </label>
                   <input
                     id="edit-discord"
                     type="text"
-                    className={styles.textInput}
+                    placeholder="username or username#0000"
                     value={editFormDiscord}
                     onChange={(e) => setEditFormDiscord(e.target.value)}
-                    placeholder="username#0000 or username"
+                    className={styles.textInput}
                   />
                 </div>
               </div>
@@ -932,8 +1325,8 @@ function ProfileClientContent() {
                 >
                   Cancel
                 </button>
-                <button type="submit" disabled={isSaving} className={styles.saveBtn}>
-                  {isSaving ? "Saving..." : "Save Profile"}
+                <button type="submit" disabled={isSaving || isUploadingAvatar} className={styles.saveBtn}>
+                  {isSaving ? "Saving to API…" : "Save Changes"}
                 </button>
               </div>
             </form>
@@ -946,15 +1339,8 @@ function ProfileClientContent() {
 
 export default function ProfileClient() {
   return (
-    <Suspense
-      fallback={
-        <div style={{ padding: "48px 24px", color: "#8c8c96", textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
-          Loading student profile...
-        </div>
-      }
-    >
+    <Suspense fallback={<MemberLoading message="Loading profile…" />}>
       <ProfileClientContent />
     </Suspense>
   );
 }
-

@@ -1,0 +1,336 @@
+/**
+ * Contribution schema types and category index adhering strictly to:
+ * server/app/schemas/contributions.py
+ */
+
+import { type IconName } from "@/components/dashboard/MemberIcon";
+
+export type ContributionCategory =
+  | "achievement"
+  | "project_work"
+  | "teaching"
+  | "mentorship"
+  | "content"
+  | "organizing"
+  | "service"
+  | "participation"
+  | "other";
+
+export type ContributionTrack = "kaggle" | "product" | "research" | "misc";
+
+export type ContributionSourceType = "project" | "blog" | "trophy_item";
+
+export type ContributionStatus = "pending" | "approved" | "rejected" | "revoked";
+
+export interface ContributionSource {
+  type: ContributionSourceType;
+  id: string;
+}
+
+export interface ContributionRecord {
+  id: string;
+  schema_version?: number;
+  user_id: string;
+  spg_id?: string | null;
+  track: ContributionTrack;
+  category: ContributionCategory;
+  title: string;
+  description?: string | null;
+  points: number;
+  source?: ContributionSource | null;
+  event_id?: string | null;
+  occurred_at: string;
+  status: ContributionStatus;
+  recorded_by: string;
+  created_at: string;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  revoked_by?: string | null;
+  revoked_at?: string | null;
+  status_reason?: string | null;
+  deduplication_key?: string | null;
+}
+
+export interface ContributionPage {
+  items: ContributionRecord[];
+  next_cursor?: string | null;
+}
+
+export interface CategoryMetadata {
+  category: ContributionCategory;
+  label: string;
+  color: string;
+  bg: string;
+  border: string;
+  icon: IconName;
+  description: string;
+}
+
+/**
+ * Category Color Index & Palette:
+ * - Achievement: Reinforce-Gold/Yellow (#E5B731)
+ * - Participation: Sky Blue (#38BDF8)
+ * - Project Work: Emerald Mint (#34D399)
+ * - Teaching: Warm Amber / Orange (#FB923C)
+ * - Mentorship: Rose / Crimson (#F43F5E)
+ * - Content: Lavender / Purple (#A78BFA)
+ * - Organizing: Fuchsia / Violet (#E879F9)
+ * - Service: Cyan / Teal (#2DD4BF)
+ * - Other: Slate Grey (#94A3B8)
+ */
+export const CONTRIBUTION_CATEGORY_INDEX: Record<ContributionCategory, CategoryMetadata> = {
+  achievement: {
+    category: "achievement",
+    label: "Achievement",
+    color: "#E5B731",
+    bg: "rgba(229, 183, 49, 0.14)",
+    border: "rgba(229, 183, 49, 0.35)",
+    icon: "award",
+    description: "Competitions, hackathons, Kaggle medals, grants, and external accolades.",
+  },
+  participation: {
+    category: "participation",
+    label: "Participation",
+    color: "#38BDF8",
+    bg: "rgba(56, 189, 248, 0.14)",
+    border: "rgba(56, 189, 248, 0.35)",
+    icon: "flame",
+    description: "Active attendance, workshops, reading groups, and hackathon participation.",
+  },
+  project_work: {
+    category: "project_work",
+    label: "Project Work",
+    color: "#34D399",
+    bg: "rgba(52, 211, 153, 0.14)",
+    border: "rgba(52, 211, 153, 0.35)",
+    icon: "rocket",
+    description: "Shipping SPG features, open-source repositories, model checkpoints, and tools.",
+  },
+  teaching: {
+    category: "teaching",
+    label: "Teaching",
+    color: "#FB923C",
+    bg: "rgba(251, 146, 60, 0.14)",
+    border: "rgba(251, 146, 60, 0.35)",
+    icon: "lightning",
+    description: "Conducting technical bootcamps, lecture series, and hands-on coding labs.",
+  },
+  mentorship: {
+    category: "mentorship",
+    label: "Mentorship",
+    color: "#F43F5E",
+    bg: "rgba(244, 63, 94, 0.14)",
+    border: "rgba(244, 63, 94, 0.35)",
+    icon: "users",
+    description: "Guiding junior SPGs, architecture reviews, and 1-on-1 code debugging sessions.",
+  },
+  content: {
+    category: "content",
+    label: "Content",
+    color: "#A78BFA",
+    bg: "rgba(167, 139, 250, 0.14)",
+    border: "rgba(167, 139, 250, 0.35)",
+    icon: "articles",
+    description: "Publishing research papers, technical deep-dives, benchmark reports, and blogs.",
+  },
+  organizing: {
+    category: "organizing",
+    label: "Organizing",
+    color: "#E879F9",
+    bg: "rgba(232, 121, 249, 0.14)",
+    border: "rgba(232, 121, 249, 0.35)",
+    icon: "shield",
+    description: "Leading club initiatives, managing hackathon logistics, speaker outreach, and venues.",
+  },
+  service: {
+    category: "service",
+    label: "Service",
+    color: "#2DD4BF",
+    bg: "rgba(45, 212, 191, 0.14)",
+    border: "rgba(45, 212, 191, 0.35)",
+    icon: "check",
+    description: "Infrastructure maintenance, GPU cluster administration, and Discord moderation.",
+  },
+  other: {
+    category: "other",
+    label: "Other",
+    color: "#94A3B8",
+    bg: "rgba(148, 163, 184, 0.14)",
+    border: "rgba(148, 163, 184, 0.35)",
+    icon: "filter",
+    description: "General club support, ad-hoc contributions, and miscellaneous verified tasks.",
+  },
+};
+
+export const ALL_CATEGORIES = Object.keys(CONTRIBUTION_CATEGORY_INDEX) as ContributionCategory[];
+
+export function getCategoryConfig(category?: string | null): CategoryMetadata {
+  if (category && category in CONTRIBUTION_CATEGORY_INDEX) {
+    return CONTRIBUTION_CATEGORY_INDEX[category as ContributionCategory];
+  }
+  return CONTRIBUTION_CATEGORY_INDEX.other;
+}
+
+export function getTrackColor(track?: string | null): { color: string; bg: string; label: string } {
+  switch (track) {
+    case "research":
+      return { color: "#F87171", bg: "rgba(248, 113, 113, 0.12)", label: "RESEARCH" };
+    case "product":
+      return { color: "#4ADE80", bg: "rgba(74, 222, 128, 0.12)", label: "PRODUCT" };
+    case "kaggle":
+      return { color: "#38BDF8", bg: "rgba(56, 189, 248, 0.12)", label: "KAGGLE" };
+    case "misc":
+    default:
+      return { color: "#E5B731", bg: "rgba(229, 183, 49, 0.12)", label: "COMMUNITY" };
+  }
+}
+
+/**
+ * Realistic Demo Contributions dataset covering all 9 Categories
+ * to showcase the contribution workflow, color index, and badge layout.
+ */
+export const demoContributions: ContributionRecord[] = [
+  {
+    id: "cnt_achieve_01",
+    user_id: "usr_demo",
+    track: "kaggle",
+    category: "achievement",
+    title: "Kaggle Multimodal Video Grounding Silver Medal (Top 2%)",
+    description: "Achieved silver medal rank among 1,400+ international teams with a custom temporal cross-attention vision-language transformer.",
+    points: 75,
+    source: { type: "trophy_item", id: "trophy_kaggle_silver_2025" },
+    occurred_at: "2025-09-20T14:30:00Z",
+    status: "approved",
+    recorded_by: "admin_yuvi_bot",
+    created_at: "2025-09-20T14:35:00Z",
+    reviewed_by: "admin_lead",
+    reviewed_at: "2025-09-20T15:00:00Z",
+  },
+  {
+    id: "cnt_project_02",
+    user_id: "usr_demo",
+    spg_id: "SP-1 Autonomous Drone Swarms",
+    track: "research",
+    category: "project_work",
+    title: "Shipped Distributed Multi-Agent RL Collision Avoidance Policy v2.1",
+    description: "Implemented asynchronous PPO gradient sync on 4x A100 GPUs and published benchmark checkpoints to the club model hub.",
+    points: 50,
+    source: { type: "project", id: "spg_drone_swarms" },
+    occurred_at: "2025-09-14T18:00:00Z",
+    status: "approved",
+    recorded_by: "admin_lead",
+    created_at: "2025-09-14T18:10:00Z",
+    reviewed_by: "admin_lead",
+    reviewed_at: "2025-09-14T18:30:00Z",
+  },
+  {
+    id: "cnt_participate_03",
+    user_id: "usr_demo",
+    track: "misc",
+    category: "participation",
+    title: "Active Participation: SST GenAI HackSprint 48-Hour Challenge",
+    description: "Built and pitched a real-time retrieval agent pipeline; completed all 4 checkpoint milestones during the club hackathon.",
+    points: 25,
+    event_id: "evt_hacksprint_2025",
+    occurred_at: "2025-09-08T20:00:00Z",
+    status: "approved",
+    recorded_by: "admin_lead",
+    created_at: "2025-09-08T20:15:00Z",
+    reviewed_by: "admin_lead",
+    reviewed_at: "2025-09-08T21:00:00Z",
+  },
+  {
+    id: "cnt_teaching_04",
+    user_id: "usr_demo",
+    track: "research",
+    category: "teaching",
+    title: "Conducted Workshop: PyTorch Distributed Data Parallel (DDP) & FSDP",
+    description: "Led an intensive 3-hour live coding lab for 50+ students on multi-GPU tensor sharding, gradient communication, and torchrun.",
+    points: 40,
+    event_id: "evt_ddp_workshop_2025",
+    occurred_at: "2025-08-28T16:00:00Z",
+    status: "approved",
+    recorded_by: "admin_lead",
+    created_at: "2025-08-28T16:20:00Z",
+    reviewed_by: "admin_lead",
+    reviewed_at: "2025-08-28T17:00:00Z",
+  },
+  {
+    id: "cnt_mentorship_05",
+    user_id: "usr_demo",
+    spg_id: "SP-3 Embedded Edge AI",
+    track: "product",
+    category: "mentorship",
+    title: "1-on-1 Architecture Mentorship for Freshman SPG Team",
+    description: "Reviewed ONNX quantization pipelines, TensorRT optimization profiles, and memory bottlenecks across 4 weekly review sessions.",
+    points: 30,
+    occurred_at: "2025-08-18T11:00:00Z",
+    status: "approved",
+    recorded_by: "admin_lead",
+    created_at: "2025-08-18T11:30:00Z",
+    reviewed_by: "admin_lead",
+    reviewed_at: "2025-08-18T12:00:00Z",
+  },
+  {
+    id: "cnt_content_06",
+    user_id: "usr_demo",
+    track: "research",
+    category: "content",
+    title: "Technical Article: Custom Triton Kernels for FlashAttention-2 Tuning",
+    description: "Published a peer-reviewed technical deep dive on GPU memory hierarchy, block-level tiling, and fused kernel optimization.",
+    points: 35,
+    source: { type: "blog", id: "art_triton_kernels_2025" },
+    occurred_at: "2025-08-05T10:00:00Z",
+    status: "approved",
+    recorded_by: "admin_lead",
+    created_at: "2025-08-05T10:15:00Z",
+    reviewed_by: "admin_lead",
+    reviewed_at: "2025-08-05T11:00:00Z",
+  },
+  {
+    id: "cnt_organizing_07",
+    user_id: "usr_demo",
+    track: "misc",
+    category: "organizing",
+    title: "Coordinated Reinforce AI Summit Keynote & Industry Guest Panel",
+    description: "Managed speaker coordination, technical track scheduling, and live stream infrastructure for 200+ campus attendees.",
+    points: 35,
+    event_id: "evt_ai_summit_2025",
+    occurred_at: "2025-07-22T19:00:00Z",
+    status: "approved",
+    recorded_by: "admin_lead",
+    created_at: "2025-07-22T19:30:00Z",
+    reviewed_by: "admin_lead",
+    reviewed_at: "2025-07-22T20:00:00Z",
+  },
+  {
+    id: "cnt_service_08",
+    user_id: "usr_demo",
+    track: "product",
+    category: "service",
+    title: "Cluster Sysadmin: Deployed Slurm Workload Queue & GPU Metrics Daemon",
+    description: "Configured automated GPU node telemetry, user fair-share job scheduler, and Discord webhook alerting for the lab cluster.",
+    points: 45,
+    occurred_at: "2025-07-10T15:00:00Z",
+    status: "approved",
+    recorded_by: "admin_lead",
+    created_at: "2025-07-10T15:20:00Z",
+    reviewed_by: "admin_lead",
+    reviewed_at: "2025-07-10T16:00:00Z",
+  },
+  {
+    id: "cnt_other_09",
+    user_id: "usr_demo",
+    track: "misc",
+    category: "other",
+    title: "Curated Open-Source Reinforcement Learning Reading List & Benchmarks",
+    description: "Assembled benchmark baseline comparisons, reproduction notebooks, and paper summaries for new club inductees.",
+    points: 20,
+    occurred_at: "2025-06-28T12:00:00Z",
+    status: "approved",
+    recorded_by: "admin_lead",
+    created_at: "2025-06-28T12:15:00Z",
+    reviewed_by: "admin_lead",
+    reviewed_at: "2025-06-28T13:00:00Z",
+  },
+];

@@ -239,6 +239,38 @@ export const api = {
       { method: "PATCH", body: JSON.stringify(body) },
     ),
 
+  uploadAvatar: async (token: string, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+    try {
+      const res = await fetch(`${BASE}/users/me/avatar`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        let detail = `Avatar upload failed with status ${res.status}`;
+        try {
+          const body = await res.json();
+          if (typeof body?.detail === "string") detail = body.detail;
+        } catch {}
+        throw new ApiError(detail, res.status);
+      }
+
+      return res.json() as Promise<{ message: string; avatar_url: string }>;
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+
   unlinkDiscord: (token: string) =>
     request<{ success: boolean; message?: string; user: StudentProfile }>(
       "/users/unlink-discord",
@@ -377,6 +409,44 @@ export const api = {
 
   getUserProfile: (token: string, idOrEmail: string) =>
     request<StudentProfile>(`/users/${encodeURIComponent(idOrEmail)}`, token),
+
+  getMyContributions: (token: string, limit: number = 50, cursor?: string | null) => {
+    const qs = new URLSearchParams();
+    if (limit) qs.set("limit", String(limit));
+    if (cursor) qs.set("cursor", cursor);
+    const query = qs.toString();
+    return request<{ items: any[]; next_cursor?: string | null }>(
+      `/contributions/me${query ? `?${query}` : ""}`,
+      token
+    );
+  },
+
+  getUserContributions: (
+    token: string,
+    userId: string,
+    limit: number = 50,
+    cursor?: string | null,
+    statusFilter: string = "approved"
+  ) => {
+    const qs = new URLSearchParams();
+    if (limit) qs.set("limit", String(limit));
+    if (cursor) qs.set("cursor", cursor);
+    if (statusFilter) qs.set("status", statusFilter);
+    const query = qs.toString();
+    return request<{ items: any[]; next_cursor?: string | null }>(
+      `/contributions/user/${encodeURIComponent(userId)}${query ? `?${query}` : ""}`,
+      token
+    );
+  },
+
+  getContribution: (token: string, recordId: string) =>
+    request<any>(`/contributions/${encodeURIComponent(recordId)}`, token),
+
+  getContributionLeaderboard: (token: string, limit: number = 50) =>
+    request<{ user_id: string; points: number; contribution_count: number }[]>(
+      `/contributions/leaderboard?limit=${limit}`,
+      token
+    ),
 };
 
 /**

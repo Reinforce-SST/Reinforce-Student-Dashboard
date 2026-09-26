@@ -38,7 +38,22 @@ USERS_COLLECTION = "users"
 VALID_TRACKS = {"total", "kaggle", "product", "research", "misc"}
 
 
+import re
 from app.utils import now_iso
+
+
+def _derive_batch_year(email: str) -> Optional[int]:
+    if not email:
+        return None
+    match = re.search(r"(?:^|\.)(\d{2})[a-zA-Z]", email.lower())
+    if match:
+        try:
+            start_year = int(match.group(1))
+            if 20 <= start_year <= 40:
+                return 2000 + start_year + 4
+        except ValueError:
+            pass
+    return None
 
 
 def _to_user_me(uid: str, data: Dict[str, Any]) -> UserMeResponse:
@@ -63,7 +78,7 @@ def _to_user_me(uid: str, data: Dict[str, Any]) -> UserMeResponse:
         is_admin=bool(data.get("is_admin", False)),
         is_member=bool(data.get("is_member", False)),
         tier=data.get("tier") or MemberTier.BEGINNER,
-        batch_year=data.get("batch_year"),
+        batch_year=data.get("batch_year") or _derive_batch_year(data.get("email") or ""),
         is_verified=bool(data.get("is_verified") and data.get("discord_link_version") == 1),
         verified_at=data.get("verified_at"),
         points=points,
@@ -95,7 +110,7 @@ def _to_user_public(uid: str, data: Dict[str, Any]) -> UserPublicResponse:
         bio=data.get("bio"),
         is_member=bool(data.get("is_member", False)),
         tier=data.get("tier") or MemberTier.BEGINNER,
-        batch_year=data.get("batch_year"),
+        batch_year=data.get("batch_year") or _derive_batch_year(data.get("email") or ""),
         is_verified=bool(data.get("is_verified") and data.get("discord_link_version") == 1),
         skills=data.get("skills") or [],
         social_links=social_links,
@@ -113,10 +128,15 @@ def _get_or_create_user(user_token: dict) -> UserMeResponse:
     doc = doc_ref.get()
 
     now = now_iso()
+    derived_batch = _derive_batch_year(email)
     if doc.exists:
         data = doc.to_dict() or {}
-        # Keep last login fresh
-        doc_ref.set({"last_login": now, "updated_at": now}, merge=True)
+        # Keep last login fresh and backfill batch_year if missing
+        updates: Dict[str, Any] = {"last_login": now, "updated_at": now}
+        if not data.get("batch_year") and derived_batch:
+            updates["batch_year"] = derived_batch
+            data["batch_year"] = derived_batch
+        doc_ref.set(updates, merge=True)
         data["last_login"] = now
         data["updated_at"] = now
         return _to_user_me(uid, data)
@@ -143,7 +163,7 @@ def _get_or_create_user(user_token: dict) -> UserMeResponse:
             "is_admin": False,
             "is_member": bool(owned_legacy.get("is_member", False)),
             "tier": owned_legacy.get("tier") or MemberTier.BEGINNER.value,
-            "batch_year": owned_legacy.get("batch_year"),
+            "batch_year": owned_legacy.get("batch_year") or derived_batch,
             "is_verified": bool(proven_link and owned_legacy.get("is_verified")),
             "verified_at": owned_legacy.get("verified_at") if proven_link else None,
             "points": owned_legacy.get("points") or {"total": 0, "kaggle": 0, "product": 0, "research": 0, "misc": 0},
@@ -286,6 +306,9 @@ def unlink_discord(current_user: dict = Depends(get_current_user)):
     }
 
 
+import base64
+
+
 @router.post("/me/avatar", summary="Upload avatar image")
 def upload_avatar(
     file: UploadFile = File(...),
@@ -299,7 +322,19 @@ def upload_avatar(
     file_extension = file.filename.split(".")[-1] if file.filename else "png"
     destination_path = f"users/{uid}/avatar.{file_extension}"
 
-    avatar_url = upload_file_to_storage(file.file, destination_path, file.content_type)
+    avatar_url = None
+    try:
+        avatar_url = upload_file_to_storage(file.file, destination_path, file.content_type)
+    except Exception:
+        # Fallback to direct data URI when Cloud Storage bucket is unprovisioned
+        try:
+            file.file.seek(0)
+            file_bytes = file.file.read()
+            b64 = base64.b64encode(file_bytes).decode("utf-8")
+            avatar_url = f"data:{file.content_type};base64,{b64}"
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to process avatar file: {str(e)}")
+
     db.collection(USERS_COLLECTION).document(uid).set({
         "avatar_url": avatar_url,
         "updated_at": now_iso(),
