@@ -326,6 +326,11 @@
 /* ==========================================================================
    2. Track Points Ledger Grid (4 Tracks)
    ========================================================================== */
+.tracksSection {
+  display: flex;
+  flex-direction: column;
+}
+
 .tracksGrid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -336,76 +341,128 @@
   background: #141416;
   border: 1px solid #232328;
   border-radius: 14px;
-  padding: 18px 20px;
+  padding: 20px 22px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   position: relative;
   overflow: hidden;
+  transition: transform 0.15s ease, border-color 0.15s ease;
 }
 
-.trackBorderResearch {
-  border-left: 3px solid #f87171 !important;
+.trackCard:hover {
+  transform: translateY(-2px);
+  border-color: #383848;
 }
 
-.trackBorderProduct {
-  border-left: 3px solid #4ade80 !important;
+.cardTotal {
+  border-top: 3px solid var(--brand, #E5B731);
 }
 
-.trackBorderKaggle {
-  border-left: 3px solid #38c8ff !important;
+.cardResearch {
+  border-top: 3px solid #f87171;
 }
 
-.trackBorderMisc {
-  border-left: 3px solid var(--brand, #E5B731) !important;
+.cardProduct {
+  border-top: 3px solid #4ade80;
 }
 
-.trackCardHeader {
+.cardKaggle {
+  border-top: 3px solid #38c8ff;
+}
+
+.cardHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.trackName {
-  font-size: 0.68rem;
-  font-weight: 800;
+.cardLabel {
+  font-size: 0.7rem;
+  font-weight: 850;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #727280;
+  color: #8e8e9c;
 }
 
-.trackPointsVal {
-  font-size: 1.85rem;
-  font-weight: 850;
-  font-family: var(--font-mono, monospace);
-  line-height: 1;
+.iconWrap {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
 }
 
-.colorResearch {
-  color: #f87171;
-}
-
-.colorProduct {
-  color: #4ade80;
-}
-
-.colorKaggle {
-  color: #38c8ff;
-}
-
-.colorMisc {
+.iconWrapTotal {
+  background: rgba(229, 183, 49, 0.14);
   color: var(--brand, #E5B731);
 }
 
-.trackCardFooter {
+.iconWrapResearch {
+  background: rgba(248, 113, 113, 0.14);
+  color: #f87171;
+}
+
+.iconWrapProduct {
+  background: rgba(74, 222, 128, 0.14);
+  color: #4ade80;
+}
+
+.iconWrapKaggle {
+  background: rgba(56, 200, 255, 0.14);
+  color: #38c8ff;
+}
+
+.pointsValue {
+  font-size: 1.95rem;
+  font-weight: 850;
+  font-family: var(--font-mono, monospace);
+  color: #ffffff;
+  line-height: 1;
+}
+
+.progressBarBg {
+  width: 100%;
+  height: 5px;
+  background: #202028;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.progressBarFill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.fillTotal {
+  background: var(--brand, #E5B731);
+}
+
+.fillResearch {
+  background: #f87171;
+}
+
+.fillProduct {
+  background: #4ade80;
+}
+
+.fillKaggle {
+  background: #38c8ff;
+}
+
+.tierSubtext,
+.trackSubtext {
   font-size: 0.72rem;
-  color: #6a6a75;
+  color: #727280;
+  margin-top: 2px;
 }
 
 /* ==========================================================================
    3. GitHub-Style Contribution Heatmap Calendar
    ========================================================================== */
-.heatmapSection {
+.heatmapCard {
   background: #141416;
   border: 1px solid #232328;
   border-radius: 16px;
@@ -415,7 +472,7 @@
   gap: 18px;
 }
 
-.heatmapHeaderRow {
+.heatmapHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -443,6 +500,39 @@
   font-size: 0.76rem;
   color: #8c8c98;
   margin: 0;
+}
+
+.heatmapFilterRow {
+  display: flex;
+  align-items: center;
+  background: #19191e;
+  border: 1px solid #262630;
+  border-radius: 9px;
+  padding: 3px;
+  gap: 3px;
+}
+
+.heatmapFilterBtn {
+  font-size: 0.7rem;
+  font-weight: 750;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #7e7e88;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-transform: uppercase;
+}
+
+.heatmapFilterBtn:hover {
+  color: #ffffff;
+}
+
+.heatmapFilterBtnActive {
+  background: var(--brand, #E5B731) !important;
+  color: #0c0c0e !important;
+  font-weight: 850 !important;
 }
 
 .heatmapStatsRow {
@@ -1058,98 +1148,63 @@
 .categoryIndexCard {
   background: #141416;
   border: 1px solid #232328;
-  border-radius: 16px;
-  padding: 24px;
+  border-radius: 14px;
+  padding: 12px 18px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 10px;
 }
 
 .categoryIndexHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
 .categoryIndexTitle {
-  font-size: 1.05rem;
+  font-size: 0.86rem;
   font-weight: 800;
   color: #ffffff;
   margin: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-
-.categoryIndexSubtitle {
-  font-size: 0.78rem;
-  color: #8c8c98;
-  margin: 4px 0 0 0;
-}
-
-.categoryGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 12px;
-}
-
-.categoryIndexItem {
-  background: #19191d;
-  border: 1px solid #23232a;
-  border-radius: 12px;
-  padding: 12px 14px;
-  display: flex;
-  flex-direction: column;
   gap: 6px;
-  transition: all 0.15s ease;
-  cursor: pointer;
-  text-align: left;
 }
 
-.categoryIndexItem:hover {
-  transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.18);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
-}
-
-.categoryIndexItemActive {
-  border-color: var(--brand, #E5B731) !important;
-  box-shadow: 0 0 16px rgba(229, 183, 49, 0.2) !important;
-}
-
-.categoryTopLine {
+.categoryPillRow {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
-.categoryPill {
+.categoryChipBtn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.72rem;
+  padding: 5px 10px;
+  border-radius: 7px;
+  font-size: 0.7rem;
   font-weight: 800;
-  letter-spacing: 0.04em;
-  padding: 3px 9px;
-  border-radius: 6px;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+}
+
+.categoryChipBtn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.2);
 }
 
 .categoryDot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
-}
-
-.categoryItemDesc {
-  font-size: 0.72rem;
-  color: #92929e;
-  line-height: 1.4;
-  margin: 0;
 }
 
 /* Category Filter Chips Bar */

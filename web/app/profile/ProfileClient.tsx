@@ -680,34 +680,30 @@ function ProfileClientContent() {
         </div>
       </section>
 
-      {/* 3. CONTRIBUTION CATEGORY INDEX / LEGEND */}
+      {/* 3. CONTRIBUTION CATEGORY INDEX / LEGEND (Compact Short Strip) */}
       <section className={styles.categoryIndexCard} aria-label="Contribution Category Index">
         <div className={styles.categoryIndexHeader}>
-          <div>
-            <h2 className={styles.categoryIndexTitle}>
-              <MemberIcon name="award" size={18} />
-              Contribution Category Index &amp; Workflow
-            </h2>
-            <p className={styles.categoryIndexSubtitle}>
-              Points are auditable ledger records awarded across 9 distinct categories. Click any category to filter the ledger below.
-            </p>
-          </div>
+          <h2 className={styles.categoryIndexTitle}>
+            <MemberIcon name="award" size={16} />
+            Contribution Categories
+          </h2>
 
           <div className={styles.demoToggleWrap}>
             <button
               type="button"
               onClick={() => setIsDemoMode(!isDemoMode)}
               className={`${styles.demoToggleBtn} ${isDemoMode ? styles.demoToggleBtnActive : ""}`}
+              style={{ padding: "4px 10px", fontSize: "0.72rem" }}
               title="Toggle between Live API Ledger and 9-Category Demo"
             >
-              <MemberIcon name="lightning" size={14} />
+              <MemberIcon name="lightning" size={12} />
               {isDemoMode ? "Showing 9-Category Demo" : "Switch to 9-Category Demo"}
             </button>
           </div>
         </div>
 
-        {/* 9 Category Visual Index Grid */}
-        <div className={styles.categoryGrid}>
+        {/* Compact 9-Category Chip Row */}
+        <div className={styles.categoryPillRow}>
           {ALL_CATEGORIES.map((catKey) => {
             const config = CONTRIBUTION_CATEGORY_INDEX[catKey];
             const isSelected = selectedCategoryFilter === catKey;
@@ -716,30 +712,22 @@ function ProfileClientContent() {
               <button
                 key={catKey}
                 type="button"
-                className={`${styles.categoryIndexItem} ${isSelected ? styles.categoryIndexItemActive : ""}`}
+                className={styles.categoryChipBtn}
                 onClick={() => setSelectedCategoryFilter(isSelected ? "all" : catKey)}
+                title={`${config.label}: ${config.description}`}
                 style={{
-                  borderLeft: `4px solid ${config.color}`,
+                  background: isSelected ? config.bg : "#18181d",
+                  color: isSelected ? config.color : "#d4d4d8",
+                  borderColor: isSelected ? config.color : "rgba(255, 255, 255, 0.08)",
+                  boxShadow: isSelected ? `0 0 10px ${config.bg}` : "none",
                 }}
               >
-                <div className={styles.categoryTopLine}>
-                  <span
-                    className={styles.categoryPill}
-                    style={{
-                      background: config.bg,
-                      color: config.color,
-                      border: `1px solid ${config.border}`,
-                    }}
-                  >
-                    <MemberIcon name={config.icon} size={12} />
-                    {config.label}
-                  </span>
-                  <span
-                    className={styles.categoryDot}
-                    style={{ background: config.color, boxShadow: `0 0 8px ${config.color}` }}
-                  />
-                </div>
-                <p className={styles.categoryItemDesc}>{config.description}</p>
+                <MemberIcon name={config.icon} size={12} />
+                <span>{config.label}</span>
+                <span
+                  className={styles.categoryDot}
+                  style={{ background: config.color, boxShadow: `0 0 6px ${config.color}` }}
+                />
               </button>
             );
           })}
