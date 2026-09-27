@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMember } from "@/lib/useMember";
 import { api, type StudentProfile, type TrackPoints } from "@/lib/api";
+import { graduationBatchYear } from "@/lib/batchYear";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import MemberLoading from "@/components/dashboard/MemberLoading";
 import {
@@ -98,25 +99,6 @@ function buildHeatmapGrid(contributions: ContributionRecord[]): HeatmapDayCell[]
   return grid;
 }
 
-export function deriveBatchYear(batchYear?: number | null, email?: string | null): number | null {
-  if (batchYear && batchYear >= 2000) {
-    return batchYear;
-  }
-  if (batchYear && batchYear >= 1 && batchYear <= 5) {
-    return 2028 - batchYear + 1;
-  }
-  if (email) {
-    const match = email.toLowerCase().match(/(?:^|\.)(\d{2})[a-zA-Z]/);
-    if (match && match[1]) {
-      const prefix = parseInt(match[1], 10);
-      if (prefix >= 20 && prefix <= 40) {
-        return 2000 + prefix + 4;
-      }
-    }
-  }
-  return null;
-}
-
 function formatBatchDisplay(batchYear?: number | null): string | null {
   if (!batchYear) return null;
   return `Batch ${batchYear}`;
@@ -137,7 +119,15 @@ function ProfileClientContent() {
     return false;
   }, [queryId, loggedInProfile]);
 
-  const [activeProfile, setActiveProfile] = useState<StudentProfile | null>(isOwner ? loggedInProfile : null);
+  const [fetchedProfile, setFetchedProfile] = useState<StudentProfile | null>(null);
+  const [profileOverrides, setProfileOverrides] = useState<Partial<StudentProfile>>({});
+
+  const activeProfile = useMemo(() => {
+    const base = isOwner ? loggedInProfile : fetchedProfile;
+    if (!base) return null;
+    return { ...base, ...profileOverrides };
+  }, [isOwner, loggedInProfile, fetchedProfile, profileOverrides]);
+
   const [profileLoading, setProfileLoading] = useState(false);
   const [notFound, setNotFound] = useState(false);
 
@@ -152,15 +142,12 @@ function ProfileClientContent() {
   const [historyTab, setHistoryTab] = useState<"all" | ContributionTrack>("all");
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<"all" | ContributionCategory>("all");
 
-  // Fetch Profile data
+  // Fetch Profile data (only when viewing another user's profile)
   useEffect(() => {
-    if (isOwner) {
-      setActiveProfile(loggedInProfile);
+    if (isOwner || !queryId) {
       setNotFound(false);
       return;
     }
-
-    if (!queryId) return;
 
     let isMounted = true;
     setProfileLoading(true);
@@ -169,7 +156,7 @@ function ProfileClientContent() {
       .then((data) => {
         if (!isMounted) return;
         if (data && (data.id || data.email)) {
-          setActiveProfile(data);
+          setFetchedProfile(data);
           setNotFound(false);
         } else {
           setNotFound(true);
@@ -186,7 +173,7 @@ function ProfileClientContent() {
     return () => {
       isMounted = false;
     };
-  }, [isOwner, queryId, token, loggedInProfile]);
+  }, [isOwner, queryId, token]);
 
   // Fetch Live Contributions from API
   const fetchContributions = useCallback(async () => {
@@ -197,7 +184,7 @@ function ProfileClientContent() {
         const res = await api.getMyContributions(token, 100);
         setLiveContributions(res?.items || []);
       } else {
-        const targetUserId = activeProfile?.id || queryId;
+        const targetUserId = queryId;
         if (targetUserId) {
           const res = await api.getUserContributions(token, targetUserId, 100);
           setLiveContributions(res?.items || []);
@@ -208,7 +195,7 @@ function ProfileClientContent() {
     } finally {
       setContributionsLoading(false);
     }
-  }, [token, isOwner, activeProfile?.id, queryId]);
+  }, [token, isOwner, queryId]);
 
   useEffect(() => {
     fetchContributions();
@@ -238,10 +225,8 @@ function ProfileClientContent() {
     discord: activeProfile?.social_links?.discord || activeProfile?.discord_id || "",
   };
 
-  // Derive 4-digit graduation batch year from email or profile (e.g. 25bcs -> 2029, 26bcs -> 2030)
-  const derivedBatchYear = useMemo(() => {
-    return deriveBatchYear(activeProfile?.batch_year, activeProfile?.email || loggedInProfile?.email);
-  }, [activeProfile?.batch_year, activeProfile?.email, loggedInProfile?.email]);
+  // The API stores the graduation batch; study year is not inferred here.
+  const derivedBatchYear = graduationBatchYear(activeProfile?.batch_year);
 
   const batchDisplay = formatBatchDisplay(derivedBatchYear);
 
@@ -326,12 +311,13 @@ function ProfileClientContent() {
       const res = await api.uploadAvatar(token, file);
       if (res && res.avatar_url) {
         setEditFormAvatarUrl(res.avatar_url);
-        setActiveProfile((prev) => (prev ? { ...prev, avatar_url: res.avatar_url } : prev));
+        setProfileOverrides((prev) => ({ ...prev, avatar_url: res.avatar_url }));
         setSaveSuccessMsg("Avatar uploaded successfully!");
         setTimeout(() => setSaveSuccessMsg(""), 4000);
       }
-    } catch (err: any) {
-      setAvatarUploadError(err.message || "Failed to upload avatar image.");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to upload avatar image.";
+      setAvatarUploadError(msg);
     } finally {
       setIsUploadingAvatar(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -361,7 +347,6 @@ function ProfileClientContent() {
       full_name: editFormName.trim(),
       avatar_url: editFormAvatarUrl.trim() || null,
       bio: editFormBio.trim() || null,
-      batch_year: derivedBatchYear || null,
       skills: parsedSkills,
       social_links: updatedSocials,
     };
@@ -373,27 +358,23 @@ function ProfileClientContent() {
         await api.updateProfile(token, payload);
       }
 
-      setActiveProfile((prev) =>
-        prev
-          ? {
-              ...prev,
-              full_name: payload.full_name,
-              avatar_url: payload.avatar_url,
-              bio: payload.bio,
-              batch_year: payload.batch_year,
-              skills: parsedSkills,
-              social_links: updatedSocials,
-            }
-          : prev
-      );
+      setProfileOverrides((prev) => ({
+        ...prev,
+        full_name: payload.full_name,
+        avatar_url: payload.avatar_url,
+        bio: payload.bio,
+        skills: parsedSkills,
+        social_links: updatedSocials,
+      }));
 
       setIsSaving(false);
       setIsEditModalOpen(false);
       setSaveSuccessMsg("Profile updated successfully!");
       setTimeout(() => setSaveSuccessMsg(""), 4000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setIsSaving(false);
-      setSaveError(err.message || "Failed to update profile details. Please try again.");
+      const msg = err instanceof Error ? err.message : "Failed to update profile details. Please try again.";
+      setSaveError(msg);
     }
   };
 

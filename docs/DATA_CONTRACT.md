@@ -54,6 +54,18 @@ the cached per-track `points` map. `is_admin` in this profile is display metadat
 only; API authorization comes exclusively from the verified Firebase
 `admin == true` custom claim.
 
+`batch_year` is the four-digit graduation year. New event records keep the legacy
+field name `eligibility.allowed_years`, but its values are graduation years. The
+four choices advance on July 1 in the `Asia/Kolkata` timezone. New event records
+keep the choices saved when they were published. Older events with the former
+default `[1, 2, 3, 4]` are interpreted as open to the current four cohorts.
+Older profiles storing a study-year value (1–5) are converted from their SST email
+prefix on sign-in; event registration also resolves that batch for members who
+have not signed in again. If the email cannot identify a graduation batch, the
+old value is retained rather than guessed and cannot satisfy a new batch rule.
+Members cannot change `batch_year` through profile edits; the server owns this
+value. An unresolvable profile requires an admin-confirmed correction.
+
 ## `discord_link_tokens/{sha256(token)}`
 
 YUVI issues a private, short-lived `/auth#link_token=...` URL. The browser sends
@@ -125,9 +137,12 @@ omitted from the member list and detail responses.
 | `category` | Label |
 |---|---|
 | `spg_registration` | 🚀 SPG Registration / Modification |
-| `resource_request` | ⚡ Resource Request |
+| `compute_resource_request` | ⚡ Compute Resource Request |
+| `learning_resource_request` | 📚 Learning Resource Request |
+| `resource_request` | ⚡ Resource Request (legacy alias) |
 | `support` | 💬 Support & General Inquiries |
 | `idea_jar` | 💡 Idea Jar & Suggestions |
+| `feedback` | 📝 General Feedback & Suggestions |
 | `report` | 🛡️ Report Issue / Misconduct |
 | `misc` | 📦 General / Misc |
 
@@ -205,9 +220,12 @@ ampersands**, not snake_case identifiers. They come from the Discord modal label
 | Category | Keys, in intended order |
 |---|---|
 | `spg_registration` | `Project Name & Track`, `Team Members`, `Duration & Frequency`, `Summary & Goals` |
+| `compute_resource_request` | `SPG Name`, `Resources Requested`, `Progress Proof`, `Justification` |
+| `learning_resource_request` | `Topic / Subject Area`, `Resource Format`, `Target Audience / Track`, `Description & Suggested Links` |
 | `resource_request` | `SPG Name`, `Resources Requested`, `Progress Proof`, `Justification` |
 | `idea_jar` | `Idea Title`, `Track`, `Overview` |
 | `support` | `Subject`, `Details` |
+| `feedback` | `Feedback Topic`, `Comments` |
 | `misc` | `Subject`, `Details` |
 | `report` | `Incident Summary`, `Report Details` |
 

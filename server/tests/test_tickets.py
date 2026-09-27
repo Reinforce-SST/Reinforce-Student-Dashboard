@@ -14,12 +14,8 @@ DID = "123456789012345678"
 
 class TicketTests(unittest.TestCase):
     def setUp(self):
-        alias = {"firebase_uid": USER["uid"], "email": USER["email"],
-                 "discord_id": DID, "discord_link_version": 1}
         self.db = NestedFirestore({
             "users/uid-1": {"email": USER["email"], "discord_id": DID, "discord_link_version": 1},
-            "users/" + USER["email"]: alias,
-            "users/" + DID: alias,
         })
         patcher = patch.object(tickets, "db", self.db)
         patcher.start()
@@ -60,7 +56,7 @@ class TicketTests(unittest.TestCase):
 
     def test_one_sided_link_cannot_list_or_open_old_ticket(self):
         self.ticket("own")
-        self.db.store["users/" + USER["email"]]["email"] = "other@sst.scaler.com"
+        self.db.store["users/" + USER["uid"]]["email"] = "other@sst.scaler.com"
         self.assertEqual(tickets.list_my_tickets(USER).items, [])
         with self.assertRaises(HTTPException) as error:
             tickets.get_ticket("own", USER)

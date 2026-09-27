@@ -9,25 +9,15 @@ import {
   type SPGRecord,
   type SPGReportRecord,
   type SPGFormReportSubmission,
-  fallbackSpgs,
-  fallbackReports,
 } from "@/lib/spgData";
 import styles from "./SpgDetail.module.css";
 
 export default function SpgDetailClient({ spgId }: { spgId: string }) {
-  const { token, profile } = useMember();
-
-  // Load initial SPG & reports from fallback or local matching
-  const defaultSpg =
-    fallbackSpgs.find((s) => s.id === spgId) ||
-    fallbackSpgs[0];
-
-  const [spg, setSpg] = useState<SPGRecord>(defaultSpg);
-  const [reports, setReports] = useState<SPGReportRecord[]>(() => {
-    const raw = fallbackReports[spgId] || fallbackReports[defaultSpg.id] || [];
-    return [...raw].sort((a, b) => b.sequence_number - a.sequence_number);
-  });
-  const [loading, setLoading] = useState(false);
+  const { token } = useMember();
+  const [spg, setSpg] = useState<SPGRecord | null>(null);
+  const [reports, setReports] = useState<SPGReportRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -43,39 +33,33 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
   const [submitting, setSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  // Expanded report cards state
-  const [expandedReports, setExpandedReports] = useState<Record<string, boolean>>({});
-
-  const toggleExpand = (reportId: string) => {
-    setExpandedReports((prev) => ({ ...prev, [reportId]: !prev[reportId] }));
-  };
 
   // Fetch SPG & Reports from Backend API
   const fetchSpgData = useCallback(async () => {
     if (!token) return;
     try {
       setLoading(true);
-      const spgRes = await api.getSpg(token, spgId).catch(() => null);
-      if (spgRes) {
-        setSpg(spgRes);
-      }
-
-      const repRes = await api.listSpgReports(token, spgId).catch(() => null);
-      if (repRes && repRes.items) {
-        const sorted = [...repRes.items].sort(
-          (a, b) => (b.sequence_number || 0) - (a.sequence_number || 0)
-        );
-        setReports(sorted);
+      setLoadError("");
+      const spgRes = await api.getSpg(token, spgId);
+      setSpg(spgRes);
+      try {
+        const repRes = await api.listSpgReports(token, spgId);
+        setReports([...repRes.items].sort((a, b) => b.sequence_number - a.sequence_number));
+      } catch {
+        setReports([]);
+        setLoadError("Project group reports could not be loaded. Try again.");
       }
     } catch {
-      // Keep fallback data
+      setSpg(null);
+      setReports([]);
+      setLoadError("Project group could not be loaded. Try again.");
     } finally {
       setLoading(false);
     }
   }, [token, spgId]);
 
   useEffect(() => {
-    fetchSpgData();
+    void Promise.resolve().then(fetchSpgData);
   }, [fetchSpgData]);
 
   // Milestone input helpers
@@ -98,6 +82,10 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
   // Handle report submission
   const handleSubmitReport = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!spg || !token) {
+      setStatusMessage({ type: "error", text: "Project group is unavailable. Please retry loading it." });
+      return;
+    }
     if (!heading.trim() || !shortDescription.trim()) {
       setStatusMessage({ type: "error", text: "Please enter a heading and short description." });
       return;
@@ -127,49 +115,7 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
           next_steps: nextSteps.trim() || undefined,
         };
 
-        if (token) {
-          try {
-            const res = await api.submitFormReport(token, spg.id, payload);
-            newRecord = res;
-          } catch {
-            // Local mock record creation for testing/offline
-            newRecord = {
-              id: `rep_${Date.now()}`,
-              spg_id: spg.id,
-              report_type: reportType,
-              report_format: "form",
-              heading: payload.heading,
-              short_description: payload.short_description,
-              sequence_number: reports.length + 1,
-              summary: payload.summary,
-              milestones: payload.milestones,
-              blockers: payload.blockers,
-              next_steps: payload.next_steps,
-              submitted_by: profile.id || profile.email,
-              submitter_name: profile.full_name || "Member",
-              submitted_at: new Date().toISOString(),
-              status: "pending",
-            };
-          }
-        } else {
-          newRecord = {
-            id: `rep_${Date.now()}`,
-            spg_id: spg.id,
-            report_type: reportType,
-            report_format: "form",
-            heading: payload.heading,
-            short_description: payload.short_description,
-            sequence_number: reports.length + 1,
-            summary: payload.summary,
-            milestones: payload.milestones,
-            blockers: payload.blockers,
-            next_steps: payload.next_steps,
-            submitted_by: profile.id || profile.email,
-            submitter_name: profile.full_name || "Guild Member",
-            submitted_at: new Date().toISOString(),
-            status: "pending",
-          };
-        }
+        newRecord = await api.submitFormReport(token, spg.id, payload);
       } else {
         // PDF Report
         if (!pdfFile) {
@@ -184,48 +130,11 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
         formData.append("short_description", shortDescription.trim());
         formData.append("report_type", reportType);
 
-        if (token) {
-          try {
-            const res = await api.submitPdfReport(token, spg.id, formData);
-            newRecord = res;
-          } catch {
-            newRecord = {
-              id: `rep_${Date.now()}`,
-              spg_id: spg.id,
-              report_type: reportType,
-              report_format: "pdf",
-              heading: heading.trim(),
-              short_description: shortDescription.trim(),
-              sequence_number: reports.length + 1,
-              pdf_url: URL.createObjectURL(pdfFile),
-              milestones: [],
-              submitted_by: profile.id || profile.email,
-              submitter_name: profile.full_name || "Member",
-              submitted_at: new Date().toISOString(),
-              status: "pending",
-            };
-          }
-        } else {
-          newRecord = {
-            id: `rep_${Date.now()}`,
-            spg_id: spg.id,
-            report_type: reportType,
-            report_format: "pdf",
-            heading: heading.trim(),
-            short_description: shortDescription.trim(),
-            sequence_number: reports.length + 1,
-            pdf_url: URL.createObjectURL(pdfFile),
-            milestones: [],
-            submitted_by: profile.id || profile.email,
-            submitter_name: profile.full_name || "Guild Member",
-            submitted_at: new Date().toISOString(),
-            status: "pending",
-          };
-        }
+        newRecord = await api.submitPdfReport(token, spg.id, formData);
       }
 
       setReports((prev) => [newRecord, ...prev]);
-      setSpg((prev) => ({ ...prev, report_count: prev.report_count + 1 }));
+      setSpg((prev) => prev ? { ...prev, report_count: prev.report_count + 1 } : prev);
       setIsModalOpen(false);
       
       // Reset form fields
@@ -236,8 +145,8 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
       setBlockers("");
       setNextSteps("");
       setPdfFile(null);
-    } catch (err: any) {
-      setStatusMessage({ type: "error", text: err.message || "Failed to submit report" });
+    } catch (err: unknown) {
+      setStatusMessage({ type: "error", text: err instanceof Error ? err.message : "Failed to submit report" });
     } finally {
       setSubmitting(false);
     }
@@ -278,8 +187,25 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
 
+  if (loading || !spg) {
+    return (
+      <div className={styles.pageContainer}>
+        <Link href="/dashboard/spg">← Back to Project Clusters (SPG)</Link>
+        {loading ? (
+          <p>Loading project group…</p>
+        ) : (
+          <div role="alert">
+            <p>{loadError || "Project group not found."}</p>
+            <button type="button" onClick={fetchSpgData}>Retry</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className={styles.pageContainer}>
+      {loadError && <p role="alert">{loadError} <button type="button" onClick={fetchSpgData}>Retry</button></p>}
       {/* Back Link & Breadcrumb Header */}
       <div className={styles.backRow}>
         <Link href="/dashboard/spg" className={styles.backBtn}>
@@ -370,7 +296,7 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
             ) : (
               <div className={styles.reportsList}>
                 {reports.map((report) => {
-                  const isExpanded = expandedReports[report.id] ?? true;
+                  const isExpanded = true;
                   const dateFormatted = new Date(report.submitted_at).toLocaleDateString("en-US", {
                     month: "short",
                     day: "numeric",

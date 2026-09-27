@@ -156,6 +156,113 @@
   color: var(--ink, #FFFFFF);
 }
 
+/* Admin / Student Role Switcher */
+.modeSwitchWrapper {
+  display: flex;
+  background: #141416;
+  border: 1px solid #232328;
+  border-radius: 9px;
+  padding: 3px;
+  gap: 3px;
+  margin: 0 4px 4px;
+}
+
+.modeSwitchBtn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  font-size: 0.72rem;
+  font-weight: 750;
+  border: none;
+  background: transparent;
+  color: #71717a;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.modeSwitchBtn:hover {
+  color: #ffffff;
+}
+
+.modeSwitchBtnActive {
+  background: #22222a;
+  color: #ffffff !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.modeSwitchBtnAdminActive {
+  background: rgba(229, 183, 49, 0.15) !important;
+  color: var(--brand, #E5B731) !important;
+  border: 1px solid rgba(229, 183, 49, 0.35);
+  box-shadow: 0 0 10px rgba(229, 183, 49, 0.18);
+}
+
+/* Admin Status Card */
+.adminStatusCard {
+  margin-top: auto;
+  background: #141416;
+  border: 1px solid rgba(229, 183, 49, 0.3);
+  border-radius: 12px;
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.adminStatusHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.adminBadge {
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  color: var(--brand, #E5B731);
+}
+
+.onlineDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 6px #4ade80;
+}
+
+.adminSubtitle {
+  font-size: 0.7rem;
+  color: #8e8e9c;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.exitAdminBtn {
+  background: #1c1c22;
+  border: 1px solid #282832;
+  border-radius: 6px;
+  color: #d4d4d8;
+  font-size: 0.7rem;
+  font-weight: 750;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+  width: 100%;
+}
+
+.exitAdminBtn:hover {
+  background: #24242c;
+  color: #ffffff;
+  border-color: #3e3e4e;
+}
+
 @media (max-width: 900px) {
   .sidebar {
     min-height: calc(100dvh - 60px);

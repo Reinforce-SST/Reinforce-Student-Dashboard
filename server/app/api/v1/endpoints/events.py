@@ -19,7 +19,7 @@ from app.api.security import get_admin_user, get_current_user, get_optional_curr
 from app.services.firebase import db
 from app.services import contributions as contribution_service
 from app.services.contributions import ContributionError
-from app.utils import get_user_uid, is_admin_user, now_iso, slugify
+from app.utils import get_user_uid, is_admin_user, now_iso, resolve_batch_year, slugify
 from app.schemas.contributions import (
     AdminAwardUser,
     ContributionCategory,
@@ -53,6 +53,7 @@ from app.schemas.events import (
     SPGDecisionAction,
     SPGDecisionRequest,
     VenueInfo,
+    current_graduation_batches,
     WinnerAwardRequest,
     WinnerAwardResponse,
 )
@@ -189,20 +190,27 @@ def _check_member_eligibility(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"User {user_uid} is not an eligible club member",
         )
-    default_years = {1, 2, 3, 4}
+    legacy_default_years = {1, 2, 3, 4}
     batch_year = profile.get("batch_year")
+    if any(year >= 2000 for year in eligibility.allowed_years):
+        batch_year = resolve_batch_year(batch_year, profile.get("email") or "")
+    allowed_years = set(eligibility.allowed_years)
+    if allowed_years == legacy_default_years:
+        # Existing events used 1–4 as the default before profiles stored
+        # graduation years. Keep those events open to the confirmed batches.
+        allowed_years.update(current_graduation_batches())
     years_restricted = (
         bool(eligibility.allowed_years)
-        and set(eligibility.allowed_years) != default_years
+        and set(eligibility.allowed_years) != legacy_default_years
     )
     if (
         batch_year is not None
-        and eligibility.allowed_years
-        and batch_year not in eligibility.allowed_years
+        and allowed_years
+        and batch_year not in allowed_years
     ) or (batch_year is None and years_restricted):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"User {user_uid} is not in an allowed academic year",
+            detail=f"User {user_uid} is not in an allowed graduation batch",
         )
     allowed_tiers = set(eligibility.allowed_tiers)
     if (
