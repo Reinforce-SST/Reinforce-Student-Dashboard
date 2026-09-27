@@ -170,7 +170,7 @@ export type MemberTier = "beginner" | "advanced";
 
 export type StudentProfile = {
   id?: string;
-  email: string;
+  email?: string;
   full_name: string;
   avatar_url?: string | null;
   discord_id?: string | null;

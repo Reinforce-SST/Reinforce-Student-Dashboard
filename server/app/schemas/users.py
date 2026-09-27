@@ -140,7 +140,6 @@ class UserDocument(BaseModel):
 class UserPublicResponse(BaseModel):
     """Publicly viewable member profile card / directory listing."""
     id: str
-    email: Optional[str] = None
     full_name: str
     avatar_url: Optional[str] = None
     bio: Optional[str] = None

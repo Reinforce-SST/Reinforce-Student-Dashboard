@@ -95,7 +95,6 @@ def _to_user_public(uid: str, data: Dict[str, Any]) -> UserPublicResponse:
 
     return UserPublicResponse(
         id=uid,
-        email=data.get("email"),
         full_name=data.get("full_name") or "Club Member",
         avatar_url=data.get("avatar_url"),
         bio=data.get("bio"),
@@ -550,7 +549,7 @@ def list_users(
         if search:
             s = search.lower().strip()
             name_match = s in public_user.full_name.lower()
-            email_match = s in (public_user.email or "").lower()
+            email_match = s in (data.get("email") or "").lower()
             id_match = s in public_user.id.lower()
             skill_match = any(s in sk.lower() for sk in public_user.skills)
             bio_match = s in (public_user.bio or "").lower()
