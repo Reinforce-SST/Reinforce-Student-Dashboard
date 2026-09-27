@@ -9,6 +9,8 @@ import { useMember } from "@/lib/useMember";
 
 import { api, type StudentProfile, type TrackPoints } from "@/lib/api";
 import { type LeaderboardEntry } from "@/lib/leaderboardData";
+import styles from "./Leaderboard.module.css";
+
 function getInitials(name?: string) {
   if (!name) return "MB";
   const parts = name.trim().split(/\s+/);

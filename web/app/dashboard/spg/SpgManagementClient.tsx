@@ -6,6 +6,7 @@ import MemberIcon from "@/components/dashboard/MemberIcon";
 import { useMember } from "@/lib/useMember";
 import { loadAllSpgs } from "@/lib/memberData";
 import { type SPGRecord } from "@/lib/spgData";
+import { api, type StudentProfile } from "@/lib/api";
 import styles from "./SpgManagement.module.css";
 
 export default function SpgManagementClient() {
