@@ -173,7 +173,7 @@ export default function AdminClient() {
     let active = true;
     setCandidatesLoading(true);
     const timer = setTimeout(() => {
-      api.adminDirectory(token, { search: awardSearch.trim() || undefined, page_size: 100 })
+      api.adminDirectory(token, { search: awardSearch.trim() || undefined, page_size: 50 })
         .then((result) => {
           if (active) {
             setAwardCandidates(result.items || []);

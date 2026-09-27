@@ -517,7 +517,7 @@ export const api = {
     if (params?.tier && params.tier !== "all") query.set("tier", params.tier);
     if (params?.is_member !== undefined) query.set("is_member", String(params.is_member));
     if (params?.page) query.set("page", String(params.page));
-    if (params?.page_size) query.set("page_size", String(params.page_size));
+    if (params?.page_size) query.set("page_size", String(Math.min(params.page_size, 50)));
 
     const qs = query.toString();
     return request<{ items: StudentProfile[]; total: number; page: number; page_size: number; has_more: boolean }>(
