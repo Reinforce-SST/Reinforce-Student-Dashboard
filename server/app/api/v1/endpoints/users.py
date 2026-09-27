@@ -134,6 +134,13 @@ def _get_or_create_user(user_token: dict) -> UserMeResponse:
         doc_ref.set(updates, merge=True)
         data["last_login"] = now
         data["updated_at"] = now
+        if data.get("is_admin") is True and user_token.get("admin") is not True:
+            try:
+                existing = auth.get_user(uid).custom_claims or {}
+                if existing.get("admin") is not True:
+                    auth.set_custom_user_claims(uid, {**existing, "admin": True})
+            except Exception:
+                pass
         return _to_user_me(uid, data)
     else:
         # Keep an existing member's profile when the site moves from
@@ -357,6 +364,11 @@ def update_user_status(
         except auth.UserNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Firebase account not found") from exc
         updates["is_admin"] = payload.is_admin
+        try:
+            existing = auth.get_user(user_id).custom_claims or {}
+            auth.set_custom_user_claims(user_id, {**existing, "admin": payload.is_admin})
+        except Exception:
+            pass
     if payload.tier is not None:
         updates["tier"] = payload.tier.value
     if "role_label" in payload.model_fields_set:
