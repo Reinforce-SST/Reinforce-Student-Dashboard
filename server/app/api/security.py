@@ -70,23 +70,6 @@ def get_current_user(
     if cred:
         user = _verify_credential(cred)
         user["is_bot"] = False
-
-        # If user does not have admin claim in token, check Firestore users collection
-        if not user.get("admin") and user.get("uid"):
-            try:
-                from app.services.firebase import db
-                doc = db.collection("users").document(user["uid"]).get()
-                if doc.exists and doc.to_dict().get("is_admin") is True:
-                    user["admin"] = True
-                    try:
-                        existing = auth.get_user(user["uid"]).custom_claims or {}
-                        if existing.get("admin") is not True:
-                            auth.set_custom_user_claims(user["uid"], {**existing, "admin": True})
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
         return user
 
     raise HTTPException(
@@ -124,22 +107,14 @@ def verify_internal_bot_secret(
 
 
 def require_admin(user: dict = Depends(get_current_user)) -> dict:
-    """Admin access, from the Firebase custom claim `admin` or Firestore `is_admin` document."""
-    if user.get("admin") is not True and user.get("uid"):
-        try:
-            from app.services.firebase import db
-            doc = db.collection("users").document(user["uid"]).get()
-            if doc.exists and doc.to_dict().get("is_admin") is True:
-                user["admin"] = True
-                try:
-                    existing = auth.get_user(user["uid"]).custom_claims or {}
-                    if existing.get("admin") is not True:
-                        auth.set_custom_user_claims(user["uid"], {**existing, "admin": True})
-                except Exception:
-                    pass
-        except Exception:
-            pass
+    """Admin access, from the Firebase custom claim `admin`.
 
+    The one authorization rule in the API. It fails closed: only the exact
+    boolean True passes, so a missing claim, a false one or a truthy string is
+    rejected. Nothing is read from Firestore, so `UserDocument.is_admin` can
+    exist for display without ever granting API privileges. Provisioning the
+    claim on an account is an environment setup step.
+    """
     if user.get("admin") is not True:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
