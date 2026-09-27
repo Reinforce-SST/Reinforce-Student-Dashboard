@@ -48,16 +48,6 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { profile } = useMember();
   const { isAdmin, isAdminMode, setAdminMode } = useAdminMode();
 
-  const initials = profile?.full_name
-    ? profile.full_name
-        .split(/\s+/)
-        .filter(Boolean)
-        .slice(0, 2)
-        .map((part) => part[0])
-        .join("")
-        .toUpperCase()
-    : "M";
-
   return (
     <div className={styles.sidebar}>
       <Link href="/" onClick={onNavigate} className={styles.logoLink}>
@@ -210,37 +200,6 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                 );
               })}
             </nav>
-          </div>
-
-          {/* Member Badge & Level Card */}
-          <div className={styles.memberCard}>
-            <div className={styles.memberCardTop}>
-              <span className={styles.tierBadge}>
-                {profile?.tier ? `${profile.tier.toUpperCase()} MEMBER` : "ACTIVE MEMBER"}
-              </span>
-              <span className={styles.tierShield}>
-                <MemberIcon name="shield" size={16} />
-              </span>
-            </div>
-            <p className={styles.pointsText}>
-              {profile?.points?.total ?? 0} Points earned
-            </p>
-            <div className={styles.progressBar}>
-              <div
-                className={styles.progressFill}
-                style={{
-                  width: `${Math.min(100, Math.max(10, ((profile?.points?.total ?? 0) / 400) * 100))}%`,
-                }}
-              />
-            </div>
-            <Link
-              href="/profile"
-              onClick={onNavigate}
-              className={styles.profileRow}
-            >
-              <span className={styles.avatarCircle}>{initials}</span>
-              <span className={styles.viewProfileText}>View Profile</span>
-            </Link>
           </div>
         </>
       )}
