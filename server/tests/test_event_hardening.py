@@ -111,6 +111,30 @@ class EventHardeningTests(unittest.TestCase):
         response = self.client.post("/api/v1/events/event-one/register", json={})
         self.assertEqual(response.status_code, 201)
 
+    def test_current_graduation_batch_can_register(self):
+        self.db.store["events/event-one"]["eligibility"]["allowed_years"] = [
+            2027, 2028, 2029, 2030
+        ]
+        self.db.store["users/uid-one"]["batch_year"] = 2029
+        response = self.client.post("/api/v1/events/event-one/register", json={})
+        self.assertEqual(response.status_code, 201)
+
+    def test_outside_graduation_batch_cannot_register(self):
+        self.db.store["events/event-one"]["eligibility"]["allowed_years"] = [
+            2027, 2028, 2029, 2030
+        ]
+        self.db.store["users/uid-one"]["batch_year"] = 2031
+        response = self.client.post("/api/v1/events/event-one/register", json={})
+        self.assertEqual(response.status_code, 403)
+
+    def test_legacy_all_years_event_accepts_current_graduation_batch(self):
+        self.db.store["events/event-one"]["eligibility"]["allowed_years"] = [
+            1, 2, 3, 4
+        ]
+        self.db.store["users/uid-one"]["batch_year"] = 2029
+        response = self.client.post("/api/v1/events/event-one/register", json={})
+        self.assertEqual(response.status_code, 201)
+
     def test_every_teammate_must_exist_and_be_eligible(self):
         self.db.store["events/event-one"]["participation"].update(
             {

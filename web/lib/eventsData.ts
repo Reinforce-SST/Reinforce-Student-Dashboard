@@ -3,6 +3,16 @@
  */
 
 export type EventTrack = "research" | "product" | "kaggle" | "misc" | "all";
+
+export function getEventGraduationBatches(now = new Date()): number[] {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata", year: "numeric", month: "numeric",
+  }).formatToParts(now);
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value);
+  const firstBatch = year + (month >= 7 ? 1 : 0);
+  return Array.from({ length: 4 }, (_, index) => firstBatch + index);
+}
 export type EventFormat = "online" | "offline" | "hybrid";
 export type EventStatus =
   | "draft"

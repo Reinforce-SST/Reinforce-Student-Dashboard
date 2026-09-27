@@ -6,6 +6,7 @@ import { useMember } from "@/lib/useMember";
 import { api } from "@/lib/api";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import { type EventDocument } from "@/lib/api";
+import { getEventGraduationBatches } from "@/lib/eventsData";
 import styles from "./EventDetail.module.css";
 
 function formatInline(text: string): React.ReactNode[] {
@@ -251,6 +252,9 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
   );
 
   const capacity = event.participation?.max_participants;
+  const eligibleYears = event.eligibility?.allowed_years;
+  const legacyDefaultYears = eligibleYears?.length === 4 && [1, 2, 3, 4].every((year) => eligibleYears.includes(year));
+  const displayedBatches = legacyDefaultYears ? getEventGraduationBatches() : eligibleYears;
   const fillPercent = capacity ? Math.min(100, Math.round((registeredCount / capacity) * 100)) : 0;
   const registrationOpen = (event.status === "published" || event.status === "ongoing") && !deadlinePassed;
 
@@ -385,8 +389,8 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                 <div className={styles.spgRuleItem}>
                   <span className={styles.ruleLabel}>Eligibility</span>
                   <span className={styles.ruleVal}>
-                    {event.eligibility?.allowed_years?.length
-                      ? `Years: ${event.eligibility.allowed_years.join(", ")}`
+                    {displayedBatches?.length
+                      ? `${legacyDefaultYears || displayedBatches.every((year) => year >= 1900) ? "Batches" : "Years"}: ${displayedBatches.join(", ")}`
                       : "All Batches"}
                   </span>
                 </div>

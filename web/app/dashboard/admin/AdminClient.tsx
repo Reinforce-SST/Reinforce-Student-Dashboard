@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useMember } from "@/lib/useMember";
 import { useAdminMode } from "@/lib/useAdminMode";
 import { api } from "@/lib/api";
+import { getEventGraduationBatches } from "@/lib/eventsData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import styles from "./Admin.module.css";
 
@@ -102,6 +103,8 @@ export default function AdminClient() {
   const [eventEndDateTime, setEventEndDateTime] = useState("");
   const [eventRegDeadline, setEventRegDeadline] = useState("");
   const [eventAccessScope, setEventAccessScope] = useState("open_to_all");
+  const eventGraduationBatches = getEventGraduationBatches();
+  const [eventEligibleBatches, setEventEligibleBatches] = useState<number[]>(getEventGraduationBatches);
   const [eventParticipationMode, setEventParticipationMode] = useState<"solo" | "team">("solo");
   const [eventMinTeamSize, setEventMinTeamSize] = useState(1);
   const [eventMaxTeamSize, setEventMaxTeamSize] = useState(1);
@@ -227,6 +230,14 @@ export default function AdminClient() {
       setSubmitError("Event title and summary description are required.");
       return;
     }
+    if (eventEligibleBatches.length === 0) {
+      setSubmitError("Select at least one eligible graduation batch.");
+      return;
+    }
+    if (eventEligibleBatches.some((batch) => !getEventGraduationBatches().includes(batch))) {
+      setSubmitError("The eligible batches have changed. Reload this page and review your selection.");
+      return;
+    }
     if (eventBannerUrl.startsWith("data:")) {
       setSubmitError("Upload the poster to a hosted image URL first; this image is only a local preview.");
       return;
@@ -268,7 +279,7 @@ export default function AdminClient() {
         },
         eligibility: {
           access_scope: eventAccessScope,
-          allowed_years: [1, 2, 3, 4],
+          allowed_years: eventEligibleBatches,
           allowed_tiers: ["beginner", "advanced", "all"],
           allowed_tracks: ["all"],
           is_mandatory: false,
@@ -941,6 +952,26 @@ export default function AdminClient() {
                   className={styles.formInput}
                   min={0}
                 />
+              </div>
+            </div>
+
+            <div className={styles.formGroup}>
+              <span className={styles.formLabel}>Eligible graduation batches</span>
+              <div className={styles.batchOptions}>
+                {eventGraduationBatches.map((batch) => (
+                  <label key={batch} className={styles.batchOption}>
+                    <input
+                      type="checkbox"
+                      checked={eventEligibleBatches.includes(batch)}
+                      onChange={(e) => setEventEligibleBatches((selected) =>
+                        e.target.checked
+                          ? eventGraduationBatches.filter((year) => selected.includes(year) || year === batch)
+                          : selected.filter((year) => year !== batch)
+                      )}
+                    />
+                    {batch}
+                  </label>
+                ))}
               </div>
             </div>
 
