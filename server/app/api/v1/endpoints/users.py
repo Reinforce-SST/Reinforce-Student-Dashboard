@@ -38,22 +38,7 @@ USERS_COLLECTION = "users"
 VALID_TRACKS = {"total", "kaggle", "product", "research", "misc"}
 
 
-import re
-from app.utils import now_iso
-
-
-def _derive_batch_year(email: str) -> Optional[int]:
-    if not email:
-        return None
-    match = re.search(r"(?:^|\.)(\d{2})[a-zA-Z]", email.lower())
-    if match:
-        try:
-            start_year = int(match.group(1))
-            if 20 <= start_year <= 40:
-                return 2000 + start_year + 4
-        except ValueError:
-            pass
-    return None
+from app.utils import now_iso, resolve_batch_year
 
 
 def _to_user_me(uid: str, data: Dict[str, Any]) -> UserMeResponse:
@@ -78,7 +63,7 @@ def _to_user_me(uid: str, data: Dict[str, Any]) -> UserMeResponse:
         is_admin=bool(data.get("is_admin", False)),
         is_member=bool(data.get("is_member", False)),
         tier=data.get("tier") or MemberTier.BEGINNER,
-        batch_year=data.get("batch_year") or _derive_batch_year(data.get("email") or ""),
+        batch_year=resolve_batch_year(data.get("batch_year"), data.get("email") or ""),
         is_verified=bool(data.get("is_verified") and data.get("discord_link_version") == 1),
         verified_at=data.get("verified_at"),
         points=points,
@@ -110,7 +95,7 @@ def _to_user_public(uid: str, data: Dict[str, Any]) -> UserPublicResponse:
         bio=data.get("bio"),
         is_member=bool(data.get("is_member", False)),
         tier=data.get("tier") or MemberTier.BEGINNER,
-        batch_year=data.get("batch_year") or _derive_batch_year(data.get("email") or ""),
+        batch_year=resolve_batch_year(data.get("batch_year"), data.get("email") or ""),
         is_verified=bool(data.get("is_verified") and data.get("discord_link_version") == 1),
         skills=data.get("skills") or [],
         social_links=social_links,
@@ -128,14 +113,14 @@ def _get_or_create_user(user_token: dict) -> UserMeResponse:
     doc = doc_ref.get()
 
     now = now_iso()
-    derived_batch = _derive_batch_year(email)
     if doc.exists:
         data = doc.to_dict() or {}
-        # Keep last login fresh and backfill batch_year if missing
+        # Keep last login fresh and backfill missing or legacy batch values.
         updates: Dict[str, Any] = {"last_login": now, "updated_at": now}
-        if not data.get("batch_year") and derived_batch:
-            updates["batch_year"] = derived_batch
-            data["batch_year"] = derived_batch
+        resolved_batch = resolve_batch_year(data.get("batch_year"), email)
+        if resolved_batch is not None and resolved_batch != data.get("batch_year"):
+            updates["batch_year"] = resolved_batch
+            data["batch_year"] = resolved_batch
         doc_ref.set(updates, merge=True)
         data["last_login"] = now
         data["updated_at"] = now
@@ -163,7 +148,7 @@ def _get_or_create_user(user_token: dict) -> UserMeResponse:
             "is_admin": False,
             "is_member": bool(owned_legacy.get("is_member", False)),
             "tier": owned_legacy.get("tier") or MemberTier.BEGINNER.value,
-            "batch_year": owned_legacy.get("batch_year") or derived_batch,
+            "batch_year": resolve_batch_year(owned_legacy.get("batch_year"), email),
             "is_verified": bool(proven_link and owned_legacy.get("is_verified")),
             "verified_at": owned_legacy.get("verified_at") if proven_link else None,
             "points": owned_legacy.get("points") or {"total": 0, "kaggle": 0, "product": 0, "research": 0, "misc": 0},
@@ -216,20 +201,10 @@ def update_me(
         updates["bio"] = payload.bio.strip()
     if payload.skills is not None:
         updates["skills"] = [s.strip() for s in payload.skills if s.strip()]
-    if payload.batch_year is not None:
-        updates["batch_year"] = payload.batch_year
     if payload.social_links is not None:
         updates["social_links"] = payload.social_links.model_dump()
 
     doc_ref.set(updates, merge=True)
-    # YUVI still reads the email alias for display, but the UID document is
-    # authoritative. Keep the bot's visible name in sync when the user edits it.
-    if payload.full_name is not None:
-        email = (current_user.get("email") or "").lower().strip()
-        alias_ref = db.collection(USERS_COLLECTION).document(email)
-        alias = alias_ref.get().to_dict() or {}
-        if alias.get("firebase_uid") == uid:
-            alias_ref.set({"full_name": updates["full_name"]}, merge=True)
     updated = doc_ref.get().to_dict() or {}
     return _to_user_me(uid, updated)
 

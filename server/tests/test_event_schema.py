@@ -4,6 +4,7 @@ No Firebase, no network. Every identifier is synthetic.
 """
 
 import unittest
+from datetime import date
 from pydantic import ValidationError
 
 from app.schemas.events import (
@@ -11,6 +12,7 @@ from app.schemas.events import (
     EventCreate,
     EventDocument,
     EventEligibility,
+    current_graduation_batches,
     EventFormat,
     EventParticipationConfig,
     EventRegisterRequest,
@@ -74,6 +76,13 @@ def sample_event_create(**overrides):
 
 
 class EventCreateTests(unittest.TestCase):
+    def test_default_eligibility_uses_current_graduation_batches(self):
+        self.assertEqual(EventEligibility().allowed_years, current_graduation_batches())
+
+    def test_graduation_batches_roll_after_june(self):
+        self.assertEqual(current_graduation_batches(date(2027, 6, 30)), [2027, 2028, 2029, 2030])
+        self.assertEqual(current_graduation_batches(date(2027, 7, 1)), [2028, 2029, 2030, 2031])
+
     def test_valid_event_creation(self):
         created = EventCreate.model_validate(sample_event_create())
         self.assertEqual(created.title, "RE:Thesis — Research Paper Sprint")

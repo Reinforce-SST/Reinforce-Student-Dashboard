@@ -6,9 +6,10 @@ attendance roll-call, competition awarding, and feedback collection.
 Strictly follows zero user denormalization (pure UID references).
 """
 # Validated Need Some Changes and Discussion along the Comemnted Points
-from datetime import timezone
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Annotated, List, Optional
+from zoneinfo import ZoneInfo
 from pydantic import (
     AfterValidator,
     AwareDatetime,
@@ -97,11 +98,18 @@ class MandatorySubgroups(BaseModel):
     tracks: List[str] = Field(default_factory=list)
 
 
+def current_graduation_batches(today: Optional[date] = None) -> List[int]:
+    """Four graduation cohorts for the July–June SST academic year."""
+    local_day = today or datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    first_batch = local_day.year + (1 if local_day.month >= 7 else 0)
+    return list(range(first_batch, first_batch + 4))
+
+
 class EventEligibility(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     access_scope: AccessScope = AccessScope.OPEN_TO_ALL
-    allowed_years: List[int] = Field(default_factory=lambda: [1, 2, 3, 4])
+    allowed_years: List[int] = Field(default_factory=current_graduation_batches)
     allowed_tiers: List[str] = Field(
         default_factory=lambda: ["beginner", "advanced", "all"]
     )

@@ -3,11 +3,17 @@
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import MemberIcon, { type IconName } from "@/components/dashboard/MemberIcon";
+import { useMember } from "@/lib/useMember";
+import { api, type ApiTicketDetail, type TicketSummary } from "@/lib/api";
+import { loadAllSpgs } from "@/lib/memberData";
+import type { SPGRecord } from "@/lib/spgData";
 import styles from "./TicketManagement.module.css";
 
 export type TicketCategory =
   | "spg_registration"
   | "resource_request"
+  | "compute_resource_request"
+  | "learning_resource_request"
   | "support"
   | "idea_jar"
   | "report"
@@ -18,7 +24,7 @@ export interface TicketCreatePayload {
   category: TicketCategory;
   title: string;
   description?: string;
-  fields: Record<string, any>;
+  fields: Record<string, unknown>;
   spg_id?: string;
 }
 
@@ -34,7 +40,8 @@ export type TicketItem = {
   updatedAt: string;
   author: string;
   spg_id?: string;
-  fields: Record<string, any>;
+  thread_url?: string | null;
+  fields: Record<string, unknown>;
 };
 
 type TicketTypeOption = {
@@ -101,75 +108,74 @@ const ticketTypeOptions: TicketTypeOption[] = [
   },
 ];
 
-const initialTickets: TicketItem[] = [
-  {
-    id: "tkt_e4a89b01",
-    category: "resource_request",
-    categoryLabel: "Resource Request",
-    title: "Request for 4x A100 GPU Cluster Compute for SPG Autonomous Drone Swarms",
-    description:
-      "High-throughput compute allocation requested for distributed RL policy iterations before NeurIPS deadline.",
-    priority: "medium",
-    status: "in_progress",
-    createdAt: "2 hours ago",
-    updatedAt: "30 mins ago",
-    author: "Julian Chen",
-    spg_id: "spg_drone_swarms",
-    fields: {
-      "SPG Name": "Autonomous Drone Swarms (SP-1)",
-      "Resources Requested": "4x NVIDIA A100 (80GB SXM) for 250 compute hours",
-      "Progress Proof": "https://github.com/reinforce-sst/drone-swarm-rl",
-      "Justification": "Targeting NeurIPS 2025 Workshop on Multi-Agent Systems",
-    },
-  },
-  {
-    id: "tkt_7bc23f99",
-    category: "spg_registration",
-    categoryLabel: "SPG Registration",
-    title: "SPG Charter: Vision-Language Grounding Cluster (Kaggle Track)",
-    description:
-      "Registering new 4-member Kaggle Track team targeting spatial grounding challenge on multimodal video.",
-    priority: "medium",
-    status: "open",
-    createdAt: "Yesterday",
-    updatedAt: "Yesterday",
-    author: "Julian Chen",
-    fields: {
-      "Project Name & Track": "Vision-Language Grounding (Kaggle Track)",
-      "Team Members": "Julian Chen (@julian), Aryan K (@aryan), Tanya L (@tanya)",
-      "Duration & Frequency": "8 Weeks, Bi-weekly sprint syncs on Tuesdays & Fridays",
-      "Summary & Goals": "Aiming for Kaggle Grandmaster medal in Multimodal Video Grounding 2025",
-    },
-  },
-  {
-    id: "tkt_2d91ca84",
-    category: "support",
-    categoryLabel: "Support & Inquiries",
-    title: "YUVI Discord Bot Role Sync & Cluster Telemetry Key",
-    description:
-      "Assistance needed verifying Discord link token to unlock telemetry stats on the member dashboard.",
-    priority: "medium",
-    status: "resolved",
-    createdAt: "Sep 20, 2024",
-    updatedAt: "Sep 21, 2024",
-    author: "Julian Chen",
-    fields: {
-      Subject: "Discord YUVI Link Verification",
-      Details: "Private token generated on bot did not trigger role sync webhook.",
-      "Discord Handle": "julian_chen#8921",
-    },
-  },
-];
+function formatTicketDate(value?: string | null): string {
+  if (!value) return "Date unavailable";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Date unavailable" : date.toLocaleDateString();
+}
+
+function toTicketItem(summary: TicketSummary, detail?: ApiTicketDetail): TicketItem {
+  const category = summary.category;
+  return {
+    id: summary.id,
+    category,
+    categoryLabel: ticketTypeOptions.find((option) => option.id === category)?.title ?? category.replaceAll("_", " "),
+    title: summary.title,
+    description: detail?.description || "No description provided.",
+    priority: detail?.priority || summary.priority || "medium",
+    status: summary.status,
+    createdAt: formatTicketDate(summary.created_at),
+    updatedAt: formatTicketDate(summary.updated_at),
+    author: "You",
+    spg_id: detail?.spg_id || summary.spg_id || undefined,
+    thread_url: detail?.discord_meta?.thread_url || summary.thread_url,
+    fields: detail?.fields || {},
+  };
+}
 
 export default function TicketManagementClient() {
+  const { token, profile } = useMember();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const [tickets, setTickets] = useState<TicketItem[]>(initialTickets);
-  const [selectedTicketId, setSelectedTicketId] = useState<string>(initialTickets[0]?.id || "");
+  const [tickets, setTickets] = useState<TicketItem[]>([]);
+  const [selectedTicketId, setSelectedTicketId] = useState("");
+  const [loadingTickets, setLoadingTickets] = useState(true);
+  const [ticketError, setTicketError] = useState("");
+  const [submitError, setSubmitError] = useState("");
+  const [retryCount, setRetryCount] = useState(0);
   const [filterStatus, setFilterStatus] = useState<"all" | "open" | "in_progress" | "resolved">("all");
   const [searchQuery, setSearchQuery] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    api.myTickets(token)
+      .then((items) => {
+        if (!active) return;
+        setTickets(items.map((item) => toTicketItem(item)));
+        setSelectedTicketId((current) => items.some((item) => item.id === current) ? current : items[0]?.id || "");
+        setTicketError("");
+      })
+      .catch(() => {
+        if (!active) return;
+        setTickets([]);
+        setTicketError("Your tickets could not be loaded. Try again.");
+      })
+      .finally(() => { if (active) setLoadingTickets(false); });
+    return () => { active = false; };
+  }, [token, retryCount]);
+
+  useEffect(() => {
+    if (!selectedTicketId) return;
+    let active = true;
+    api.ticketDetail(token, selectedTicketId)
+      .then((detail) => {
+        if (active) setTickets((items) => items.map((item) => item.id === detail.id ? toTicketItem(detail, detail) : item));
+      })
+      .catch(() => { if (active) setTicketError("Ticket details could not be loaded."); });
+    return () => { active = false; };
+  }, [token, selectedTicketId]);
 
   const isModalOpen =
     searchParams.get("create") === "true" ||
@@ -194,68 +200,86 @@ export default function TicketManagementClient() {
       ? urlCategoryParam
       : "spg_registration";
 
-  const [selectedCategory, setSelectedCategory] = useState<TicketCategory>(currentCategory);
-
-  useEffect(() => {
-    if (urlCategoryParam && validCategories.includes(urlCategoryParam)) {
-      setSelectedCategory(urlCategoryParam);
-    }
-  }, [urlCategoryParam]);
+  const selectedCategory = currentCategory;
 
   const [formTitle, setFormTitle] = useState("");
   const [formDescription, setFormDescription] = useState("");
-  const [formSpgId, setFormSpgId] = useState("spg_drone_swarms");
+  const [formSpgId, setFormSpgId] = useState("");
+  const [memberSpgs, setMemberSpgs] = useState<SPGRecord[]>([]);
+  const [memberSpgsLoading, setMemberSpgsLoading] = useState(true);
+  const [memberSpgsError, setMemberSpgsError] = useState("");
 
   const [spgTrack, setSpgTrack] = useState<"research" | "product" | "kaggle" | "general">("research");
-  const [spgMembers, setSpgMembers] = useState("Julian Chen (@julian), Alex M (@alex)");
-  const [spgDuration, setSpgDuration] = useState("8 Weeks (Weekly Sprints)");
-  const [spgGoals, setSpgGoals] = useState("Implement baseline architecture, submit research preprint to arXiv");
+  const [spgMembers, setSpgMembers] = useState("");
+  const [spgDuration, setSpgDuration] = useState("");
+  const [spgGoals, setSpgGoals] = useState("");
 
-  const [resSpgName, setResSpgName] = useState("Autonomous Drone Swarms (SP-1)");
-  const [resRequested, setResRequested] = useState("4x NVIDIA A100 (80GB SXM) Cluster (200 GPU Hours)");
-  const [resProgressProof, setResProgressProof] = useState("https://github.com/reinforce-sst/drone-swarm-rl");
-  const [resJustification, setResJustification] = useState("Required for scaling policy exploration to 10M environment steps");
+  const [resSpgName, setResSpgName] = useState("");
+  const [resRequested, setResRequested] = useState("");
+  const [resProgressProof, setResProgressProof] = useState("");
+  const [resJustification, setResJustification] = useState("");
 
-  const [supportSubject, setSupportSubject] = useState("Discord Role & Cluster Key Access");
-  const [supportDetails, setSupportDetails] = useState("Need assistance linking private YUVI token for bot permissions");
-  const [discordHandle, setDiscordHandle] = useState("julian_chen#8921");
+  const [supportSubject, setSupportSubject] = useState("");
+  const [supportDetails, setSupportDetails] = useState("");
+  const [discordHandle, setDiscordHandle] = useState("");
 
   const [ideaTrack, setIdeaTrack] = useState<"research" | "product" | "kaggle" | "general">("product");
-  const [ideaOverview, setIdeaOverview] = useState("Decentralized GPU pooling client for student workstation nodes");
+  const [ideaOverview, setIdeaOverview] = useState("");
 
-  const [reportIncident, setReportIncident] = useState("Code of Conduct / SPG Collaboration Dispute");
-  const [reportDetails, setReportDetails] = useState("Confidential summary of the incident and parties involved");
-  const [partiesInvolved, setPartiesInvolved] = useState("Confidential");
+  const [reportIncident, setReportIncident] = useState("");
+  const [reportDetails, setReportDetails] = useState("");
+  const [partiesInvolved, setPartiesInvolved] = useState("");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
+
+  useEffect(() => {
+    if (!isModalOpen || selectedCategory !== "resource_request") return;
+    let active = true;
+    setMemberSpgsLoading(true);
+    loadAllSpgs(token)
+      .then((groups) => {
+        if (!active) return;
+        const memberId = profile.id;
+        const ownedGroups = memberId ? groups.filter((group) => group.lead_id === memberId || group.member_ids.includes(memberId)) : [];
+        setMemberSpgs(ownedGroups);
+        setFormSpgId((current) => ownedGroups.some((group) => group.id === current) ? current : "");
+        setMemberSpgsError("");
+      })
+      .catch(() => {
+        if (!active) return;
+        setMemberSpgs([]);
+        setFormSpgId("");
+        setMemberSpgsError("Project groups could not be loaded. Enter the SPG name below, or try again later.");
+      })
+      .finally(() => { if (active) setMemberSpgsLoading(false); });
+    return () => { active = false; };
+  }, [isModalOpen, selectedCategory, token, profile.id]);
 
   const closeModal = () => {
     router.push(pathname, { scroll: false });
   };
 
   const openModalWithCategory = (cat: TicketCategory) => {
-    setSelectedCategory(cat);
     router.push(`${pathname}?create=true&category=${cat}`, { scroll: false });
   };
 
   const handleSwitchModalCategory = (cat: TicketCategory) => {
-    setSelectedCategory(cat);
     router.push(`${pathname}?create=true&category=${cat}`, { scroll: false });
   };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && isModalOpen) {
-        closeModal();
+        router.push(pathname, { scroll: false });
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isModalOpen]);
+  }, [isModalOpen, router, pathname]);
 
   const buildTicketCreatePayload = (): TicketCreatePayload => {
-    let fieldsObj: Record<string, any> = {};
+    let fieldsObj: Record<string, unknown> = {};
 
     if (selectedCategory === "spg_registration") {
       fieldsObj = {
@@ -299,8 +323,8 @@ export default function TicketManagementClient() {
       fields: fieldsObj,
     };
 
-    if (selectedCategory === "resource_request" || selectedCategory === "spg_registration") {
-      if (formSpgId.trim()) {
+    if (selectedCategory === "resource_request") {
+      if (formSpgId.trim() && memberSpgs.some((group) => group.id === formSpgId)) {
         payload.spg_id = formSpgId.trim();
       }
     }
@@ -308,40 +332,31 @@ export default function TicketManagementClient() {
     return payload;
   };
 
-  const handleCreateTicket = (e: React.FormEvent) => {
+  const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formTitle.trim()) return;
 
     setIsSubmitting(true);
-    setTimeout(() => {
+    setSubmitError("");
+    try {
       const payload = buildTicketCreatePayload();
-      const typeOption = ticketTypeOptions.find((t) => t.id === selectedCategory)!;
-
-      const randomHex = Math.random().toString(16).substring(2, 10);
-      const newTicket: TicketItem = {
-        id: `tkt_${randomHex}`,
-        category: payload.category,
-        categoryLabel: typeOption.title,
-        title: payload.title,
-        description: payload.description || "No description provided.",
-        priority: "medium",
-        status: "open",
-        createdAt: "Just now",
-        updatedAt: "Just now",
-        author: "Julian Chen",
-        spg_id: payload.spg_id,
-        fields: payload.fields,
-      };
-
-      setTickets([newTicket, ...tickets]);
-      setSelectedTicketId(newTicket.id);
+      const created = await api.createTicket(token, payload);
+      if (created.category !== "report") {
+        setTickets((items) => [toTicketItem(created, created), ...items]);
+        setSelectedTicketId(created.id);
+      }
       setFormTitle("");
       setFormDescription("");
-      setIsSubmitting(false);
+      setFormSpgId("");
+      setResSpgName("");
       closeModal();
-      setSuccessMessage(`Ticket created successfully (${newTicket.id})!`);
+      setSuccessMessage(created.category === "report" ? "Confidential report submitted to the club team." : `Ticket created successfully (${created.id})!`);
       setTimeout(() => setSuccessMessage(""), 4500);
-    }, 400);
+    } catch (error: unknown) {
+      setSubmitError(error instanceof Error ? error.message : "Ticket could not be created. Please retry.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const filteredTickets = tickets.filter((t) => {
@@ -400,6 +415,12 @@ export default function TicketManagementClient() {
         </div>
       </div>
 
+      {ticketError && (
+        <p role="alert">
+          {ticketError} <button type="button" onClick={() => { setLoadingTickets(true); setRetryCount((count) => count + 1); }}>Retry</button>
+        </p>
+      )}
+
       {/* Quick Category Dispatch Bar */}
       <section className={styles.categoryBarSection} aria-label="Dispatch by category">
         <span className={styles.sectionLabel}>Quick Dispatch by Category</span>
@@ -447,8 +468,8 @@ export default function TicketManagementClient() {
         </div>
 
         <div className={styles.statCard}>
-          <span className={styles.statLabel}>Avg Response Time</span>
-          <span className={styles.statValue}>&lt; 4h</span>
+          <span className={styles.statLabel}>Total Tickets</span>
+          <span className={styles.statValue}>{tickets.length.toString().padStart(2, "0")}</span>
         </div>
       </section>
 
@@ -557,7 +578,7 @@ export default function TicketManagementClient() {
                   fontSize: "0.82rem",
                 }}
               >
-                No tickets matching your filter criteria.
+                {loadingTickets ? "Loading your tickets…" : "No tickets matching your filter criteria."}
               </div>
             )}
           </div>
@@ -642,24 +663,13 @@ export default function TicketManagementClient() {
                 </div>
               )}
 
-              {/* Discord Thread Bridge Banner */}
-              <div className={styles.discordBridgeBanner}>
+              {selectedTicket.thread_url && <div className={styles.discordBridgeBanner}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                   <MemberIcon name="message" size={16} />
-                  <span>
-                    Discord Thread Sync Active (<code>#ticket-{selectedTicket.id}</code>)
-                  </span>
+                  <span>Discord ticket thread</span>
                 </div>
-                <span
-                  style={{
-                    fontSize: "0.68rem",
-                    fontFamily: "var(--font-mono, monospace)",
-                    color: "#b0baff",
-                  }}
-                >
-                  Live Thread
-                </span>
-              </div>
+                <a href={selectedTicket.thread_url} target="_blank" rel="noopener noreferrer">Open thread</a>
+              </div>}
             </>
           ) : (
             <div style={{ color: "#787884", textAlign: "center", padding: "40px" }}>
@@ -800,7 +810,7 @@ export default function TicketManagementClient() {
                         id="modal-spg-track"
                         className={styles.selectInput}
                         value={spgTrack}
-                        onChange={(e) => setSpgTrack(e.target.value as any)}
+                        onChange={(e) => setSpgTrack(e.target.value as typeof spgTrack)}
                       >
                         <option value="research">Research Track (Red)</option>
                         <option value="product">Product Track (Green)</option>
@@ -865,13 +875,16 @@ export default function TicketManagementClient() {
                         id="modal-res-spg-id"
                         className={styles.selectInput}
                         value={formSpgId}
-                        onChange={(e) => setFormSpgId(e.target.value)}
+                        onChange={(e) => {
+                          const selectedId = e.target.value;
+                          setFormSpgId(selectedId);
+                          if (selectedId) setResSpgName(memberSpgs.find((group) => group.id === selectedId)?.name || "");
+                        }}
                       >
-                        <option value="spg_drone_swarms">SP-1 Autonomous Drone Swarms</option>
-                        <option value="spg_decentralized_compute">SP-2 Decentralized Compute</option>
-                        <option value="spg_llm_benchmark">SPG-3 LLM Benchmark 2025</option>
-                        <option value="spg_quantum_gate">SPG-X Quantum Gate Sim</option>
+                        <option value="">{memberSpgsLoading ? "Loading project groups…" : "Select a project group (optional)"}</option>
+                        {memberSpgs.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
                       </select>
+                      {memberSpgsError && <p role="alert">{memberSpgsError}</p>}
                     </div>
 
                     <div className={styles.formGroup}>
@@ -883,7 +896,10 @@ export default function TicketManagementClient() {
                         type="text"
                         className={styles.textInput}
                         value={resSpgName}
-                        onChange={(e) => setResSpgName(e.target.value)}
+                        onChange={(e) => {
+                          setResSpgName(e.target.value);
+                          if (formSpgId && memberSpgs.find((group) => group.id === formSpgId)?.name !== e.target.value) setFormSpgId("");
+                        }}
                       />
                     </div>
                   </div>
@@ -987,7 +1003,7 @@ export default function TicketManagementClient() {
                       id="modal-idea-track"
                       className={styles.selectInput}
                       value={ideaTrack}
-                      onChange={(e) => setIdeaTrack(e.target.value as any)}
+                      onChange={(e) => setIdeaTrack(e.target.value as typeof ideaTrack)}
                     >
                       <option value="research">Research Track</option>
                       <option value="product">Product Track</option>
@@ -1063,6 +1079,7 @@ export default function TicketManagementClient() {
 
 
 
+              {submitError && <p role="alert">{submitError}</p>}
               <div className={styles.modalFooter}>
                 <button type="button" className={styles.cancelBtn} onClick={closeModal}>
                   Cancel

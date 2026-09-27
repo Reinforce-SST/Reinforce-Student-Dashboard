@@ -5,6 +5,9 @@
  * never talks to Firestore directly — the Admin SDK is server-side only.
  */
 
+import type { SPGRecord, SPGReportRecord } from "./spgData";
+import type { ContributionRecord } from "./contributionData";
+
 const BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080/api/v1";
 
@@ -18,7 +21,7 @@ export class ApiError extends Error {
 /** Nothing should hang the UI forever. Render cold starts are slow but finite. */
 const TIMEOUT_MS = 20_000;
 
-async function request<T>(path: string, token: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, token?: string | null, init?: RequestInit): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -28,7 +31,7 @@ async function request<T>(path: string, token: string, init?: RequestInit): Prom
       ...init,
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...init?.headers,
       },
       cache: "no-store",
@@ -58,6 +61,94 @@ async function request<T>(path: string, token: string, init?: RequestInit): Prom
 }
 
 /* ------------------------------------------------------------------ types */
+
+export type EventSummaryItem = {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  event_type: string;
+  track: string;
+  format: string;
+  schedule: {
+    start_time: string;
+    end_time?: string | null;
+    duration_minutes?: number | null;
+    registration_deadline?: string | null;
+  };
+  venue_info?: {
+    venue_name?: string | null;
+    room?: string | null;
+    meeting_url?: string | null;
+  };
+  stats?: {
+    registered_count: number;
+    checked_in_count: number;
+    feedback_count: number;
+    average_rating: number;
+  };
+  banner_url?: string | null;
+  status: string;
+};
+
+export type EventDocument = {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  detailed_info?: string | null;
+  event_type: string;
+  track: string;
+  format: string;
+  venue_info?: {
+    venue_name?: string | null;
+    room?: string | null;
+    meeting_url?: string | null;
+  };
+  schedule: {
+    start_time: string;
+    end_time?: string | null;
+    duration_minutes?: number | null;
+    registration_deadline?: string | null;
+  };
+  eligibility?: {
+    access_scope?: string;
+    allowed_years?: number[];
+    allowed_tiers?: string[];
+    allowed_tracks?: string[];
+    custom_note?: string | null;
+    is_mandatory?: boolean;
+  };
+  participation?: {
+    mode?: "solo" | "team";
+    min_team_size?: number;
+    max_team_size?: number;
+    max_participants?: number | null;
+    requires_event_spg?: boolean;
+    spg_auto_disband_days?: number;
+  };
+  points_reward?: {
+    attendance_points?: number;
+    track?: string;
+  };
+  resources?: {
+    recording_url?: string | null;
+    slides_url?: string | null;
+    writeup_url?: string | null;
+    discord_thread_id?: string | null;
+  };
+  stats?: {
+    registered_count: number;
+    checked_in_count: number;
+    feedback_count: number;
+    average_rating: number;
+  };
+  banner_url?: string | null;
+  status: string;
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+};
 /* These mirror server/app/schemas/. See docs/DATA_CONTRACT.md. */
 
 export type SocialLinks = {
@@ -135,6 +226,9 @@ export type TicketSummary = {
   category: TicketCategory;
   title: string;
   status: TicketStatus;
+  priority?: "low" | "medium" | "high" | "urgent";
+  created_by_uid?: string;
+  spg_id?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
   thread_url?: string | null;
@@ -146,11 +240,20 @@ export type TicketListResponse = {
   tickets: TicketSummary[];
 };
 
-type ApiTicketDetail = TicketSummary & {
+export type ApiTicketDetail = TicketSummary & {
   description?: string | null;
   fields?: Record<string, unknown>;
   close_reason?: string | null;
   closed_at?: string | null;
+  discord_meta?: { thread_url?: string | null } | null;
+};
+
+export type TicketCreateRequest = {
+  category: TicketCategory;
+  title: string;
+  description?: string;
+  fields: Record<string, unknown>;
+  spg_id?: string;
 };
 
 type ApiTicketMessage = {
@@ -207,6 +310,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ link_token: linkToken }),
     }),
+
+  createTicket: (token: string, body: TicketCreateRequest) =>
+    request<ApiTicketDetail>("/tickets", token, { method: "POST", body: JSON.stringify(body) }),
+
+  ticketDetail: (token: string, id: string) =>
+    request<ApiTicketDetail>(`/tickets/${encodeURIComponent(id)}`, token),
 
   ticket: async (token: string, id: string): Promise<TicketThread> => {
     const path = `/tickets/${encodeURIComponent(id)}`;
@@ -278,7 +387,7 @@ export const api = {
       { method: "POST" },
     ),
 
-  listSpgs: async (
+  listSpgs: async <T = SPGRecord>(
     token: string,
     params?: {
       status?: string;
@@ -298,16 +407,16 @@ export const api = {
     if (params?.cursor) query.set("cursor", params.cursor);
 
     const qs = query.toString();
-    return request<{ items: any[]; next_cursor?: string | null }>(
+    return request<{ items: T[]; next_cursor?: string | null }>(
       `/spgs${qs ? `?${qs}` : ""}`,
       token
     );
   },
 
-  getSpg: (token: string, spgId: string) =>
-    request<any>(`/spgs/${encodeURIComponent(spgId)}`, token),
+  getSpg: <T = SPGRecord>(token: string, spgId: string) =>
+    request<T>(`/spgs/${encodeURIComponent(spgId)}`, token),
 
-  listSpgReports: (
+  listSpgReports: <T = SPGReportRecord>(
     token: string,
     spgId: string,
     params?: { report_type?: string; limit?: number; cursor?: string }
@@ -318,13 +427,13 @@ export const api = {
     if (params?.cursor) query.set("cursor", params.cursor);
 
     const qs = query.toString();
-    return request<{ items: any[]; next_cursor?: string | null }>(
+    return request<{ items: T[]; next_cursor?: string | null }>(
       `/spgs/${encodeURIComponent(spgId)}/reports${qs ? `?${qs}` : ""}`,
       token
     );
   },
 
-  submitFormReport: (
+  submitFormReport: <T = SPGReportRecord>(
     token: string,
     spgId: string,
     submission: {
@@ -337,12 +446,12 @@ export const api = {
       next_steps?: string;
     }
   ) =>
-    request<any>(`/spgs/${encodeURIComponent(spgId)}/reports/form`, token, {
+    request<T>(`/spgs/${encodeURIComponent(spgId)}/reports/form`, token, {
       method: "POST",
       body: JSON.stringify(submission),
     }),
 
-  submitPdfReport: async (
+  submitPdfReport: async <T = SPGReportRecord>(
     token: string,
     spgId: string,
     formData: FormData
@@ -369,14 +478,14 @@ export const api = {
         throw new ApiError(detail, res.status);
       }
 
-      return res.json();
+      return res.json() as Promise<T>;
     } finally {
       clearTimeout(timer);
     }
   },
 
   leaderboard: (token: string, track: string = "total", limit: number = 50) =>
-    request<{ track: string; total: number; entries: any[] }>(
+    request<{ track: string; total: number; entries: Record<string, unknown>[] }>(
       `/users/leaderboard?track=${encodeURIComponent(track)}&limit=${limit}`,
       token
     ),
@@ -410,18 +519,18 @@ export const api = {
   getUserProfile: (token: string, idOrEmail: string) =>
     request<StudentProfile>(`/users/${encodeURIComponent(idOrEmail)}`, token),
 
-  getMyContributions: (token: string, limit: number = 50, cursor?: string | null) => {
+  getMyContributions: <T = ContributionRecord>(token: string, limit: number = 50, cursor?: string | null) => {
     const qs = new URLSearchParams();
     if (limit) qs.set("limit", String(limit));
     if (cursor) qs.set("cursor", cursor);
     const query = qs.toString();
-    return request<{ items: any[]; next_cursor?: string | null }>(
+    return request<{ items: T[]; next_cursor?: string | null }>(
       `/contributions/me${query ? `?${query}` : ""}`,
       token
     );
   },
 
-  getUserContributions: (
+  getUserContributions: <T = ContributionRecord>(
     token: string,
     userId: string,
     limit: number = 50,
@@ -433,20 +542,134 @@ export const api = {
     if (cursor) qs.set("cursor", cursor);
     if (statusFilter) qs.set("status", statusFilter);
     const query = qs.toString();
-    return request<{ items: any[]; next_cursor?: string | null }>(
+    return request<{ items: T[]; next_cursor?: string | null }>(
       `/contributions/user/${encodeURIComponent(userId)}${query ? `?${query}` : ""}`,
       token
     );
   },
 
-  getContribution: (token: string, recordId: string) =>
-    request<any>(`/contributions/${encodeURIComponent(recordId)}`, token),
+  getContribution: <T = ContributionRecord>(token: string, recordId: string) =>
+    request<T>(`/contributions/${encodeURIComponent(recordId)}`, token),
 
   getContributionLeaderboard: (token: string, limit: number = 50) =>
     request<{ user_id: string; points: number; contribution_count: number }[]>(
       `/contributions/leaderboard?limit=${limit}`,
       token
     ),
+
+  listEvents: (
+    token?: string | null,
+    params?: {
+      status?: string;
+      track?: string;
+      event_type?: string;
+      timeline?: "upcoming" | "past";
+      search?: string;
+      page?: number;
+      limit?: number;
+    }
+  ) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.track) qs.set("track", params.track);
+    if (params?.event_type) qs.set("event_type", params.event_type);
+    if (params?.timeline) qs.set("timeline", params.timeline);
+    if (params?.search) qs.set("search", params.search);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const query = qs.toString();
+    return request<{ events: EventSummaryItem[]; total: number }>(
+      `/events${query ? `?${query}` : ""}`,
+      token || undefined
+    );
+  },
+
+  getEvent: (idOrSlug: string, token?: string | null) =>
+    request<EventDocument>(`/events/${encodeURIComponent(idOrSlug)}`, token || undefined),
+
+  myEventRegistration: (token: string, id: string) =>
+    request<{ is_registered: boolean; registration: { status: string } | null }>(
+      `/events/${encodeURIComponent(id)}/my-registration`, token),
+
+  registerForEvent: (token: string, id: string, payload: { team_name?: string; member_uids?: string[] }) =>
+    request<{ status: string }>(`/events/${encodeURIComponent(id)}/register`, token, {
+      method: "POST", body: JSON.stringify(payload),
+    }),
+
+  cancelEventRegistration: (token: string, id: string) =>
+    request<unknown>(`/events/${encodeURIComponent(id)}/register`, token, { method: "DELETE" }),
+
+  submitEventFeedback: (token: string, id: string, payload: {
+    rating_content: number; rating_organization: number; rating_overall: number;
+    takeaways?: string; improvements?: string; is_anonymous: boolean;
+  }) => request<unknown>(`/events/${encodeURIComponent(id)}/feedback`, token, {
+    method: "POST", body: JSON.stringify(payload),
+  }),
+
+  /* ----------------------------------------------------------- Admin APIs */
+  adminCreateEvent: (token: string, payload: Record<string, unknown>) =>
+    request<EventSummaryItem>("/events", token, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  adminUpdateEvent: (token: string, eventId: string, payload: Record<string, unknown>) =>
+    request<EventSummaryItem>(`/events/${encodeURIComponent(eventId)}`, token, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  adminUpdateEventStatus: (token: string, eventId: string, status: string) =>
+    request<EventSummaryItem>(`/events/${encodeURIComponent(eventId)}/status`, token, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+
+  adminGetEventRegistrations: (token: string, eventId: string) =>
+    request<Record<string, unknown>[]>(`/events/${encodeURIComponent(eventId)}/registrations`, token),
+
+  adminRollCall: (token: string, eventId: string, attendeeUids: string[], awardPoints: boolean = true) =>
+    request<Record<string, unknown>>(`/events/${encodeURIComponent(eventId)}/attendance/roll-call`, token, {
+      method: "POST",
+      body: JSON.stringify({ attendee_uids: attendeeUids, award_points: awardPoints }),
+    }),
+
+  adminUpdateUserStatus: (
+    token: string,
+    userId: string,
+    payload: { is_admin?: boolean; is_member?: boolean; tier?: string }
+  ) =>
+    request<StudentProfile>(`/users/${encodeURIComponent(userId)}/status`, token, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  adminAwardContribution: (token: string, userId: string, payload: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/contributions/award/user/${encodeURIComponent(userId)}`, token, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  adminReviewContribution: (token: string, contribId: string, action: "approve" | "reject" | "revoke", reason?: string) =>
+    request<Record<string, unknown>>(`/contributions/${encodeURIComponent(contribId)}/review`, token, {
+      method: "PATCH",
+      body: JSON.stringify({ action, reason }),
+    }),
+
+  adminGetAllTickets: (token: string) =>
+    request<TicketSummary[]>("/tickets", token),
+
+  adminUpdateTicket: (token: string, ticketId: string, payload: Record<string, unknown>) =>
+    request<TicketSummary>(`/tickets/${encodeURIComponent(ticketId)}`, token, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  adminReviewSpgProposal: (token: string, requestId: string, decision: "approved" | "rejected", notes?: string) =>
+    request<Record<string, unknown>>(`/spg/registrations/${encodeURIComponent(requestId)}/review`, token, {
+      method: "POST",
+      body: JSON.stringify({ decision, notes }),
+    }),
 };
 
 /**
@@ -457,7 +680,6 @@ export type ProfileUpdate = {
   full_name?: string;
   avatar_url?: string | null;
   bio?: string | null;
-  batch_year?: number | null;
   skills?: string[];
   social_links?: SocialLinks;
 };

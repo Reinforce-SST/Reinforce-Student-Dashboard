@@ -115,7 +115,7 @@ class ApplicationImportTests(unittest.TestCase):
     def test_client_uses_the_unified_user_routes(self):
         client_source = (
             Path(__file__).resolve().parents[2] / "client" / "src" / "App.jsx"
-        ).read_text()
+        ).read_text(encoding="utf-8")
         for path in (
             "/users/sync",
             "/users/verify-discord",

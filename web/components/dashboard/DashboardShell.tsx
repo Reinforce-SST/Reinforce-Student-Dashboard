@@ -4,13 +4,24 @@ import { usePathname } from "next/navigation";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
 import { MemberProvider } from "@/lib/useMember";
+import { AdminModeProvider } from "@/lib/useAdminMode";
 import RequireAuth from "./RequireAuth";
 import MemberIcon from "./MemberIcon";
 import theme from "./MemberTheme.module.css";
 import styles from "./DashboardShell.module.css";
 
 export default function DashboardShell({ children }: { children: ReactNode }) {
-  return <div className={theme.theme}><RequireAuth><MemberProvider><DashboardChrome>{children}</DashboardChrome></MemberProvider></RequireAuth></div>;
+  return (
+    <div className={theme.theme}>
+      <RequireAuth>
+        <MemberProvider>
+          <AdminModeProvider>
+            <DashboardChrome>{children}</DashboardChrome>
+          </AdminModeProvider>
+        </MemberProvider>
+      </RequireAuth>
+    </div>
+  );
 }
 function DashboardChrome({ children }: { children: ReactNode }) {
   const dialog = useRef<HTMLDialogElement>(null);
