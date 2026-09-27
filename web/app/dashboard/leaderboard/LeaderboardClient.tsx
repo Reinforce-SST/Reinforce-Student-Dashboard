@@ -9,7 +9,41 @@ import { useMember } from "@/lib/useMember";
 
 import { api, type StudentProfile, type TrackPoints } from "@/lib/api";
 import { type LeaderboardEntry } from "@/lib/leaderboardData";
-import styles from "./Leaderboard.module.css";
+function getInitials(name?: string) {
+  if (!name) return "MB";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function UserAvatar({
+  src,
+  name,
+  className,
+}: {
+  src?: string | null;
+  name?: string;
+  className?: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  const initials = getInitials(name);
+
+  return (
+    <div className={className}>
+      {src && !failed ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src}
+          alt={name || "Member avatar"}
+          className={styles.avatarImg}
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        initials
+      )}
+    </div>
+  );
+}
 
 export default function LeaderboardClient() {
   const { token } = useMember();
@@ -101,13 +135,6 @@ export default function LeaderboardClient() {
     }
     return true;
   });
-
-  const getInitials = (name?: string) => {
-    if (!name) return "MB";
-    const parts = name.trim().split(/\s+/);
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  };
 
   const getDominantTrackClass = (points?: TrackPoints) => {
     if (!points) return styles.trackPillRes;
@@ -248,9 +275,11 @@ export default function LeaderboardClient() {
                   onClick={() => openProfileModal(top2.id)}
                 >
                   <span className={`${styles.podiumRankBadge} ${styles.rankSecondBadge}`}>#2</span>
-                  <div className={styles.podiumAvatar}>
-                    {getInitials(top2.full_name)}
-                  </div>
+                  <UserAvatar
+                    src={top2.avatar_url}
+                    name={top2.full_name}
+                    className={styles.podiumAvatar}
+                  />
                   <h2 className={styles.podiumName}>
                     {top2.full_name}
                     <MemberIcon name="check" size={14} />
@@ -280,9 +309,11 @@ export default function LeaderboardClient() {
                   onClick={() => openProfileModal(top1.id)}
                 >
                   <span className={`${styles.podiumRankBadge} ${styles.rankFirstBadge}`}>👑 #1</span>
-                  <div className={styles.podiumAvatar}>
-                    {getInitials(top1.full_name)}
-                  </div>
+                  <UserAvatar
+                    src={top1.avatar_url}
+                    name={top1.full_name}
+                    className={styles.podiumAvatar}
+                  />
                   <h2 className={styles.podiumName}>
                     {top1.full_name}
                     <MemberIcon name="check" size={14} />
@@ -312,9 +343,11 @@ export default function LeaderboardClient() {
                   onClick={() => openProfileModal(top3.id)}
                 >
                   <span className={`${styles.podiumRankBadge} ${styles.rankThirdBadge}`}>#3</span>
-                  <div className={styles.podiumAvatar}>
-                    {getInitials(top3.full_name)}
-                  </div>
+                  <UserAvatar
+                    src={top3.avatar_url}
+                    name={top3.full_name}
+                    className={styles.podiumAvatar}
+                  />
                   <h2 className={styles.podiumName}>
                     {top3.full_name}
                     <MemberIcon name="check" size={14} />
@@ -371,9 +404,11 @@ export default function LeaderboardClient() {
 
                       {/* Member Details */}
                       <div className={styles.memberCol}>
-                        <div className={styles.tableAvatar}>
-                          {getInitials(entry.full_name)}
-                        </div>
+                        <UserAvatar
+                          src={entry.avatar_url}
+                          name={entry.full_name}
+                          className={styles.tableAvatar}
+                        />
                         <div className={styles.memberNameGroup}>
                           <span className={styles.memberNameText}>
                             {entry.full_name}
@@ -446,9 +481,11 @@ export default function LeaderboardClient() {
                 {/* Card Top: Avatar & Name */}
                 <div className={styles.memberCardTop}>
                   <div className={styles.memberCardHeader}>
-                    <div className={styles.cardAvatar}>
-                      {getInitials(member.full_name)}
-                    </div>
+                    <UserAvatar
+                      src={member.avatar_url}
+                      name={member.full_name}
+                      className={styles.cardAvatar}
+                    />
                     <div>
                       <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                         <h2 style={{ fontSize: "0.96rem", fontWeight: "800", color: "#ffffff", margin: 0 }}>
@@ -547,9 +584,11 @@ export default function LeaderboardClient() {
 
             {/* Profile Hero Header */}
             <div className={styles.profileHero}>
-              <div className={styles.profileAvatarLarge}>
-                {getInitials(selectedMember.full_name)}
-              </div>
+              <UserAvatar
+                src={selectedMember.avatar_url}
+                name={selectedMember.full_name}
+                className={styles.profileAvatarLarge}
+              />
               <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                   <h2 id="profile-modal-title" style={{ fontSize: "1.25rem", fontWeight: "900", color: "#ffffff", margin: 0 }}>

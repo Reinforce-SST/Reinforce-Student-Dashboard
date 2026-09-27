@@ -17,6 +17,8 @@ export default function SpgManagementClient() {
   const [spgs, setSpgs] = useState<SPGRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [membersMap, setMembersMap] = useState<Record<string, { full_name: string; avatar_url?: string | null }>>({});
+  const [failedAvatars, setFailedAvatars] = useState<Set<string>>(new Set());
 
   // Fetch SPGs from Backend API
   const fetchSpgs = useCallback(async () => {
@@ -37,6 +39,20 @@ export default function SpgManagementClient() {
   useEffect(() => {
     void Promise.resolve().then(fetchSpgs);
   }, [fetchSpgs]);
+
+  // Fetch member directory lookup for member avatars & names
+  useEffect(() => {
+    if (!token) return;
+    void api.browseUsers(token, { page_size: 50 }).then((res) => {
+      if (res?.items) {
+        const map: Record<string, { full_name: string; avatar_url?: string | null }> = {};
+        res.items.forEach((u) => {
+          map[u.id] = { full_name: u.full_name, avatar_url: u.avatar_url };
+        });
+        setMembersMap(map);
+      }
+    }).catch(() => {});
+  }, [token]);
 
   // Current member identifier
   const myId = profile?.id || "";
@@ -351,9 +367,12 @@ export default function SpgManagementClient() {
           </div>
         ) : (
           filteredClusters.map((cluster) => {
-            const initialsList = cluster.member_ids.slice(0, 3).map((uid) => {
-              const name = cluster.member_names?.[uid] || uid;
-              return getInitials(name);
+            const leadName = membersMap[cluster.lead_id]?.full_name || cluster.lead_name || cluster.lead_id;
+            const membersToDisplay = cluster.member_ids.slice(0, 3).map((uid) => {
+              const memProfile = membersMap[uid];
+              const name = memProfile?.full_name || cluster.member_names?.[uid] || uid;
+              const avatarUrl = memProfile?.avatar_url;
+              return { uid, name, avatarUrl, initials: getInitials(name) };
             });
             const extraCount = Math.max(0, cluster.member_ids.length - 3);
 
@@ -413,7 +432,7 @@ export default function SpgManagementClient() {
                   <div className={styles.reportRow}>
                     <span className={styles.reportRowLabel}>Project Lead -</span>
                     <span className={styles.reportRowValue}>
-                      {cluster.lead_name || cluster.lead_id}
+                      {leadName}
                     </span>
                   </div>
                   <div className={styles.reportRow}>
@@ -427,16 +446,30 @@ export default function SpgManagementClient() {
                 {/* Card Footer: Avatar Stack & Open Suite Link */}
                 <div className={styles.cardFooter}>
                   <div className={styles.avatarStack} aria-label="Team Members">
-                    {initialsList.map((initials, index) => (
-                      <span
-                        key={index}
-                        className={`${styles.stackAvatar} ${
-                          index === 0 ? styles.avatarGold : styles.avatarDark
-                        }`}
-                      >
-                        {initials}
-                      </span>
-                    ))}
+                    {membersToDisplay.map((m, index) => {
+                      const hasAvatar = m.avatarUrl && !failedAvatars.has(m.uid);
+                      return (
+                        <span
+                          key={m.uid || index}
+                          title={m.name}
+                          className={`${styles.stackAvatar} ${
+                            index === 0 ? styles.avatarGold : styles.avatarDark
+                          }`}
+                        >
+                          {hasAvatar ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={m.avatarUrl!}
+                              alt={m.name}
+                              className={styles.avatarImg}
+                              onError={() => setFailedAvatars((prev) => new Set(prev).add(m.uid))}
+                            />
+                          ) : (
+                            m.initials
+                          )}
+                        </span>
+                      );
+                    })}
                     {extraCount > 0 && (
                       <span className={`${styles.stackAvatar} ${styles.avatarExtra}`}>
                         +{extraCount}

@@ -255,6 +255,7 @@
   font-size: 1.1rem;
   font-weight: 850;
   color: #ffffff;
+  overflow: hidden;
 }
 
 .podiumFirst .podiumAvatar {
@@ -372,6 +373,7 @@
   font-weight: 800;
   color: #e2e2ea;
   flex-shrink: 0;
+  overflow: hidden;
 }
 
 .memberNameGroup {
@@ -598,6 +600,7 @@
   font-size: 0.85rem;
   font-weight: 850;
   color: #ffffff;
+  overflow: hidden;
 }
 
 .cardBio {
@@ -729,6 +732,15 @@
   font-size: 1.3rem;
   font-weight: 850;
   color: #ffffff;
+  overflow: hidden;
+}
+
+.avatarImg {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
 }
 
 .profilePointsGrid {
