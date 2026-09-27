@@ -680,7 +680,6 @@ export type ProfileUpdate = {
   full_name?: string;
   avatar_url?: string | null;
   bio?: string | null;
-  batch_year?: number | null;
   skills?: string[];
   social_links?: SocialLinks;
 };

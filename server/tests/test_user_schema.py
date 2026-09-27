@@ -91,10 +91,11 @@ class UserBaseTests(unittest.TestCase):
 
 
 class UserUpdateRequestTests(unittest.TestCase):
-    def test_batch_update_accepts_graduation_year_only(self):
-        self.assertEqual(UserUpdateRequest(batch_year=2029).batch_year, 2029)
-        with self.assertRaises(ValidationError):
-            UserUpdateRequest(batch_year=2)
+    def test_members_cannot_override_derived_batch(self):
+        for year in (2, 2029):
+            with self.subTest(year=year):
+                with self.assertRaises(ValidationError):
+                    UserUpdateRequest.model_validate({"batch_year": year})
 
     def test_partial_update_keeps_only_sent_fields(self):
         update = UserUpdateRequest.model_validate({"skills": ["rust", "cuda"]})

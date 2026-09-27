@@ -201,8 +201,6 @@ def update_me(
         updates["bio"] = payload.bio.strip()
     if payload.skills is not None:
         updates["skills"] = [s.strip() for s in payload.skills if s.strip()]
-    if payload.batch_year is not None:
-        updates["batch_year"] = payload.batch_year
     if payload.social_links is not None:
         updates["social_links"] = payload.social_links.model_dump()
 

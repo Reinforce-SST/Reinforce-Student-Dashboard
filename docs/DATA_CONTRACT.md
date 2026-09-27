@@ -63,6 +63,8 @@ Older profiles storing a study-year value (1–5) are converted from their SST e
 prefix on sign-in; event registration also resolves that batch for members who
 have not signed in again. If the email cannot identify a graduation batch, the
 old value is retained rather than guessed and cannot satisfy a new batch rule.
+Members cannot change `batch_year` through profile edits; the server owns this
+value. An unresolvable profile requires an admin-confirmed correction.
 
 ## `discord_link_tokens/{sha256(token)}`
 

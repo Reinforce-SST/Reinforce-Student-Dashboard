@@ -347,7 +347,6 @@ function ProfileClientContent() {
       full_name: editFormName.trim(),
       avatar_url: editFormAvatarUrl.trim() || null,
       bio: editFormBio.trim() || null,
-      batch_year: derivedBatchYear || null,
       skills: parsedSkills,
       social_links: updatedSocials,
     };
@@ -364,7 +363,6 @@ function ProfileClientContent() {
         full_name: payload.full_name,
         avatar_url: payload.avatar_url,
         bio: payload.bio,
-        batch_year: payload.batch_year,
         skills: parsedSkills,
         social_links: updatedSocials,
       }));
