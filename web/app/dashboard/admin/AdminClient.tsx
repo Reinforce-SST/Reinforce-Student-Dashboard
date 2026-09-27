@@ -1421,7 +1421,7 @@ export default function AdminClient() {
                 {Object.keys(selectedRecipients).length > 0 && (
                   <div className={styles.selectedChipsTray}>
                     {Object.values(selectedRecipients).map((m) => {
-                      const uid = m.id || m.email;
+                      const uid = m.id || m.email || "";
                       const initials = m.full_name
                         ? m.full_name.split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase()
                         : "MB";
@@ -1488,7 +1488,7 @@ export default function AdminClient() {
                     <button
                       type="button"
                       onClick={handleDeselectAllVisible}
-                      disabled={awardCandidates.length === 0 || !awardCandidates.some(m => Boolean(selectedRecipients[m.id || m.email]))}
+                      disabled={awardCandidates.length === 0 || !awardCandidates.some(m => Boolean(selectedRecipients[m.id || m.email || ""]))}
                       className={styles.bulkActionBtn}
                     >
                       Deselect Filtered
@@ -1509,7 +1509,7 @@ export default function AdminClient() {
                     </div>
                   ) : (
                     awardCandidates.map((member) => {
-                      const uid = member.id || member.email;
+                      const uid = member.id || member.email || "";
                       const isSelected = Boolean(selectedRecipients[uid]);
                       const initials = member.full_name
                         ? member.full_name.split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase()

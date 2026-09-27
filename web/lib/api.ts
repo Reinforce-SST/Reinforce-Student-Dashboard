@@ -169,7 +169,7 @@ export type TrackPoints = {
 export type MemberTier = "beginner" | "advanced";
 
 export type StudentProfile = {
-  id?: string;
+  id: string;
   email?: string;
   full_name: string;
   avatar_url?: string | null;

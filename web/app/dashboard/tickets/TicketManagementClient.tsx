@@ -1062,7 +1062,7 @@ export default function TicketManagementClient() {
 
                     {!spgLeader?.is_member && spgLeader && (
                       <div className={styles.nonMemberWarning}>
-                        <MemberIcon name="alert-triangle" size={14} />
+                        <MemberIcon name="alert-circle" size={14} />
                         <span>The team leader must be an active club member (is_member: true) to submit an SPG proposal.</span>
                       </div>
                     )}
@@ -1184,7 +1184,7 @@ export default function TicketManagementClient() {
                                 <span>{m.full_name}</span>
                                 <button
                                   type="button"
-                                  onClick={() => handleRemoveMember(m.id)}
+                                  onClick={() => handleRemoveMember(m.id || "")}
                                   className={styles.chipRemoveBtn}
                                   aria-label={`Remove ${m.full_name}`}
                                 >
@@ -1231,7 +1231,7 @@ export default function TicketManagementClient() {
                           memberCandidates
                             .filter((m) => m.id !== spgLeader?.id)
                             .map((m) => {
-                              const isSelected = Boolean(selectedTeamMembers[m.id]);
+                              const isSelected = Boolean(m.id && selectedTeamMembers[m.id]);
                               const initials = m.full_name
                                 ? m.full_name.split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase()
                                 : "MB";

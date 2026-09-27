@@ -91,7 +91,7 @@ export default function LeaderboardClient() {
     .map((m) => {
       const points: TrackPoints = m.points || { total: 0, research: 0, product: 0, kaggle: 0, misc: 0 };
       return {
-        id: m.id || m.email,
+        id: m.id || m.email || "",
         full_name: m.full_name || "Club Member",
         avatar_url: m.avatar_url,
         is_member: Boolean(m.is_member),
@@ -552,7 +552,7 @@ export default function LeaderboardClient() {
                   </div>
 
                   <Link
-                    href={`/dashboard/profile?id=${encodeURIComponent(member.id || member.email)}`}
+                    href={`/dashboard/profile?id=${encodeURIComponent(member.id || member.email || "")}`}
                     className={styles.rowViewProfileBtn}
                     onClick={(e) => e.stopPropagation()}
                   >
@@ -702,7 +702,7 @@ export default function LeaderboardClient() {
               </div>
 
               <Link
-                href={`/dashboard/profile?id=${encodeURIComponent(selectedMember.id || selectedMember.email)}`}
+                href={`/dashboard/profile?id=${encodeURIComponent(selectedMember.id || selectedMember.email || "")}`}
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
