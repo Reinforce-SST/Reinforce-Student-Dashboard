@@ -340,6 +340,29 @@
   font-weight: 400;
 }
 
+.batchOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.batchOption {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  background: #121214;
+  border: 1px solid #2e2e36;
+  border-radius: 8px;
+  color: #cfcfd4;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.batchOption input {
+  accent-color: #e5b731;
+}
+
 .formInput,
 .formTextarea,
 .formSelect {

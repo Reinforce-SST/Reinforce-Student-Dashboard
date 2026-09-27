@@ -4,58 +4,48 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useMember } from "@/lib/useMember";
 import { api } from "@/lib/api";
+import type { SPGRecord } from "@/lib/spgData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import styles from "@/components/dashboard/OverviewDashboard.module.css";
 
 type SPGProject = {
   id: string;
   code: string;
-  track: "kaggle" | "research" | "product";
+  track: string;
   trackLabel: string;
   title: string;
   description: string;
-  status: "on_track" | "at_risk";
+  status: "active" | "paused";
   statusLabel: string;
   team: string[];
   teamExtra?: number;
-  reportDue: string;
+  reportCount: number;
 };
 
-const placeholderProjects: SPGProject[] = [
-  {
-    id: "spg-1",
-    code: "SPG-2024-089",
-    track: "kaggle",
-    trackLabel: "Kaggle Track",
-    title: "Deep Learning for Seismic Prediction",
-    description:
-      "Developing an ensemble model for high-precision earthquake detection and early warning systems.",
-    status: "on_track",
-    statusLabel: "On Track",
-    team: ["JC", "AK"],
-    teamExtra: 1,
-    reportDue: "In 2 days",
-  },
-  {
-    id: "spg-2",
-    code: "SPG-2024-042",
-    track: "research",
-    trackLabel: "Research Track",
-    title: "Multimodal LLM for Medical Diagnostics",
-    description:
-      "Fine-tuning open weights models on federated clinical trial datasets for automated ECG interpretation.",
-    status: "at_risk",
-    statusLabel: "At Risk",
-    team: ["JC", "MS", "RD"],
-    reportDue: "Tomorrow",
-  },
-];
+function toProject(record: SPGRecord): SPGProject {
+  const names = Object.values(record.member_names || {});
+  const team = names.slice(0, 3).map((name) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase());
+  return {
+    id: record.id,
+    code: record.id,
+    track: record.track,
+    trackLabel: `${record.track} track`,
+    title: record.name,
+    description: record.description || "No description provided.",
+    status: record.status === "paused" ? "paused" : "active",
+    statusLabel: record.status === "paused" ? "Paused" : "Active",
+    team,
+    teamExtra: Math.max(0, record.member_ids.length - team.length),
+    reportCount: record.report_count,
+  };
+}
 
 type UpcomingEvent = {
   id: string;
   slug?: string;
   month: string;
   day: string;
+  year: number;
   title: string;
   location: string;
 };
@@ -75,22 +65,23 @@ type FeaturedBannerEvent = {
 const defaultPlaceholderBanner: FeaturedBannerEvent = {
   id: "placeholder-1",
   badge: "REINFORCE CLUB",
-  date: "UPCOMING SESSIONS & GRANTS",
+  date: "MEMBER DASHBOARD",
   title: "Reinforce AI/ML Student Hub",
   description:
-    "Explore Student Project Groups (SPGs), request dedicated cluster compute, join technical workshops, and ship cutting-edge open-source software.",
+    "Explore your project groups and the club's published events.",
   ctaText: "Explore Events →",
   ctaLink: "/dashboard/events",
   imageSrc: "/banners/reinforce-placeholder.png",
   alt: "Reinforce AI/ML Club",
 };
 
-// October 2024 calendar grid days (1 = Tuesday ... 31 = Thursday)
-const calendarDays = Array.from({ length: 31 }, (_, i) => i + 1);
-
 export default function DashboardClient() {
-  const { token } = useMember();
-  const [selectedDay, setSelectedDay] = useState(24);
+  const { token, profile } = useMember();
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
+  const [monthOffset, setMonthOffset] = useState(0);
+  const [projects, setProjects] = useState<SPGProject[]>([]);
+  const [loadError, setLoadError] = useState("");
+  const [loading, setLoading] = useState(true);
   const [dbBanners, setDbBanners] = useState<FeaturedBannerEvent[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<UpcomingEvent[]>([]);
   const [slideIndex, setSlideIndex] = useState(1);
@@ -100,21 +91,31 @@ export default function DashboardClient() {
   useEffect(() => {
     let active = true;
     async function fetchBannersAndEvents() {
-      try {
-        const res = await api.listEvents(token, { status: "published", limit: 20 });
-        if (!active) return;
+      const [spgResult, eventResult] = await Promise.allSettled([
+        api.listSpgs(token, { limit: 100 }),
+        api.listEvents(token, { timeline: "upcoming", limit: 100 }),
+      ]);
+      if (!active) return;
+      setLoadError(spgResult.status === "rejected" || eventResult.status === "rejected"
+        ? "Some dashboard data could not be loaded. Please refresh." : "");
+      if (spgResult.status === "fulfilled") {
+        const uid = profile.id;
+        setProjects(spgResult.value.items.filter((spg) =>
+          (spg.status === "active" || spg.status === "paused") &&
+          (spg.lead_id === uid || spg.member_ids.includes(uid || ""))).map(toProject).slice(0, 3));
+      }
+      if (eventResult.status === "fulfilled") {
+        const res = eventResult.value;
         if (res.events && res.events.length > 0) {
           // 1. Filter / Map Featured Hero Banners
-          const bannerSource = res.events.filter(
-            (ev) =>
-              ev.event_type?.toLowerCase().includes("banner") ||
-              ev.schedule?.badge === "FEATURED"
-          );
-          const activeBannerList = bannerSource.length > 0 ? bannerSource : res.events;
+          const bannerSource = res.events.filter((ev) =>
+            ev.event_type?.toLowerCase().includes("banner"));
+          const activeBannerList = bannerSource.filter((ev) =>
+            new Date(ev.schedule.start_time).getTime() >= Date.now());
 
           const mappedBanners: FeaturedBannerEvent[] = activeBannerList.map((ev) => {
-            let displayDate = ev.schedule?.display_date;
-            if (!displayDate && ev.schedule?.start_time) {
+            let displayDate: string | undefined;
+            if (ev.schedule?.start_time) {
               try {
                 const dt = new Date(ev.schedule.start_time);
                 displayDate = dt.toLocaleDateString("en-US", {
@@ -131,7 +132,7 @@ export default function DashboardClient() {
 
             return {
               id: ev.id,
-              badge: ev.schedule?.badge || ev.event_type?.toUpperCase() || "FEATURED",
+              badge: ev.event_type?.toUpperCase() || "FEATURED",
               date: displayDate || "UPCOMING",
               title: ev.title,
               description: ev.description,
@@ -144,9 +145,9 @@ export default function DashboardClient() {
           setDbBanners(mappedBanners);
 
           // 2. Filter / Map Upcoming Events Widget
-          const regularEvents = res.events.filter(
-            (ev) => !ev.event_type?.toLowerCase().includes("banner")
-          );
+          const regularEvents = res.events.filter((ev) =>
+            !ev.event_type?.toLowerCase().includes("banner") &&
+            new Date(ev.schedule.start_time).getTime() >= Date.now());
           const mappedUpcoming: UpcomingEvent[] = regularEvents.slice(0, 4).map((ev) => {
             let month = "UPCOMING";
             let day = "•";
@@ -167,6 +168,7 @@ export default function DashboardClient() {
               slug: ev.slug,
               month,
               day,
+              year: new Date(ev.schedule.start_time).getFullYear(),
               title: ev.title,
               location,
             };
@@ -176,15 +178,22 @@ export default function DashboardClient() {
           setDbBanners([]);
           setUpcomingEvents([]);
         }
-      } catch (err) {
-        console.error("Failed to load dashboard data from database:", err);
       }
+      setLoading(false);
     }
     fetchBannersAndEvents();
     return () => {
       active = false;
     };
-  }, [token]);
+  }, [token, profile.id]);
+
+  const calendarMonth = new Date(new Date().getFullYear(), new Date().getMonth() + monthOffset, 1);
+  const calendarDays = Array.from({ length: new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0).getDate() }, (_, i) => i + 1);
+  const mondayOffset = (calendarMonth.getDay() + 6) % 7;
+  const eventDays = new Set(upcomingEvents.filter((ev) => {
+    const date = new Date(`${ev.month} ${ev.day}, ${ev.year}`);
+    return !Number.isNaN(date.getTime()) && date.getMonth() === calendarMonth.getMonth() && ev.year === calendarMonth.getFullYear();
+  }).map((ev) => Number(ev.day)));
 
   const activeSlides = dbBanners.length > 0 ? dbBanners : [defaultPlaceholderBanner];
 
@@ -371,7 +380,7 @@ export default function DashboardClient() {
           </div>
 
           <div className={styles.spgCardsList}>
-            {placeholderProjects.map((project) => (
+            {projects.map((project) => (
               <article key={project.id} className={styles.spgCard}>
                 <div className={styles.spgCardTop}>
                   <div className={styles.trackIdGroup}>
@@ -389,7 +398,7 @@ export default function DashboardClient() {
                   </div>
 
                   <span
-                    className={`${styles.statusPill} ${project.status === "on_track"
+                    className={`${styles.statusPill} ${project.status === "active"
                         ? styles.statusOnTrack
                         : styles.statusAtRisk
                       }`}
@@ -414,7 +423,7 @@ export default function DashboardClient() {
                         {initials}
                       </span>
                     ))}
-                    {project.teamExtra && (
+                    {(project.teamExtra ?? 0) > 0 && (
                       <span
                         className={`${styles.stackAvatar} ${styles.avatarCount}`}
                       >
@@ -425,14 +434,14 @@ export default function DashboardClient() {
 
                   <div className={styles.reportActionGroup}>
                     <div className={styles.reportMeta}>
-                      <span className={styles.reportLabel}>NEXT REPORT</span>
+                      <span className={styles.reportLabel}>REPORTS FILED</span>
                       <span className={styles.reportDue}>
-                        {project.reportDue}
+                        {project.reportCount}
                       </span>
                     </div>
 
                     <Link
-                      href="/dashboard/spg"
+                      href={`/dashboard/spg/${project.id}`}
                       className={styles.submitReportBtn}
                     >
                       Submit Report
@@ -441,6 +450,9 @@ export default function DashboardClient() {
                 </div>
               </article>
             ))}
+            {loading && <p>Loading project groups…</p>}
+            {!loading && !loadError && projects.length === 0 && <p>No current project groups assigned to you.</p>}
+            {loadError && <p role="alert">{loadError}</p>}
           </div>
         </section>
       </div>
@@ -505,16 +517,17 @@ export default function DashboardClient() {
               <span className={styles.widgetIcon}>
                 <MemberIcon name="events" size={18} />
               </span>
-              <h2 id="calendar-heading">October 2024</h2>
+              <h2 id="calendar-heading">{calendarMonth.toLocaleString("en-IN", { month: "long", year: "numeric" })}</h2>
             </div>
             <div className={styles.calendarNav}>
               <button
                 className={styles.calNavBtn}
                 aria-label="Previous month"
+                onClick={() => { setMonthOffset((value) => value - 1); setSelectedDay(null); }}
               >
                 <MemberIcon name="chevron-left" size={14} />
               </button>
-              <button className={styles.calNavBtn} aria-label="Next month">
+              <button className={styles.calNavBtn} aria-label="Next month" onClick={() => { setMonthOffset((value) => value + 1); setSelectedDay(null); }}>
                 <MemberIcon name="chevron-right" size={14} />
               </button>
             </div>
@@ -531,12 +544,11 @@ export default function DashboardClient() {
           </div>
 
           <div className={styles.daysGrid} role="grid">
-            {/* 1 empty slot for Monday offset */}
-            <span className={styles.dayMuted} aria-hidden="true" />
+            {Array.from({ length: mondayOffset }, (_, index) => <span key={`blank-${index}`} className={styles.dayMuted} aria-hidden="true" />)}
 
             {calendarDays.map((day) => {
               const isSelected = selectedDay === day;
-              const isEventDay = day === 22;
+              const isEventDay = eventDays.has(day);
               return (
                 <button
                   key={day}
@@ -548,7 +560,7 @@ export default function DashboardClient() {
                         ? styles.dayBordered
                         : ""
                     }`}
-                  aria-label={`October ${day}, 2024`}
+                  aria-label={`${calendarMonth.toLocaleString("en-IN", { month: "long" })} ${day}, ${calendarMonth.getFullYear()}`}
                   aria-pressed={isSelected}
                 >
                   {day}
@@ -564,8 +576,8 @@ export default function DashboardClient() {
           <Link
             href="/dashboard/events"
             className={styles.fabAdd}
-            aria-label="Create new event or ticket"
-            title="Create Event / Ticket"
+            aria-label="View events"
+            title="View events"
           >
             <MemberIcon name="plus" size={18} />
           </Link>

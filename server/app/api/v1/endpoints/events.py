@@ -53,6 +53,7 @@ from app.schemas.events import (
     SPGDecisionAction,
     SPGDecisionRequest,
     VenueInfo,
+    current_graduation_batches,
     WinnerAwardRequest,
     WinnerAwardResponse,
 )
@@ -189,20 +190,25 @@ def _check_member_eligibility(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"User {user_uid} is not an eligible club member",
         )
-    default_years = {1, 2, 3, 4}
+    legacy_default_years = {1, 2, 3, 4}
     batch_year = profile.get("batch_year")
+    allowed_years = set(eligibility.allowed_years)
+    if allowed_years == legacy_default_years:
+        # Existing events used 1–4 as the default before profiles stored
+        # graduation years. Keep those events open to the confirmed batches.
+        allowed_years.update(current_graduation_batches())
     years_restricted = (
         bool(eligibility.allowed_years)
-        and set(eligibility.allowed_years) != default_years
+        and set(eligibility.allowed_years) != legacy_default_years
     )
     if (
         batch_year is not None
-        and eligibility.allowed_years
-        and batch_year not in eligibility.allowed_years
+        and allowed_years
+        and batch_year not in allowed_years
     ) or (batch_year is None and years_restricted):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"User {user_uid} is not in an allowed academic year",
+            detail=f"User {user_uid} is not in an allowed graduation batch",
         )
     allowed_tiers = set(eligibility.allowed_tiers)
     if (

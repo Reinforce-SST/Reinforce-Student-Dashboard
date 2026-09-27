@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useMember } from "@/lib/useMember";
 import { useAdminMode } from "@/lib/useAdminMode";
 import { api } from "@/lib/api";
+import { getEventGraduationBatches } from "@/lib/eventsData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import styles from "./Admin.module.css";
 
@@ -102,6 +103,8 @@ export default function AdminClient() {
   const [eventEndDateTime, setEventEndDateTime] = useState("");
   const [eventRegDeadline, setEventRegDeadline] = useState("");
   const [eventAccessScope, setEventAccessScope] = useState("open_to_all");
+  const eventGraduationBatches = getEventGraduationBatches();
+  const [eventEligibleBatches, setEventEligibleBatches] = useState<number[]>(getEventGraduationBatches);
   const [eventParticipationMode, setEventParticipationMode] = useState<"solo" | "team">("solo");
   const [eventMinTeamSize, setEventMinTeamSize] = useState(1);
   const [eventMaxTeamSize, setEventMaxTeamSize] = useState(1);
@@ -126,7 +129,6 @@ export default function AdminClient() {
   const [awardReason, setAwardReason] = useState("");
   const [awardType, setAwardType] = useState("project_milestone");
   const [awardLoading, setAwardLoading] = useState(false);
-  const [awardMessage, setAwardMessage] = useState<string | null>(null);
 
   // Banner File Upload Handler
   const handleBannerFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -175,6 +177,14 @@ export default function AdminClient() {
       setSubmitError("Title and description are required.");
       return;
     }
+    if (bannerBadge.trim() || bannerCtaText.trim() || bannerCtaLink.trim()) {
+      setSubmitError("Custom badge and CTA fields are preview-only until the backend supports them. Clear these fields to publish with the standard event link.");
+      return;
+    }
+    if (bannerUrl.startsWith("data:")) {
+      setSubmitError("Upload the banner to a hosted image URL first; this image is only a local preview.");
+      return;
+    }
 
     setIsSubmitting(true);
     setSubmitSuccess(null);
@@ -197,8 +207,6 @@ export default function AdminClient() {
           start_time: startDateObj.toISOString(),
           end_time: endDateObj ? endDateObj.toISOString() : undefined,
           duration_minutes: durationMinutes,
-          display_date: bannerDateDisplay,
-          badge: bannerBadge.toUpperCase(),
         },
         banner_url: bannerUrl || undefined,
         status: "published" as const,
@@ -220,6 +228,22 @@ export default function AdminClient() {
     e.preventDefault();
     if (!eventTitle.trim() || !eventSummary.trim()) {
       setSubmitError("Event title and summary description are required.");
+      return;
+    }
+    if (eventEligibleBatches.length === 0) {
+      setSubmitError("Select at least one eligible graduation batch.");
+      return;
+    }
+    if (eventEligibleBatches.some((batch) => !getEventGraduationBatches().includes(batch))) {
+      setSubmitError("The eligible batches have changed. Reload this page and review your selection.");
+      return;
+    }
+    if (eventBannerUrl.startsWith("data:")) {
+      setSubmitError("Upload the poster to a hosted image URL first; this image is only a local preview.");
+      return;
+    }
+    if (!["research", "product", "kaggle", "misc", "all"].includes(eventTrack)) {
+      setSubmitError("This event track is not supported by the backend yet. Choose Research, Product, Kaggle, or General Community.");
       return;
     }
 
@@ -255,7 +279,7 @@ export default function AdminClient() {
         },
         eligibility: {
           access_scope: eventAccessScope,
-          allowed_years: [1, 2, 3, 4],
+          allowed_years: eventEligibleBatches,
           allowed_tiers: ["beginner", "advanced", "all"],
           allowed_tracks: ["all"],
           is_mandatory: false,
@@ -295,24 +319,42 @@ export default function AdminClient() {
   const handleAwardMerit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!awardEmail.trim()) {
-      setAwardMessage("Student email is required.");
+      setSubmitError("Student email or user ID is required.");
       return;
     }
     setAwardLoading(true);
-    setAwardMessage(null);
+    setSubmitSuccess(null);
+    setSubmitError(null);
     try {
-      await api.adminAwardContribution(token || "", {
-        user_id_or_email: awardEmail.trim(),
+      const recipient = await api.getUserProfile(token || "", awardEmail.trim());
+      if (!recipient.id) throw new Error("The member could not be resolved to a user ID.");
+      const category = {
+        project_milestone: "project_work",
+        open_source_pr: "project_work",
+        workshop_lead: "teaching",
+        community_support: "service",
+        attendance: "other",
+      }[awardType] || "other";
+      await api.adminAwardContribution(token || "", recipient.id, {
+        track: "misc",
+        category,
+        title: {
+          project_milestone: "Project milestone",
+          open_source_pr: "Open source pull request",
+          workshop_lead: "Workshop speaker or lead",
+          community_support: "Community support",
+          attendance: "Event attendance",
+        }[awardType] || "Administrative merit award",
         points: Number(awardPoints),
-        type: awardType,
         description: awardReason || "Administrative merit award",
+        occurred_at: new Date().toISOString(),
       });
-      setAwardMessage(`Successfully awarded ${awardPoints} merits to ${awardEmail}!`);
+      setSubmitSuccess(`Successfully awarded ${awardPoints} merits to ${awardEmail}!`);
       setAwardEmail("");
       setAwardReason("");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to award merit points.";
-      setAwardMessage(msg);
+      setSubmitError(msg);
     } finally {
       setAwardLoading(false);
     }
@@ -347,7 +389,7 @@ export default function AdminClient() {
             <span className={styles.adminBadge}>Admin Mode</span>
             <span className={styles.liveIndicator}>
               <span className={styles.liveDot} />
-              Live Backend Connected
+              Club administration
             </span>
           </div>
           <h1 className={styles.adminTitle}>Club Command Center</h1>
@@ -910,6 +952,26 @@ export default function AdminClient() {
                   className={styles.formInput}
                   min={0}
                 />
+              </div>
+            </div>
+
+            <div className={styles.formGroup}>
+              <span className={styles.formLabel}>Eligible graduation batches</span>
+              <div className={styles.batchOptions}>
+                {eventGraduationBatches.map((batch) => (
+                  <label key={batch} className={styles.batchOption}>
+                    <input
+                      type="checkbox"
+                      checked={eventEligibleBatches.includes(batch)}
+                      onChange={(e) => setEventEligibleBatches((selected) =>
+                        e.target.checked
+                          ? eventGraduationBatches.filter((year) => selected.includes(year) || year === batch)
+                          : selected.filter((year) => year !== batch)
+                      )}
+                    />
+                    {batch}
+                  </label>
+                ))}
               </div>
             </div>
 

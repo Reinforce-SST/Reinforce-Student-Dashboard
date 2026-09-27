@@ -5,7 +5,7 @@ import Link from "next/link";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import { useMember } from "@/lib/useMember";
 import { api } from "@/lib/api";
-import { type SPGRecord, fallbackSpgs } from "@/lib/spgData";
+import { type SPGRecord } from "@/lib/spgData";
 import styles from "./SpgManagement.module.css";
 
 export default function SpgManagementClient() {
@@ -14,66 +14,43 @@ export default function SpgManagementClient() {
   const [activeStatus, setActiveStatus] = useState<"ALL" | "ACTIVE" | "COMPLETED" | "ARCHIVED">("ALL");
   const [selectedTrack, setSelectedTrack] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [spgs, setSpgs] = useState<SPGRecord[]>(fallbackSpgs);
-  const [loading, setLoading] = useState(false);
+  const [spgs, setSpgs] = useState<SPGRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   // Fetch SPGs from Backend API
   const fetchSpgs = useCallback(async () => {
     if (!token) return;
     try {
       setLoading(true);
+      setLoadError("");
       const res = await api.listSpgs(token, {
         track: selectedTrack !== "all" ? selectedTrack : undefined,
-      }).catch(() => null);
-
-      if (res && res.items && res.items.length > 0) {
-        setSpgs(res.items);
-      }
+      });
+      setSpgs(res.items);
     } catch {
-      // Retain fallback data
+      setSpgs([]);
+      setLoadError("Project groups could not be loaded. Try again.");
     } finally {
       setLoading(false);
     }
   }, [token, selectedTrack]);
 
   useEffect(() => {
-    fetchSpgs();
+    void Promise.resolve().then(fetchSpgs);
   }, [fetchSpgs]);
 
   // Current member identifier
-  const myId = profile?.id || profile?.email || "";
+  const myId = profile?.id || "";
 
   const isUserMember = (cluster: SPGRecord) => {
-    if (!myId) return true; // fallback preview
-    const matchesLead = cluster.lead_id === myId;
-    const matchesMembers = cluster.member_ids?.includes(myId);
-    const matchesEmail =
-      Boolean(profile?.email) &&
-      cluster.member_ids?.some(
-        (m) => m.toLowerCase() === profile.email.toLowerCase()
-      );
-    const matchesName =
-      Boolean(profile?.full_name) &&
-      Boolean(cluster.member_names) &&
-      Object.values(cluster.member_names || {}).some(
-        (n) => n.toLowerCase() === profile.full_name.toLowerCase()
-      );
-
-    // Fallback: If user is default student demo, Julian Chen's SPGs match
-    const isDemoJulian = myId === "usr_julian_chen" || !profile?.id;
-    const isJulianSpg =
-      cluster.lead_id === "usr_julian_chen" ||
-      cluster.member_ids?.includes("usr_julian_chen");
-
-    return matchesLead || matchesMembers || matchesEmail || matchesName || (isDemoJulian && isJulianSpg);
+    if (!myId) return false;
+    return cluster.lead_id === myId || cluster.member_ids?.includes(myId);
   };
 
   const isUserLead = (cluster: SPGRecord) => {
     if (!myId) return false;
-    if (cluster.lead_id === myId) return true;
-    if (profile?.full_name && cluster.lead_name?.toLowerCase() === profile.full_name.toLowerCase()) return true;
-    if (myId === "usr_julian_chen" && cluster.lead_id === "usr_julian_chen") return true;
-    return false;
+    return cluster.lead_id === myId;
   };
 
   // Counts for scope tabs
@@ -169,6 +146,7 @@ export default function SpgManagementClient() {
 
   return (
     <div className={styles.pageContainer}>
+      {loadError && <p role="alert">{loadError} <button type="button" onClick={fetchSpgs}>Retry</button></p>}
       {/* Top Header Row with Title & Scope Switcher */}
       <div className={styles.headerRow}>
         <div className={styles.titleGroup}>
@@ -337,7 +315,9 @@ export default function SpgManagementClient() {
 
       {/* 3-Column Projects Grid */}
       <section className={styles.projectsGrid} aria-label="Active Project Clusters">
-        {filteredClusters.length === 0 ? (
+        {loading ? (
+          <div className={styles.emptyStateCard}>Loading project groups…</div>
+        ) : filteredClusters.length === 0 ? (
           <div className={styles.emptyStateCard}>
             <div className={styles.emptyStateIcon}>
               <MemberIcon name="users" size={24} />

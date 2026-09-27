@@ -12,7 +12,7 @@ import { type LeaderboardEntry } from "@/lib/leaderboardData";
 import styles from "./Leaderboard.module.css";
 
 export default function LeaderboardClient() {
-  const { token, profile: currentProfile } = useMember();
+  const { token } = useMember();
   const [viewMode, setViewMode] = useState<"LEADERBOARD" | "DIRECTORY">("LEADERBOARD");
   const [selectedTrack, setSelectedTrack] = useState<"total" | "research" | "product" | "kaggle">("total");
   const [selectedTier, setSelectedTier] = useState<string>("all");
@@ -47,7 +47,7 @@ export default function LeaderboardClient() {
 
 
   useEffect(() => {
-    fetchDirectoryData();
+    void Promise.resolve().then(fetchDirectoryData);
   }, [fetchDirectoryData]);
 
   // Compute leaderboard entries sorted by selected track score

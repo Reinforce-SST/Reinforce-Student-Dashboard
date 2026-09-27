@@ -54,6 +54,12 @@ the cached per-track `points` map. `is_admin` in this profile is display metadat
 only; API authorization comes exclusively from the verified Firebase
 `admin == true` custom claim.
 
+`batch_year` is the four-digit graduation year. New event records keep the legacy
+field name `eligibility.allowed_years`, but its values are graduation years. The
+four choices advance on July 1 in the `Asia/Kolkata` timezone. New event records
+keep the choices saved when they were published. Older events with the former
+default `[1, 2, 3, 4]` are interpreted as open to the current four cohorts.
+
 ## `discord_link_tokens/{sha256(token)}`
 
 YUVI issues a private, short-lived `/auth#link_token=...` URL. The browser sends
