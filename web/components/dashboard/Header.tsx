@@ -19,6 +19,18 @@ const titles: Record<string, string> = {
   "/profile": "Member Profile",
 };
 
+const mobileTitles: Record<string, string> = {
+  "": "Dashboard",
+  spg: "SPGs",
+  tickets: "Tickets",
+  events: "Events",
+  articles: "Articles",
+  ideas: "Ideas",
+  leaderboard: "Leaderboard",
+  admin: "Admin",
+  profile: "Profile",
+};
+
 export default function Header({
   onMenu,
   menuOpen,
@@ -31,6 +43,8 @@ export default function Header({
   const [searchQuery, setSearchQuery] = useState("");
 
   const pageTitle = titles[pathname] || "Dashboard Overview";
+  const section = pathname === "/profile" ? "profile" : pathname.split("/")[2] || "";
+  const mobileTitle = mobileTitles[section] || "Dashboard";
 
   const initials = profile?.full_name
     ? profile.full_name
@@ -50,13 +64,16 @@ export default function Header({
         <button
           className={styles.menuBtn}
           onClick={onMenu}
-          aria-label="Open navigation"
+          aria-label={menuOpen ? "Close navigation" : "Open navigation"}
           aria-expanded={menuOpen}
           aria-controls="member-drawer"
         >
           <MemberIcon name="menu" size={20} />
         </button>
-        <h1 className={styles.pageTitle}>{pageTitle}</h1>
+        <h1 className={styles.pageTitle}>
+          <span className={styles.desktopTitle}>{pageTitle}</span>
+          <span className={styles.mobileTitle}>{mobileTitle}</span>
+        </h1>
       </div>
 
       <div className={styles.right}>

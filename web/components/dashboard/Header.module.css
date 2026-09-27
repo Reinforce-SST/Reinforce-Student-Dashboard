@@ -34,6 +34,10 @@
   margin: 0;
 }
 
+.mobileTitle {
+  display: none;
+}
+
 .right {
   display: flex;
   align-items: center;
@@ -166,6 +170,13 @@
   font-size: 0.75rem;
 }
 
+.menuBtn:focus-visible,
+.iconButton:focus-visible,
+.userPill:focus-visible {
+  outline: 2px solid var(--brand, #E5B731);
+  outline-offset: 2px;
+}
+
 @media (max-width: 900px) {
   .header {
     padding: 14px 20px;
@@ -178,12 +189,56 @@
   }
 }
 
-@media (max-width: 360px) {
-  .header { gap: 8px; padding: 12px; }
-  .left { gap: 6px; min-width: 0; }
-  .pageTitle { font-size: 1rem; }
-  .right { gap: 7px; }
-  .userPill { padding: 4px; }
+@media (max-width: 700px) {
+  .header {
+    height: 60px;
+    gap: 8px;
+    padding: 10px 16px;
+  }
+  .left {
+    flex: 1;
+    gap: 8px;
+    min-width: 0;
+  }
+  .menuBtn {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: 9px;
+  }
+  .pageTitle {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 1rem;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .desktopTitle { display: none; }
+  .mobileTitle { display: inline; }
+  .right {
+    flex: none;
+    gap: 6px;
+  }
+  .iconButton {
+    flex: none;
+    width: 40px;
+    height: 40px;
+  }
+  .userPill {
+    flex: none;
+    width: 40px;
+    height: 40px;
+    padding: 2px;
+    border: 0;
+    background: transparent;
+  }
   .userText { display: none; }
-  .userAvatar { flex: none; }
+  .userAvatar {
+    width: 36px;
+    height: 36px;
+    flex: none;
+  }
 }
