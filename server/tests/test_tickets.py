@@ -14,12 +14,8 @@ DID = "123456789012345678"
 
 class TicketTests(unittest.TestCase):
     def setUp(self):
-        alias = {"firebase_uid": USER["uid"], "email": USER["email"],
-                 "discord_id": DID, "discord_link_version": 1}
         self.db = NestedFirestore({
             "users/uid-1": {"email": USER["email"], "discord_id": DID, "discord_link_version": 1},
-            "users/" + USER["email"]: alias,
-            "users/" + DID: alias,
         })
         patcher = patch.object(tickets, "db", self.db)
         patcher.start()

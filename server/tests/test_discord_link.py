@@ -34,11 +34,13 @@ class LinkTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             DiscordVerifyRequest(discord_id=DID)
 
-    def test_token_links_canonical_user_and_both_bot_aliases(self):
+    def test_token_links_canonical_user(self):
         self.consume()
         self.assertEqual(self.db.data["users/uid-1"]["discord_id"], DID)
-        self.assertEqual(self.db.data["users/" + USER["email"]]["firebase_uid"], "uid-1")
-        self.assertEqual(self.db.data["users/" + DID]["discord_link_version"], 1)
+        self.assertEqual(self.db.data["users/uid-1"]["discord_link_version"], 1)
+        self.assertTrue(self.db.data["users/uid-1"]["is_verified"])
+        self.assertNotIn("users/" + USER["email"], self.db.data)
+        self.assertNotIn("users/" + DID, self.db.data)
         self.assertEqual(linked_discord_id(self.db, "uid-1", USER["email"]), DID)
         self.consume()
         with self.assertRaises(HTTPException) as error:
@@ -51,15 +53,9 @@ class LinkTests(unittest.TestCase):
             self.consume()
         self.assertEqual(len(self.db.data), 1)
 
-    def test_conflicting_alias_blocks_link(self):
-        self.db.data["users/" + DID] = {"email": "other@sst.scaler.com"}
-        with self.assertRaises(HTTPException):
-            self.consume()
-        self.assertIsNone(self.db.data[TOKEN_PATH]["consumed_by"])
-
-    def test_existing_verified_email_alias_cannot_be_overwritten(self):
-        self.db.data["users/" + USER["email"]] = {
-            "email": USER["email"], "firebase_uid": USER["uid"],
+    def test_existing_verified_member_cannot_be_overwritten_by_different_discord(self):
+        self.db.data["users/uid-1"] = {
+            "email": USER["email"], "id": USER["uid"],
             "discord_id": "999999999999999999", "discord_link_version": 1,
         }
         with self.assertRaises(HTTPException) as error:
@@ -67,27 +63,21 @@ class LinkTests(unittest.TestCase):
         self.assertEqual(error.exception.status_code, 409)
         self.assertIsNone(self.db.data[TOKEN_PATH]["consumed_by"])
 
-    def test_unproven_and_one_sided_links_do_not_authorize_tickets(self):
+    def test_unproven_links_do_not_authorize(self):
         self.db.data["users/uid-1"] = {"email": USER["email"], "discord_id": DID, "is_verified": True}
         self.assertIsNone(linked_discord_id(self.db, "uid-1", USER["email"]))
         self.db.data["users/uid-1"]["discord_link_version"] = 1
-        self.assertIsNone(linked_discord_id(self.db, "uid-1", USER["email"]))
+        self.assertEqual(linked_discord_id(self.db, "uid-1", USER["email"]), DID)
+        self.assertIsNone(linked_discord_id(self.db, "uid-1", "wrong@sst.scaler.com"))
 
     def test_profile_fields_survive_linking_and_unlinking_invalidates_retry(self):
         self.db.data["users/uid-1"] = {"email": USER["email"], "full_name": "Saved", "skills": ["Python"]}
         self.consume()
         self.assertEqual(self.db.data["users/uid-1"]["skills"], ["Python"])
+        self.assertEqual(linked_discord_id(self.db, "uid-1", USER["email"]), DID)
         transaction = Transaction()
         unlink_member(transaction, self.db, USER, NOW)
         transaction.commit()
         self.assertIsNone(linked_discord_id(self.db, "uid-1", USER["email"]))
         with self.assertRaises(HTTPException):
             self.consume()
-
-    def test_unlink_does_not_delete_someone_elses_alias(self):
-        self.db.data["users/uid-1"] = {"email": USER["email"], "discord_id": DID}
-        self.db.data["users/" + DID] = {"email": "other@sst.scaler.com"}
-        transaction = Transaction()
-        unlink_member(transaction, self.db, USER, NOW)
-        transaction.commit()
-        self.assertEqual(self.db.data["users/" + DID]["email"], "other@sst.scaler.com")

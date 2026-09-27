@@ -205,14 +205,6 @@ def update_me(
         updates["social_links"] = payload.social_links.model_dump()
 
     doc_ref.set(updates, merge=True)
-    # YUVI still reads the email alias for display, but the UID document is
-    # authoritative. Keep the bot's visible name in sync when the user edits it.
-    if payload.full_name is not None:
-        email = (current_user.get("email") or "").lower().strip()
-        alias_ref = db.collection(USERS_COLLECTION).document(email)
-        alias = alias_ref.get().to_dict() or {}
-        if alias.get("firebase_uid") == uid:
-            alias_ref.set({"full_name": updates["full_name"]}, merge=True)
     updated = doc_ref.get().to_dict() or {}
     return _to_user_me(uid, updated)
 
