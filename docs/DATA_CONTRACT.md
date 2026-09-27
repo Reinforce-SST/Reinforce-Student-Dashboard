@@ -137,9 +137,12 @@ omitted from the member list and detail responses.
 | `category` | Label |
 |---|---|
 | `spg_registration` | 🚀 SPG Registration / Modification |
-| `resource_request` | ⚡ Resource Request |
+| `compute_resource_request` | ⚡ Compute Resource Request |
+| `learning_resource_request` | 📚 Learning Resource Request |
+| `resource_request` | ⚡ Resource Request (legacy alias) |
 | `support` | 💬 Support & General Inquiries |
 | `idea_jar` | 💡 Idea Jar & Suggestions |
+| `feedback` | 📝 General Feedback & Suggestions |
 | `report` | 🛡️ Report Issue / Misconduct |
 | `misc` | 📦 General / Misc |
 
@@ -217,9 +220,12 @@ ampersands**, not snake_case identifiers. They come from the Discord modal label
 | Category | Keys, in intended order |
 |---|---|
 | `spg_registration` | `Project Name & Track`, `Team Members`, `Duration & Frequency`, `Summary & Goals` |
+| `compute_resource_request` | `SPG Name`, `Resources Requested`, `Progress Proof`, `Justification` |
+| `learning_resource_request` | `Topic / Subject Area`, `Resource Format`, `Target Audience / Track`, `Description & Suggested Links` |
 | `resource_request` | `SPG Name`, `Resources Requested`, `Progress Proof`, `Justification` |
 | `idea_jar` | `Idea Title`, `Track`, `Overview` |
 | `support` | `Subject`, `Details` |
+| `feedback` | `Feedback Topic`, `Comments` |
 | `misc` | `Subject`, `Details` |
 | `report` | `Incident Summary`, `Report Details` |
 

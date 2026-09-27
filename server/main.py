@@ -24,6 +24,8 @@ origins = [
     "http://localhost:5173",
     "https://reinforce-student-dashboard-xi.vercel.app",
     "https://reinforce-student-dashboard.vercel.app",
+    "https://reinforce-sst.com",
+    "https://www.reinforce-sst.com",
     settings.frontend_url.rstrip("/"),
 ]
 
