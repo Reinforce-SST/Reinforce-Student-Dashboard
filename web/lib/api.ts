@@ -681,14 +681,22 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
-  adminDirectory: (token: string, params: { search?: string; page?: number; page_size?: number } = {}) => {
+  adminDirectory: async (token: string, params: { search?: string; page?: number; page_size?: number } = {}) => {
     const query = new URLSearchParams();
     if (params.search) query.set("search", params.search);
     if (params.page) query.set("page", String(params.page));
     if (params.page_size) query.set("page_size", String(params.page_size));
-    return request<{ items: StudentProfile[]; total: number; page: number; page_size: number; has_more: boolean }>(
-      `/users/admin-directory?${query.toString()}`, token
-    );
+    try {
+      return await request<{ items: StudentProfile[]; total: number; page: number; page_size: number; has_more: boolean }>(
+        `/users/admin-directory?${query.toString()}`,
+        token
+      );
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        return api.browseUsers(token, params);
+      }
+      throw err;
+    }
   },
 
   adminAwardContribution: (token: string, userId: string, payload: Record<string, unknown>) =>
