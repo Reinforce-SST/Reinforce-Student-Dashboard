@@ -81,39 +81,25 @@ a reviewer reads the ticket and decides
         └── approved ──▶ create_spg()  ──▶ the SPG appears in the dashboard
 ```
 
-There is **one** creation function, `app/services/spgs.py::create_spg`. Whatever
-triggers it, the rules are applied in one place.
+### Registration Pipeline & Schema Validation
 
-### Status: **BLOCKED**
+The unified registration ticket flow connects both the **Web Dashboard** (`/dashboard/tickets?type=spg_registration`) and the **YUVI Discord Bot** (`SPGModal`):
 
-The registration form, the ticket it should raise, and the approval that reads
-it are **not built**, and there is deliberately **no HTTP route that creates an
-SPG**.
-
-An earlier revision of this branch exposed `POST /spgs/approvals` as a stand-in
-for the reviewer's decision. It was removed before review: it accepted any
-`source_ticket_id` — fabricated, missing, or naming an open or rejected ticket
-— and never opened the `tickets` collection at all. An endpoint that carries
-the name of an approval it cannot perform is a second creation path, which is
-exactly what this workflow is supposed to avoid.
-
-What **is** implemented is `create_spg()`, an internal service with all the
-rules and the idempotency in it. When the ticket domain lands, its approval
-handler calls it:
+1. **Submission**:
+   - Web GUI provides real-time directory search for designated team leader and collaborators, defaulting the leader to the submitter with quick reset.
+   - Discord modal accepts designated leader UID and newline-separated member UIDs.
+   - Both pathways submit to `POST /api/v1/tickets` (or write to `tickets` with backend schema validation).
+2. **Standardization & Safety Rules**:
+   - **Leader**: Mandatory single UID. Verified in Firestore; `is_member` must be `true`.
+   - **Members**: Optional list of UIDs, capped at a maximum of 6 members (excluding leader).
+   - **Lifespan & Cadence**: Separated integer fields in days: `duration_days` and `frequency_days`.
+   - **Track**: `research`, `product`, `kaggle`, or `general` without legacy color designations.
+3. **Approval**:
+   - Internal service `create_spg()` remains the sole creation authority when an admin approves the ticket.
 
 ```python
 create_spg(db, create=SPGCreate(..., source_ticket_id=ticket.id), admin_id=reviewer_uid)
 ```
-
-The ticket domain does not exist in this repository: tickets are written by the
-[YUVI bot](https://github.com/Reinforce-SST/YUVI) into the shared `tickets`
-collection, and the API's ticket module is a read-only mirror that lives on a
-frontend branch rather than on `backend`. Adding a website write path into that
-collection changes a contract shared with the bot, which needs a decision
-first.
-
-Until then an SPG can only be created from code — a deployment step or a
-console script — which is a deliberate constraint, not an oversight.
 
 ### Re-validation at approval
 

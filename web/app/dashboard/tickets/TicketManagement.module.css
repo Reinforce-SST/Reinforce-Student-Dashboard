@@ -974,3 +974,445 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ==========================================================================
+   SPG CREATION: Leader & Team Member Directory Picker
+   ========================================================================== */
+.leaderCard {
+  background: #111114;
+  border: 1px solid #23232a;
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  transition: border-color 0.15s ease;
+}
+
+.leaderCardWarning {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.leaderInfo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.leaderAvatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #23232c;
+  color: #e5b731;
+  font-size: 13px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 1px solid #333340;
+}
+
+.leaderAvatarImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.leaderMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.leaderName {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.leaderEmail {
+  font-size: 11.5px;
+  color: #8e8e93;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.leaderBadges {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.leaderActionBtns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.leaderChangeBtn {
+  background: #1f1f26;
+  border: 1px solid #30303c;
+  color: #d1d1d6;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.leaderChangeBtn:hover {
+  background: #2a2a34;
+  color: #ffffff;
+  border-color: #e5b731;
+}
+
+.leaderResetBtn {
+  background: transparent;
+  border: 1px solid rgba(229, 183, 49, 0.3);
+  color: #e5b731;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.leaderResetBtn:hover {
+  background: rgba(229, 183, 49, 0.1);
+}
+
+.recipientSearchContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #0f0f12;
+  border: 1px solid #202026;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.recipientSearchBox {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.recipientSearchIcon {
+  position: absolute;
+  left: 12px;
+  color: #71717a;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.recipientSearchInput {
+  width: 100%;
+  background: #141416;
+  border: 1px solid #282830;
+  border-radius: 8px;
+  padding: 9px 36px 9px 36px;
+  color: #ffffff;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.recipientSearchInput:focus {
+  border-color: #e5b731;
+}
+
+.clearSearchBtn {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  color: #8e8e93;
+  cursor: pointer;
+  padding: 4px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.clearSearchBtn:hover {
+  color: #ffffff;
+}
+
+.selectedChipsTray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 110px;
+  overflow-y: auto;
+  padding: 6px 8px;
+  background: #141417;
+  border: 1px solid #25252c;
+  border-radius: 8px;
+}
+
+.recipientChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #202026;
+  border: 1px solid #32323c;
+  color: #e4e4e7;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 8px 3px 4px;
+  border-radius: 999px;
+  animation: fadeIn 0.15s ease;
+}
+
+.chipAvatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #e5b731;
+  color: #121214;
+  font-size: 9px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.chipAvatarImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.chipRemoveBtn {
+  background: none;
+  border: none;
+  color: #a1a1aa;
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 13px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+}
+
+.chipRemoveBtn:hover {
+  color: #ef4444;
+}
+
+.candidateListContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: #141417;
+  border: 1px solid #25252c;
+  border-radius: 8px;
+  padding: 6px;
+}
+
+.candidateRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  user-select: none;
+}
+
+.candidateRow:hover {
+  background: #1c1c22;
+}
+
+.candidateRowSelected {
+  background: rgba(229, 183, 49, 0.08);
+  border: 1px solid rgba(229, 183, 49, 0.22);
+}
+
+.candidateCheckbox {
+  accent-color: #e5b731;
+  cursor: pointer;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.candidateAvatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #26262e;
+  color: #e5b731;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.candidateAvatarImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.candidateInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.candidateNameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.candidateName {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.candidateEmail {
+  font-size: 11px;
+  color: #8e8e93;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.candidateBadges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.candidateBadge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #24242c;
+  color: #a1a1aa;
+}
+
+.candidateBadgeMember {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.candidateBadgeAdmin {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.emptyCandidatesText {
+  text-align: center;
+  color: #71717a;
+  font-size: 12px;
+  padding: 20px 10px;
+}
+
+.manualAddBox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #202026;
+}
+
+.manualAddRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.manualAddInput {
+  flex: 1;
+  background: #141416;
+  border: 1px solid #282830;
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: #ffffff;
+  font-size: 12px;
+  outline: none;
+}
+
+.manualAddInput:focus {
+  border-color: #e5b731;
+}
+
+.manualAddBtn {
+  background: #1f1f26;
+  border: 1px solid #30303c;
+  color: #d1d1d6;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.manualAddBtn:hover:not(:disabled) {
+  background: #2a2a34;
+  color: #ffffff;
+  border-color: #e5b731;
+}
+
+.fieldHelper {
+  font-size: 11.5px;
+  color: #8e8e93;
+  margin-top: 3px;
+  display: block;
+}
+
+.nonMemberWarning {
+  font-size: 11.5px;
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  padding: 6px 10px;
+  border-radius: 6px;
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+

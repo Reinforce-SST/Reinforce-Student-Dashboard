@@ -217,12 +217,11 @@ not read this collection directly.
 
 ## `fields` — the category-specific payload
 
-`fields` is a free-form map. **Its keys are human-readable strings with spaces and
-ampersands**, not snake_case identifiers. They come from the Discord modal labels.
+`fields` is a free-form map. **Its keys include human-readable strings for UI display**, alongside normalized machine identifiers (`leader_uid`, `member_uids`, `duration_days`, `frequency_days`). They come from the dashboard and Discord ticket modals.
 
 | Category | Keys, in intended order |
 |---|---|
-| `spg_registration` | `Project Name & Track`, `Team Members`, `Duration & Frequency`, `Summary & Goals` |
+| `spg_registration` | `Project Name & Track`, `Track`, `Team Leader`, `Team Members`, `Duration (Days)`, `Report Frequency (Days)`, `Summary & Goals` |
 | `compute_resource_request` | `SPG Name`, `Resources Requested`, `Progress Proof`, `Justification` |
 | `learning_resource_request` | `Topic / Subject Area`, `Resource Format`, `Target Audience / Track`, `Description & Suggested Links` |
 | `resource_request` | `SPG Name`, `Resources Requested`, `Progress Proof`, `Justification` |
@@ -232,17 +231,34 @@ ampersands**, not snake_case identifiers. They come from the Discord modal label
 | `misc` | `Subject`, `Details` |
 | `report` | `Incident Summary`, `Report Details` |
 
+### `spg_registration` Validation & Field Rules
+
+An SPG registration ticket enforces strict validation on submission (`POST /api/v1/tickets`):
+1. **Team Leader (`leader_uid` / `Team Leader`)**:
+   - Mandatory single Firebase UID.
+   - Defaults in the web frontend to the creator's UID (`profile.id`), but can be reassigned to any member.
+   - **Club Member Guard**: The leader UID **must** exist in the `users` collection with `is_member: true`. Non-members are rejected with HTTP 400.
+2. **Team Members (`member_uids` / `Team Members`)**:
+   - Optional list of collaborator Firebase UIDs.
+   - **Cap**: Maximum of 6 members (excluding the team leader). Submissions with > 6 members are rejected with HTTP 400.
+   - In Discord, entered as newline-separated UIDs.
+   - The team leader UID cannot be duplicated in the team members list.
+3. **Duration (`duration_days` / `Duration (Days)`)**:
+   - Mandatory positive integer specifying roughly how long the SPG is expected to run, in **days**.
+4. **Report Frequency (`frequency_days` / `Report Frequency (Days)`)**:
+   - Mandatory positive integer specifying how frequently progress reports must be submitted, in **days**.
+5. **Track (`track` / `Track`)**:
+   - One of: `Research Track`, `Product Track`, `Kaggle Track`, or `General Track`. Colors (Red, Green, Blue) are omitted.
+
 > ### ⚠️ Firestore does not preserve map key order
 >
 > The bot builds `fields` as an ordered Python dict, but Firestore stores maps with
 > keys sorted **lexicographically**. Reading `fields` back and rendering
 > `Object.entries()` in order produces, for an SPG registration:
 >
-> `Duration & Frequency → Project Name & Track → Summary & Goals → Team Members`
+> `Duration (Days) → Project Name & Track → Report Frequency (Days) → ...`
 >
-> which is not the order the member filled it in, and reads as nonsense.
->
-> **The frontend must hold an explicit display-order list per category** and render
+> **The frontend must hold an explicit display-order list per category** (`FIELD_ORDER` in `web/lib/api.ts`) and render
 > against that, falling back to alphabetical for unknown keys so a new bot category
 > degrades gracefully instead of disappearing.
 

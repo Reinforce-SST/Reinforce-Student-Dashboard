@@ -262,6 +262,144 @@ def get_ticket(
     return _to_ticket_detail(doc.id, data)
 
 
+def _validate_spg_registration_fields(fields: Dict[str, Any], creator_uid: str) -> Dict[str, Any]:
+    """Validate SPG registration fields with strict checks:
+    - Leader must be mandatory, single UID, and an active club member (is_member == True)
+    - Team members optional, list of UIDs, max 6
+    - Duration and frequency must be separate fields, entered as positive integers in days
+    """
+    fields_copy = dict(fields or {})
+
+    # 1. Leader UID
+    raw_leader = (
+        fields_copy.get("leader_uid")
+        or fields_copy.get("Team Leader UID")
+        or fields_copy.get("team_leader")
+        or fields_copy.get("Team Leader")
+    )
+    leader_uid = str(raw_leader).strip() if raw_leader else creator_uid
+    if "(" in leader_uid and leader_uid.endswith(")"):
+        leader_uid = leader_uid.split("(")[-1].rstrip(")")
+
+    if not leader_uid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A team leader UID is mandatory for SPG registration.",
+        )
+
+    leader_doc = db.collection(USERS_COLLECTION).document(leader_uid).get()
+    if not leader_doc.exists:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Team leader UID '{leader_uid}' does not exist in the user directory.",
+        )
+    leader_data = leader_doc.to_dict() or {}
+    if not leader_data.get("is_member", False):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Team leader '{leader_data.get('full_name', leader_uid)}' must be an active club member (is_member: true).",
+        )
+
+    # 2. Team Members
+    raw_members = (
+        fields_copy.get("member_uids")
+        or fields_copy.get("Team Member UIDs")
+        or fields_copy.get("team_members")
+        or fields_copy.get("Team Members")
+    )
+    member_uids: List[str] = []
+    if isinstance(raw_members, list):
+        member_uids = [str(m).strip() for m in raw_members if str(m).strip()]
+    elif isinstance(raw_members, str) and raw_members.strip():
+        for line in raw_members.replace(",", "\n").splitlines():
+            item = line.strip()
+            if "(" in item and item.endswith(")"):
+                item = item.split("(")[-1].rstrip(")")
+            if item and item.lower() != "none":
+                member_uids.append(item)
+
+    # Deduplicate and exclude leader
+    deduped_members: List[str] = []
+    for m in member_uids:
+        if m != leader_uid and m not in deduped_members:
+            deduped_members.append(m)
+
+    if len(deduped_members) > 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An SPG may have at most 6 team members (excluding the team leader).",
+        )
+
+    # Validate that members exist
+    member_names: List[str] = []
+    for m_uid in deduped_members:
+        m_doc = db.collection(USERS_COLLECTION).document(m_uid).get()
+        if not m_doc.exists:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Team member UID '{m_uid}' does not exist in the user directory.",
+            )
+        m_data = m_doc.to_dict() or {}
+        m_name = m_data.get("full_name") or m_uid
+        member_names.append(f"{m_name} ({m_uid})")
+
+    # 3. Duration & Frequency
+    raw_duration = (
+        fields_copy.get("duration_days")
+        or fields_copy.get("Duration (Days)")
+        or fields_copy.get("duration")
+    )
+    if raw_duration is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Estimated duration in days is required.",
+        )
+    try:
+        duration_days = int(raw_duration)
+        if duration_days <= 0:
+            raise ValueError()
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Estimated duration must be a positive integer in days.",
+        )
+
+    raw_frequency = (
+        fields_copy.get("frequency_days")
+        or fields_copy.get("Report Frequency (Days)")
+        or fields_copy.get("frequency")
+    )
+    if raw_frequency is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Report frequency in days is required.",
+        )
+    try:
+        frequency_days = int(raw_frequency)
+        if frequency_days <= 0:
+            raise ValueError()
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Report frequency must be a positive integer in days.",
+        )
+
+    # 4. Standardize fields
+    fields_copy["leader_uid"] = leader_uid
+    fields_copy["Team Leader UID"] = leader_uid
+    leader_name = leader_data.get("full_name") or leader_uid
+    fields_copy["Team Leader"] = f"{leader_name} ({leader_uid})"
+    fields_copy["member_uids"] = deduped_members
+    fields_copy["Team Member UIDs"] = deduped_members
+    fields_copy["Team Members"] = ", ".join(member_names) if member_names else "None"
+    fields_copy["duration_days"] = duration_days
+    fields_copy["Duration (Days)"] = duration_days
+    fields_copy["frequency_days"] = frequency_days
+    fields_copy["Report Frequency (Days)"] = frequency_days
+
+    return fields_copy
+
+
 @router.post(
     "",
     response_model=TicketDetail,
@@ -277,6 +415,11 @@ def create_ticket(
     now = now_iso()
     ticket_id = f"tkt_{uuid.uuid4().hex[:8]}"
 
+    if ticket_in.category == TicketCategory.SPG_REGISTRATION:
+        validated_fields = _validate_spg_registration_fields(ticket_in.fields, uid)
+    else:
+        validated_fields = ticket_in.fields
+
     ticket_doc: Dict[str, Any] = {
         "id": ticket_id,
         "category": ticket_in.category.value,
@@ -285,7 +428,7 @@ def create_ticket(
         "status": TicketStatus.OPEN.value,
         "priority": TicketPriority.MEDIUM.value,  # System default: cannot be set by user
         "spg_id": ticket_in.spg_id,
-        "fields": ticket_in.fields,
+        "fields": validated_fields,
         "created_by_uid": uid,
         "assigned_to_uid": None,
         "closed_by_uid": None,

@@ -95,6 +95,7 @@ def _to_user_public(uid: str, data: Dict[str, Any]) -> UserPublicResponse:
 
     return UserPublicResponse(
         id=uid,
+        email=data.get("email"),
         full_name=data.get("full_name") or "Club Member",
         avatar_url=data.get("avatar_url"),
         bio=data.get("bio"),
@@ -517,7 +518,7 @@ def list_users(
     tier: Optional[MemberTier] = Query(None, description="Filter by tier"),
     is_member: Optional[bool] = Query(None, description="Filter by club member status"),
     page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(20, ge=1, le=50, description="Items per page"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
 ) -> UserListResponse:
     """Search and browse member directory with filters."""
     docs = db.collection(USERS_COLLECTION).stream()
@@ -549,9 +550,11 @@ def list_users(
         if search:
             s = search.lower().strip()
             name_match = s in public_user.full_name.lower()
+            email_match = s in (public_user.email or "").lower()
+            id_match = s in public_user.id.lower()
             skill_match = any(s in sk.lower() for sk in public_user.skills)
             bio_match = s in (public_user.bio or "").lower()
-            if not (name_match or skill_match or bio_match):
+            if not (name_match or email_match or id_match or skill_match or bio_match):
                 continue
 
         all_users.append(public_user)

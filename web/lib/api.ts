@@ -268,7 +268,16 @@ type ApiTicketMessage = {
 };
 
 const FIELD_ORDER: Partial<Record<TicketCategory, string[]>> = {
-  spg_registration: ["Project Name & Track", "Team Members", "Duration & Frequency", "Summary & Goals"],
+  spg_registration: [
+    "Project Name & Track",
+    "Track",
+    "Team Leader",
+    "Team Members",
+    "Duration (Days)",
+    "Report Frequency (Days)",
+    "Summary & Goals",
+    "Duration & Frequency",
+  ],
   compute_resource_request: ["SPG Name", "Resources Requested", "Progress Proof", "Justification"],
   learning_resource_request: ["Topic / Subject Area", "Resource Format", "Target Audience / Track", "Description & Suggested Links"],
   resource_request: ["SPG Name", "Resources Requested", "Progress Proof", "Justification"],

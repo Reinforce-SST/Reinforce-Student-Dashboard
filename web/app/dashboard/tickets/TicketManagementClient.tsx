@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import MemberIcon, { type IconName } from "@/components/dashboard/MemberIcon";
 import { useMember } from "@/lib/useMember";
-import { api, type ApiTicketDetail, type TicketSummary } from "@/lib/api";
+import { api, type ApiTicketDetail, type TicketSummary, type StudentProfile } from "@/lib/api";
 import { loadAllSpgs } from "@/lib/memberData";
 import type { SPGRecord } from "@/lib/spgData";
 import styles from "./TicketManagement.module.css";
@@ -210,8 +210,22 @@ export default function TicketManagementClient() {
   const [memberSpgsError, setMemberSpgsError] = useState("");
 
   const [spgTrack, setSpgTrack] = useState<"research" | "product" | "kaggle" | "general">("research");
-  const [spgMembers, setSpgMembers] = useState("");
-  const [spgDuration, setSpgDuration] = useState("");
+  const [spgLeader, setSpgLeader] = useState<StudentProfile | null>(null);
+  const [isChangingLeader, setIsChangingLeader] = useState(false);
+  const [leaderSearch, setLeaderSearch] = useState("");
+  const [leaderCandidates, setLeaderCandidates] = useState<StudentProfile[]>([]);
+  const [leaderLoading, setLeaderLoading] = useState(false);
+
+  const [selectedTeamMembers, setSelectedTeamMembers] = useState<Record<string, StudentProfile>>({});
+  const [memberSearch, setMemberSearch] = useState("");
+  const [memberCandidates, setMemberCandidates] = useState<StudentProfile[]>([]);
+  const [memberCandidatesLoading, setMemberCandidatesLoading] = useState(false);
+  const [manualMemberInput, setManualMemberInput] = useState("");
+  const [manualMemberLoading, setManualMemberLoading] = useState(false);
+  const [manualMemberError, setManualMemberError] = useState("");
+
+  const [spgDurationDays, setSpgDurationDays] = useState<number | "">("");
+  const [spgFrequencyDays, setSpgFrequencyDays] = useState<number | "">("");
   const [spgGoals, setSpgGoals] = useState("");
 
   const [resSpgName, setResSpgName] = useState("");
@@ -256,6 +270,120 @@ export default function TicketManagementClient() {
     return () => { active = false; };
   }, [isModalOpen, selectedCategory, token, profile.id]);
 
+  // Set default team leader to current user once profile is ready
+  useEffect(() => {
+    if (profile?.id && !spgLeader) {
+      setSpgLeader(profile);
+    }
+  }, [profile, spgLeader]);
+
+  // Leader candidate search (strictly club members)
+  useEffect(() => {
+    if (!isModalOpen || selectedCategory !== "spg_registration" || !isChangingLeader || !token) return;
+    let active = true;
+    setLeaderLoading(true);
+    const timer = setTimeout(() => {
+      api.browseUsers(token, {
+        search: leaderSearch.trim() || undefined,
+        is_member: true,
+        page_size: 50,
+      })
+        .then((res) => {
+          if (active) {
+            setLeaderCandidates(res.items || []);
+            setLeaderLoading(false);
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setLeaderCandidates([]);
+            setLeaderLoading(false);
+          }
+        });
+    }, 250);
+    return () => { active = false; clearTimeout(timer); };
+  }, [isModalOpen, selectedCategory, isChangingLeader, leaderSearch, token]);
+
+  // Team member candidate search
+  useEffect(() => {
+    if (!isModalOpen || selectedCategory !== "spg_registration" || !token) return;
+    let active = true;
+    setMemberCandidatesLoading(true);
+    const timer = setTimeout(() => {
+      api.browseUsers(token, {
+        search: memberSearch.trim() || undefined,
+        page_size: 50,
+      })
+        .then((res) => {
+          if (active) {
+            setMemberCandidates(res.items || []);
+            setMemberCandidatesLoading(false);
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setMemberCandidates([]);
+            setMemberCandidatesLoading(false);
+          }
+        });
+    }, 250);
+    return () => { active = false; clearTimeout(timer); };
+  }, [isModalOpen, selectedCategory, memberSearch, token]);
+
+  const handleToggleMember = (m: StudentProfile) => {
+    const uid = m.id;
+    if (!uid) return;
+    if (spgLeader?.id === uid) {
+      setSubmitError("The designated team leader cannot also be added as a team member.");
+      return;
+    }
+    setSubmitError("");
+    setSelectedTeamMembers((prev) => {
+      const next = { ...prev };
+      if (next[uid]) {
+        delete next[uid];
+      } else {
+        if (Object.keys(next).length >= 6) {
+          setSubmitError("An SPG can have at most 6 team members.");
+          return prev;
+        }
+        next[uid] = m;
+      }
+      return next;
+    });
+  };
+
+  const handleRemoveMember = (uid: string) => {
+    setSelectedTeamMembers((prev) => {
+      const next = { ...prev };
+      delete next[uid];
+      return next;
+    });
+  };
+
+  const handleAddManualMember = async () => {
+    if (!manualMemberInput.trim() || !token) return;
+    setManualMemberLoading(true);
+    setManualMemberError("");
+    try {
+      const res = await api.getUserProfile(token, manualMemberInput.trim());
+      const uid = res.id;
+      if (!uid) throw new Error("Could not resolve member ID.");
+      if (spgLeader?.id === uid) {
+        throw new Error("This user is already designated as the team leader.");
+      }
+      if (Object.keys(selectedTeamMembers).length >= 6 && !selectedTeamMembers[uid]) {
+        throw new Error("Maximum 6 team members allowed.");
+      }
+      setSelectedTeamMembers((prev) => ({ ...prev, [uid]: res }));
+      setManualMemberInput("");
+    } catch (err) {
+      setManualMemberError(err instanceof Error ? err.message : "Member not found.");
+    } finally {
+      setManualMemberLoading(false);
+    }
+  };
+
   const closeModal = () => {
     router.push(pathname, { scroll: false });
   };
@@ -282,11 +410,28 @@ export default function TicketManagementClient() {
     let fieldsObj: Record<string, unknown> = {};
 
     if (selectedCategory === "spg_registration") {
+      const leaderUid = spgLeader?.id || profile.id || "";
+      const memberUids = Object.keys(selectedTeamMembers).filter((id) => id !== leaderUid);
+      const trackLabel = spgTrack === "research" ? "Research Track" : spgTrack === "product" ? "Product Track" : spgTrack === "kaggle" ? "Kaggle Track" : "General Track";
+      const leaderName = spgLeader?.full_name || profile.full_name || "Member";
+
       fieldsObj = {
-        "Project Name & Track": `${formTitle || "Untitled Project"} (${spgTrack.toUpperCase()} Track)`,
-        "Team Members": spgMembers,
-        "Duration & Frequency": spgDuration,
-        "Summary & Goals": spgGoals,
+        "Project Name & Track": `${formTitle.trim() || "Untitled Project"} (${trackLabel})`,
+        "Track": trackLabel,
+        "track": spgTrack,
+        "Team Leader UID": leaderUid,
+        "leader_uid": leaderUid,
+        "Team Leader": `${leaderName} (${leaderUid})`,
+        "Team Member UIDs": memberUids,
+        "member_uids": memberUids,
+        "Team Members": memberUids.length > 0
+          ? memberUids.map((id) => selectedTeamMembers[id]?.full_name ? `${selectedTeamMembers[id].full_name} (${id})` : id).join(", ")
+          : "None",
+        "Duration (Days)": Number(spgDurationDays),
+        "duration_days": Number(spgDurationDays),
+        "Report Frequency (Days)": Number(spgFrequencyDays),
+        "frequency_days": Number(spgFrequencyDays),
+        "Summary & Goals": spgGoals.trim(),
       };
     } else if (selectedCategory === "resource_request") {
       fieldsObj = {
@@ -334,7 +479,33 @@ export default function TicketManagementClient() {
 
   const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formTitle.trim()) return;
+    if (!formTitle.trim()) {
+      setSubmitError("Please enter a project title.");
+      return;
+    }
+
+    if (selectedCategory === "spg_registration") {
+      if (!spgLeader?.id) {
+        setSubmitError("Team leader is mandatory.");
+        return;
+      }
+      if (!spgLeader.is_member) {
+        setSubmitError(`The team leader (${spgLeader.full_name || spgLeader.id}) must be an active club member (is_member: true).`);
+        return;
+      }
+      if (spgDurationDays === "" || Number(spgDurationDays) <= 0) {
+        setSubmitError("Please enter a valid estimated duration in days (e.g. 60).");
+        return;
+      }
+      if (spgFrequencyDays === "" || Number(spgFrequencyDays) <= 0) {
+        setSubmitError("Please enter a valid reporting frequency in days (e.g. 14).");
+        return;
+      }
+      if (Object.keys(selectedTeamMembers).length > 6) {
+        setSubmitError("An SPG may have at most 6 team members.");
+        return;
+      }
+    }
 
     setIsSubmitting(true);
     setSubmitError("");
@@ -349,6 +520,12 @@ export default function TicketManagementClient() {
       setFormDescription("");
       setFormSpgId("");
       setResSpgName("");
+      setSpgDurationDays("");
+      setSpgFrequencyDays("");
+      setSpgGoals("");
+      setSelectedTeamMembers({});
+      setSpgLeader(profile);
+      setIsChangingLeader(false);
       closeModal();
       setSuccessMessage(created.category === "report" ? "Confidential report submitted to the club team." : `Ticket created successfully (${created.id})!`);
       setTimeout(() => setSuccessMessage(""), 4500);
@@ -801,51 +978,367 @@ export default function TicketManagementClient() {
               {/* Category-Specific Form Fields */}
               {selectedCategory === "spg_registration" && (
                 <>
-                  <div className={styles.fieldsRow}>
-                    <div className={styles.formGroup}>
-                      <label className={styles.inputLabel} htmlFor="modal-spg-track">
-                        Track
+                  <div className={styles.formGroup}>
+                    <label className={styles.inputLabel} htmlFor="modal-spg-track">
+                      Track
+                    </label>
+                    <select
+                      id="modal-spg-track"
+                      className={styles.selectInput}
+                      value={spgTrack}
+                      onChange={(e) => setSpgTrack(e.target.value as typeof spgTrack)}
+                    >
+                      <option value="research">Research Track</option>
+                      <option value="product">Product Track</option>
+                      <option value="kaggle">Kaggle Track</option>
+                      <option value="general">General Track</option>
+                    </select>
+                  </div>
+
+                  {/* Team Leader Section */}
+                  <div className={styles.formGroup}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <label className={styles.inputLabel} style={{ marginBottom: 0 }}>
+                        Team Leader <span style={{ color: "#e5b731" }}>*</span>
                       </label>
-                      <select
-                        id="modal-spg-track"
-                        className={styles.selectInput}
-                        value={spgTrack}
-                        onChange={(e) => setSpgTrack(e.target.value as typeof spgTrack)}
-                      >
-                        <option value="research">Research Track (Red)</option>
-                        <option value="product">Product Track (Green)</option>
-                        <option value="kaggle">Kaggle Track (Blue)</option>
-                        <option value="general">General Track</option>
-                      </select>
+                      <span style={{ fontSize: "11px", color: "#8e8e93" }}>
+                        Mandatory (Club Member)
+                      </span>
                     </div>
 
-                    <div className={styles.formGroup}>
-                      <label className={styles.inputLabel} htmlFor="modal-spg-duration">
-                        Duration & Frequency
+                    {/* Selected Leader Display Card */}
+                    {spgLeader && !isChangingLeader && (
+                      <div className={`${styles.leaderCard} ${!spgLeader.is_member ? styles.leaderCardWarning : ""}`}>
+                        <div className={styles.leaderInfo}>
+                          <div className={styles.leaderAvatar}>
+                            {spgLeader.avatar_url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={spgLeader.avatar_url} alt={spgLeader.full_name} className={styles.leaderAvatarImg} />
+                            ) : (
+                              spgLeader.full_name?.split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "LD"
+                            )}
+                          </div>
+                          <div className={styles.leaderMeta}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                              <span className={styles.leaderName}>{spgLeader.full_name || "Unknown"}</span>
+                              {spgLeader.id === profile.id && (
+                                <span className={styles.candidateBadge} style={{ color: "#e5b731", background: "rgba(229, 183, 49, 0.15)" }}>You</span>
+                              )}
+                            </div>
+                            <span className={styles.leaderEmail}>{spgLeader.email || spgLeader.id}</span>
+                            <div className={styles.leaderBadges}>
+                              {spgLeader.is_member ? (
+                                <span className={`${styles.candidateBadge} ${styles.candidateBadgeMember}`}>✓ Club Member</span>
+                              ) : (
+                                <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>✕ Not Club Member</span>
+                              )}
+                              {spgLeader.is_admin && <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Admin</span>}
+                              {spgLeader.tier && spgLeader.tier !== "beginner" && <span className={styles.candidateBadge}>{spgLeader.tier}</span>}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className={styles.leaderActionBtns}>
+                          {spgLeader.id !== profile.id && (
+                            <button
+                              type="button"
+                              onClick={() => { setSpgLeader(profile); setIsChangingLeader(false); }}
+                              className={styles.leaderResetBtn}
+                              title="Reset to myself"
+                            >
+                              Reset to Me
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setIsChangingLeader(true)}
+                            className={styles.leaderChangeBtn}
+                          >
+                            Change Leader
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {!spgLeader?.is_member && spgLeader && (
+                      <div className={styles.nonMemberWarning}>
+                        <MemberIcon name="alert-triangle" size={14} />
+                        <span>The team leader must be an active club member (is_member: true) to submit an SPG proposal.</span>
+                      </div>
+                    )}
+
+                    {/* Changing Leader Search Picker */}
+                    {isChangingLeader && (
+                      <div className={styles.recipientSearchContainer}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: "12px", fontWeight: 700, color: "#ffffff" }}>
+                            Search & Select New Team Leader
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setIsChangingLeader(false)}
+                            style={{ background: "none", border: "none", color: "#8e8e93", cursor: "pointer", fontSize: "12px" }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+
+                        <div className={styles.recipientSearchBox}>
+                          <span className={styles.recipientSearchIcon}>
+                            <MemberIcon name="search" size={14} />
+                          </span>
+                          <input
+                            type="search"
+                            value={leaderSearch}
+                            onChange={(e) => setLeaderSearch(e.target.value)}
+                            placeholder="Search club members by name or email..."
+                            className={styles.recipientSearchInput}
+                            autoFocus
+                          />
+                          {leaderSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setLeaderSearch("")}
+                              className={styles.clearSearchBtn}
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+
+                        <div className={styles.candidateListContainer}>
+                          {leaderLoading ? (
+                            <div className={styles.emptyCandidatesText}>Searching club members…</div>
+                          ) : leaderCandidates.length === 0 ? (
+                            <div className={styles.emptyCandidatesText}>
+                              {leaderSearch ? `No members found matching "${leaderSearch}".` : "No members found."}
+                            </div>
+                          ) : (
+                            leaderCandidates.map((m) => {
+                              const initials = m.full_name
+                                ? m.full_name.split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase()
+                                : "MB";
+                              return (
+                                <div
+                                  key={m.id}
+                                  onClick={() => { setSpgLeader(m); setIsChangingLeader(false); setLeaderSearch(""); }}
+                                  className={styles.candidateRow}
+                                >
+                                  <div className={styles.candidateAvatar}>
+                                    {m.avatar_url ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img src={m.avatar_url} alt={m.full_name} className={styles.candidateAvatarImg} />
+                                    ) : (
+                                      initials
+                                    )}
+                                  </div>
+                                  <div className={styles.candidateInfo}>
+                                    <div className={styles.candidateNameRow}>
+                                      <span className={styles.candidateName}>{m.full_name}</span>
+                                      <div className={styles.candidateBadges}>
+                                        {m.is_member && <span className={`${styles.candidateBadge} ${styles.candidateBadgeMember}`}>Member</span>}
+                                        {m.is_admin && <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Admin</span>}
+                                        {m.tier && m.tier !== "beginner" && <span className={styles.candidateBadge}>{m.tier}</span>}
+                                      </div>
+                                    </div>
+                                    <span className={styles.candidateEmail}>{m.email || m.id}</span>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Team Members Section */}
+                  <div className={styles.formGroup}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <label className={styles.inputLabel} style={{ marginBottom: 0 }}>
+                        Team Members (Optional, up to 6)
                       </label>
-                      <input
-                        id="modal-spg-duration"
-                        type="text"
-                        className={styles.textInput}
-                        value={spgDuration}
-                        onChange={(e) => setSpgDuration(e.target.value)}
-                        placeholder="e.g. 8 Weeks, Weekly syncs"
-                      />
+                      <span style={{ fontSize: "11px", color: Object.keys(selectedTeamMembers).length >= 6 ? "#e5b731" : "#8e8e93" }}>
+                        {Object.keys(selectedTeamMembers).length} / 6 selected
+                      </span>
+                    </div>
+
+                    <div className={styles.recipientSearchContainer}>
+                      {/* Selected Chips */}
+                      {Object.keys(selectedTeamMembers).length > 0 && (
+                        <div className={styles.selectedChipsTray}>
+                          {Object.values(selectedTeamMembers).map((m) => {
+                            const initials = m.full_name
+                              ? m.full_name.split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase()
+                              : "MB";
+                            return (
+                              <div key={m.id} className={styles.recipientChip}>
+                                <div className={styles.chipAvatar}>
+                                  {m.avatar_url ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={m.avatar_url} alt={m.full_name} className={styles.chipAvatarImg} />
+                                  ) : (
+                                    initials
+                                  )}
+                                </div>
+                                <span>{m.full_name}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveMember(m.id)}
+                                  className={styles.chipRemoveBtn}
+                                  aria-label={`Remove ${m.full_name}`}
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Search Input */}
+                      <div className={styles.recipientSearchBox}>
+                        <span className={styles.recipientSearchIcon}>
+                          <MemberIcon name="search" size={14} />
+                        </span>
+                        <input
+                          type="search"
+                          value={memberSearch}
+                          onChange={(e) => setMemberSearch(e.target.value)}
+                          placeholder="Search collaborators by name or email..."
+                          className={styles.recipientSearchInput}
+                        />
+                        {memberSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setMemberSearch("")}
+                            className={styles.clearSearchBtn}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Candidate List */}
+                      <div className={styles.candidateListContainer}>
+                        {memberCandidatesLoading ? (
+                          <div className={styles.emptyCandidatesText}>Searching members…</div>
+                        ) : memberCandidates.length === 0 ? (
+                          <div className={styles.emptyCandidatesText}>
+                            {memberSearch ? `No members found matching "${memberSearch}".` : "No members found."}
+                          </div>
+                        ) : (
+                          memberCandidates
+                            .filter((m) => m.id !== spgLeader?.id)
+                            .map((m) => {
+                              const isSelected = Boolean(selectedTeamMembers[m.id]);
+                              const initials = m.full_name
+                                ? m.full_name.split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase()
+                                : "MB";
+                              return (
+                                <div
+                                  key={m.id}
+                                  onClick={() => handleToggleMember(m)}
+                                  className={`${styles.candidateRow} ${isSelected ? styles.candidateRowSelected : ""}`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => {}}
+                                    className={styles.candidateCheckbox}
+                                  />
+                                  <div className={styles.candidateAvatar}>
+                                    {m.avatar_url ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img src={m.avatar_url} alt={m.full_name} className={styles.candidateAvatarImg} />
+                                    ) : (
+                                      initials
+                                    )}
+                                  </div>
+                                  <div className={styles.candidateInfo}>
+                                    <div className={styles.candidateNameRow}>
+                                      <span className={styles.candidateName}>{m.full_name}</span>
+                                      <div className={styles.candidateBadges}>
+                                        {m.is_member && <span className={`${styles.candidateBadge} ${styles.candidateBadgeMember}`}>Member</span>}
+                                        {m.is_admin && <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Admin</span>}
+                                        {m.tier && m.tier !== "beginner" && <span className={styles.candidateBadge}>{m.tier}</span>}
+                                      </div>
+                                    </div>
+                                    <span className={styles.candidateEmail}>{m.email || m.id}</span>
+                                  </div>
+                                </div>
+                              );
+                            })
+                        )}
+                      </div>
+
+                      {/* Manual Add by UID or Email */}
+                      <div className={styles.manualAddBox}>
+                        <span style={{ fontSize: "11px", color: "#8e8e93" }}>
+                          Can&apos;t find a teammate? Add directly by email or Firebase UID:
+                        </span>
+                        <div className={styles.manualAddRow}>
+                          <input
+                            type="text"
+                            value={manualMemberInput}
+                            onChange={(e) => { setManualMemberInput(e.target.value); setManualMemberError(""); }}
+                            placeholder="student@sst.scaler.com or UID"
+                            className={styles.manualAddInput}
+                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddManualMember(); } }}
+                          />
+                          <button
+                            type="button"
+                            onClick={handleAddManualMember}
+                            disabled={manualMemberLoading || !manualMemberInput.trim()}
+                            className={styles.manualAddBtn}
+                          >
+                            {manualMemberLoading ? "Finding..." : "+ Add"}
+                          </button>
+                        </div>
+                        {manualMemberError && <span style={{ color: "#ef4444", fontSize: "11px" }}>{manualMemberError}</span>}
+                      </div>
                     </div>
                   </div>
 
-                  <div className={styles.formGroup}>
-                    <label className={styles.inputLabel} htmlFor="modal-spg-members">
-                      Team Members
-                    </label>
-                    <input
-                      id="modal-spg-members"
-                      type="text"
-                      className={styles.textInput}
-                      placeholder="e.g. Julian Chen (@julian), Aryan K (@aryan)"
-                      value={spgMembers}
-                      onChange={(e) => setSpgMembers(e.target.value)}
-                    />
+                  {/* Duration & Frequency (Separated Fields) */}
+                  <div className={styles.fieldsRow}>
+                    <div className={styles.formGroup}>
+                      <label className={styles.inputLabel} htmlFor="modal-spg-duration">
+                        Estimated Duration (Days) <span style={{ color: "#e5b731" }}>*</span>
+                      </label>
+                      <input
+                        id="modal-spg-duration"
+                        type="number"
+                        min={1}
+                        max={730}
+                        step={1}
+                        className={styles.textInput}
+                        value={spgDurationDays}
+                        onChange={(e) => setSpgDurationDays(e.target.value === "" ? "" : parseInt(e.target.value, 10))}
+                        placeholder="e.g. 60"
+                        required
+                      />
+                      <span className={styles.fieldHelper}>Total expected run time in days.</span>
+                    </div>
+
+                    <div className={styles.formGroup}>
+                      <label className={styles.inputLabel} htmlFor="modal-spg-frequency">
+                        Report Frequency (Days) <span style={{ color: "#e5b731" }}>*</span>
+                      </label>
+                      <input
+                        id="modal-spg-frequency"
+                        type="number"
+                        min={1}
+                        max={180}
+                        step={1}
+                        className={styles.textInput}
+                        value={spgFrequencyDays}
+                        onChange={(e) => setSpgFrequencyDays(e.target.value === "" ? "" : parseInt(e.target.value, 10))}
+                        placeholder="e.g. 14"
+                        required
+                      />
+                      <span className={styles.fieldHelper}>Submit progress reports every N days.</span>
+                    </div>
                   </div>
 
                   <div className={styles.formGroup}>
