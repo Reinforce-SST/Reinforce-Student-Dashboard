@@ -259,6 +259,33 @@
   transform: translateY(-1px);
 }
 
+.signOutBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.25);
+  color: #fca5a5;
+  padding: 9px 18px;
+  border-radius: 9px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.signOutBtn:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.16);
+  border-color: rgba(248, 113, 113, 0.45);
+  color: #f87171;
+  transform: translateY(-1px);
+}
+
+.signOutBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .bioSection {
   display: flex;
   flex-direction: column;

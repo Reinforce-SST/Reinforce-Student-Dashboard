@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useCallback, useRef, Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useMember } from "@/lib/useMember";
 import { api, type StudentProfile, type TrackPoints } from "@/lib/api";
 import { graduationBatchYear } from "@/lib/batchYear";
@@ -105,10 +105,23 @@ function formatBatchDisplay(batchYear?: number | null): string | null {
 }
 
 function ProfileClientContent() {
-  const { token, profile: loggedInProfile, save } = useMember();
+  const { token, profile: loggedInProfile, save, signOut } = useMember();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const queryId = searchParams ? searchParams.get("id") || searchParams.get("uid") : null;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+
+  const handleSignOut = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await signOut();
+      router.push("/auth");
+    } catch {
+      setSigningOut(false);
+    }
+  };
 
   // Determine if viewing own profile or someone else's
   const isOwner = useMemo(() => {
@@ -508,15 +521,27 @@ function ProfileClientContent() {
               </span>
             )}
             {isOwner ? (
-              <button
-                type="button"
-                className={styles.editProfileBtn}
-                onClick={handleOpenEditModal}
-                aria-label="Edit your profile details"
-              >
-                <MemberIcon name="edit" size={16} />
-                Edit Profile
-              </button>
+              <>
+                <button
+                  type="button"
+                  className={styles.editProfileBtn}
+                  onClick={handleOpenEditModal}
+                  aria-label="Edit your profile details"
+                >
+                  <MemberIcon name="edit" size={16} />
+                  Edit Profile
+                </button>
+                <button
+                  type="button"
+                  className={styles.signOutBtn}
+                  onClick={handleSignOut}
+                  disabled={signingOut}
+                  aria-label="Sign out of your account"
+                >
+                  <MemberIcon name="log-out" size={16} />
+                  {signingOut ? "Signing out…" : "Sign Out"}
+                </button>
+              </>
             ) : (
               <>
                 <span className={styles.publicBadge}>

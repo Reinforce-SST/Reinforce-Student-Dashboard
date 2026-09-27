@@ -7,7 +7,12 @@ import { useAuth } from "./useAuth";
 import MemberLoading from "@/components/dashboard/MemberLoading";
 import styles from "@/components/dashboard/MemberContent.module.css";
 
-type MemberState = { token: string; profile: StudentProfile; save: (update: ProfileUpdate) => Promise<void> };
+type MemberState = {
+  token: string;
+  profile: StudentProfile;
+  save: (update: ProfileUpdate) => Promise<void>;
+  signOut: () => Promise<void>;
+};
 const MemberContext = createContext<MemberState | null>(null);
 
 export function MemberProvider({ children }: { children: ReactNode }) {
@@ -42,6 +47,7 @@ export function MemberProvider({ children }: { children: ReactNode }) {
   const value: MemberState = {
     token,
     profile: state.profile,
+    signOut,
     async save(update) {
       const result = await api.updateProfile(token, update);
       setState(current => current?.identity === identity ? { identity, profile: result } : current);

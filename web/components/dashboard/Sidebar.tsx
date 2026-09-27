@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
@@ -45,8 +46,21 @@ const adminDirectoryLinks: NavLink[] = [
 export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { profile } = useMember();
+  const { profile, signOut } = useMember();
   const { isAdmin, isAdminMode, setAdminMode } = useAdminMode();
+  const [signingOut, setSigningOut] = useState(false);
+
+  const handleSignOut = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await signOut();
+      onNavigate?.();
+      router.push("/auth");
+    } catch {
+      setSigningOut(false);
+    }
+  };
 
   const initials = profile?.full_name
     ? profile.full_name
@@ -163,6 +177,16 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             >
               ← Student Dashboard
             </button>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={signingOut}
+              className={styles.sidebarSignOutBtn}
+              aria-label="Sign out"
+            >
+              <MemberIcon name="log-out" size={13} />
+              <span>{signingOut ? "Signing out…" : "Sign Out"}</span>
+            </button>
           </div>
         </>
       ) : (
@@ -241,6 +265,16 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               <span className={styles.avatarCircle}>{initials}</span>
               <span className={styles.viewProfileText}>View Profile</span>
             </Link>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={signingOut}
+              className={styles.sidebarSignOutBtn}
+              aria-label="Sign out"
+            >
+              <MemberIcon name="log-out" size={13} />
+              <span>{signingOut ? "Signing out…" : "Sign Out"}</span>
+            </button>
           </div>
         </>
       )}

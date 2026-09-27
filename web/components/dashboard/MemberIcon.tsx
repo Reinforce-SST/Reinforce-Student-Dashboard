@@ -44,6 +44,7 @@ export type IconName =
   | "check-circle"
   | "alert-circle"
   | "info"
+  | "log-out"
   | "user";
 
 const paths: Record<IconName, ReactNode> = {
@@ -281,6 +282,13 @@ const paths: Record<IconName, ReactNode> = {
       <circle cx="12" cy="12" r="10" />
       <path d="M12 16v-4" />
       <path d="M12 8h.01" />
+    </>
+  ),
+  "log-out": (
+    <>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
     </>
   ),
   user: (

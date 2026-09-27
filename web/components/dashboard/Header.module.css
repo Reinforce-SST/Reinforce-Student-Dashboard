@@ -170,9 +170,36 @@
   font-size: 0.75rem;
 }
 
+.signOutBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: #141414;
+  border: 1px solid #222222;
+  color: var(--ink-2, #B5B5B0);
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.signOutBtn:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.3);
+  color: #fca5a5;
+}
+
+.signOutBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .menuBtn:focus-visible,
 .iconButton:focus-visible,
-.userPill:focus-visible {
+.userPill:focus-visible,
+.signOutBtn:focus-visible {
   outline: 2px solid var(--brand, #E5B731);
   outline-offset: 2px;
 }
@@ -240,5 +267,17 @@
     width: 36px;
     height: 36px;
     flex: none;
+  }
+  .signOutBtn {
+    flex: none;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+  }
+  .signOutText {
+    display: none;
   }
 }
