@@ -177,3 +177,13 @@
     display: none;
   }
 }
+
+@media (max-width: 360px) {
+  .header { gap: 8px; padding: 12px; }
+  .left { gap: 6px; min-width: 0; }
+  .pageTitle { font-size: 1rem; }
+  .right { gap: 7px; }
+  .userPill { padding: 4px; }
+  .userText { display: none; }
+  .userAvatar { flex: none; }
+}

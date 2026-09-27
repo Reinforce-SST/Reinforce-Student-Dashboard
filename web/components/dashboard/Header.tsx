@@ -40,9 +40,9 @@ export default function Header({
         .map((part) => part[0])
         .join("")
         .toUpperCase()
-    : "JC";
+    : "M";
 
-  const displayName = profile?.full_name || "Julian Chen";
+  const displayName = profile?.full_name || "Member";
 
   return (
     <header className={styles.header}>
@@ -92,7 +92,7 @@ export default function Header({
         >
           <div className={styles.userText}>
             <span className={styles.userName}>{displayName}</span>
-            <span className={styles.userTrack}>RESEARCH TRACK</span>
+            <span className={styles.userTrack}>{profile.tier ? `${profile.tier.toUpperCase()} MEMBER` : "MEMBER"}</span>
           </div>
           <div className={styles.userAvatar}>{initials}</div>
         </Link>

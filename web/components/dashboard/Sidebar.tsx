@@ -56,7 +56,7 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         .map((part) => part[0])
         .join("")
         .toUpperCase()
-    : "JC";
+    : "M";
 
   return (
     <div className={styles.sidebar}>
