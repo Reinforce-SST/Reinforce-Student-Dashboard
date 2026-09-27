@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { useMember } from "@/lib/useMember";
 import MemberIcon from "./MemberIcon";
@@ -38,22 +38,9 @@ export default function Header({
   onMenu: () => void;
   menuOpen: boolean;
 }) {
-  const { profile, signOut } = useMember();
-  const router = useRouter();
+  const { profile } = useMember();
   const pathname = usePathname();
   const [searchQuery, setSearchQuery] = useState("");
-  const [signingOut, setSigningOut] = useState(false);
-
-  const handleSignOut = async () => {
-    if (signingOut) return;
-    setSigningOut(true);
-    try {
-      await signOut();
-      router.push("/auth");
-    } catch {
-      setSigningOut(false);
-    }
-  };
 
   const pageTitle = titles[pathname] || "Dashboard Overview";
   const section = pathname === "/profile" ? "profile" : pathname.split("/")[2] || "";
@@ -126,19 +113,6 @@ export default function Header({
           </div>
           <div className={styles.userAvatar}>{initials}</div>
         </Link>
-
-        {/* Sign Out Button */}
-        <button
-          type="button"
-          className={styles.signOutBtn}
-          onClick={handleSignOut}
-          disabled={signingOut}
-          title="Sign out"
-          aria-label="Sign out"
-        >
-          <MemberIcon name="log-out" size={16} />
-          <span className={styles.signOutText}>{signingOut ? "Signing out…" : "Sign out"}</span>
-        </button>
       </div>
     </header>
   );
