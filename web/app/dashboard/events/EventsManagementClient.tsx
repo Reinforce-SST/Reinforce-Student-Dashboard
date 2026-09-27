@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMember } from "@/lib/useMember";
-import { api } from "@/lib/api";
+import { loadAllUpcomingEvents } from "@/lib/memberData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import styles from "./EventsManagement.module.css";
 
@@ -42,12 +42,13 @@ export default function EventsManagementClient() {
     let active = true;
     async function fetchEvents() {
       try {
-        const res = await api.listEvents(token, { timeline: "upcoming", limit: 100 });
+        const upcomingEvents = await loadAllUpcomingEvents(token);
         if (!active) return;
         setLoadError("");
 
-        if (res.events && res.events.length > 0) {
-          const mapped: CalendarEventItem[] = res.events.filter((ev) =>
+        if (upcomingEvents.length > 0) {
+          const mapped: CalendarEventItem[] = upcomingEvents.filter((ev) =>
+            ["published", "registration_closed", "ongoing"].includes(ev.status) &&
             new Date(ev.schedule.start_time).getTime() >= Date.now()).map((ev) => {
             const start = new Date(ev.schedule.start_time);
 

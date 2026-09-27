@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import { useMember } from "@/lib/useMember";
-import { api } from "@/lib/api";
+import { loadAllSpgs } from "@/lib/memberData";
 import { type SPGRecord } from "@/lib/spgData";
 import styles from "./SpgManagement.module.css";
 
@@ -24,10 +24,8 @@ export default function SpgManagementClient() {
     try {
       setLoading(true);
       setLoadError("");
-      const res = await api.listSpgs(token, {
-        track: selectedTrack !== "all" ? selectedTrack : undefined,
-      });
-      setSpgs(res.items);
+      const items = await loadAllSpgs(token, selectedTrack !== "all" ? selectedTrack : undefined);
+      setSpgs(items);
     } catch {
       setSpgs([]);
       setLoadError("Project groups could not be loaded. Try again.");

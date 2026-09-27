@@ -5,6 +5,8 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import MemberIcon, { type IconName } from "@/components/dashboard/MemberIcon";
 import { useMember } from "@/lib/useMember";
 import { api, type ApiTicketDetail, type TicketSummary } from "@/lib/api";
+import { loadAllSpgs } from "@/lib/memberData";
+import type { SPGRecord } from "@/lib/spgData";
 import styles from "./TicketManagement.module.css";
 
 export type TicketCategory =
@@ -132,7 +134,7 @@ function toTicketItem(summary: TicketSummary, detail?: ApiTicketDetail): TicketI
 }
 
 export default function TicketManagementClient() {
-  const { token } = useMember();
+  const { token, profile } = useMember();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -203,6 +205,9 @@ export default function TicketManagementClient() {
   const [formTitle, setFormTitle] = useState("");
   const [formDescription, setFormDescription] = useState("");
   const [formSpgId, setFormSpgId] = useState("");
+  const [memberSpgs, setMemberSpgs] = useState<SPGRecord[]>([]);
+  const [memberSpgsLoading, setMemberSpgsLoading] = useState(true);
+  const [memberSpgsError, setMemberSpgsError] = useState("");
 
   const [spgTrack, setSpgTrack] = useState<"research" | "product" | "kaggle" | "general">("research");
   const [spgMembers, setSpgMembers] = useState("");
@@ -227,6 +232,29 @@ export default function TicketManagementClient() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
+
+  useEffect(() => {
+    if (!isModalOpen || selectedCategory !== "resource_request") return;
+    let active = true;
+    setMemberSpgsLoading(true);
+    loadAllSpgs(token)
+      .then((groups) => {
+        if (!active) return;
+        const memberId = profile.id;
+        const ownedGroups = memberId ? groups.filter((group) => group.lead_id === memberId || group.member_ids.includes(memberId)) : [];
+        setMemberSpgs(ownedGroups);
+        setFormSpgId((current) => ownedGroups.some((group) => group.id === current) ? current : "");
+        setMemberSpgsError("");
+      })
+      .catch(() => {
+        if (!active) return;
+        setMemberSpgs([]);
+        setFormSpgId("");
+        setMemberSpgsError("Project groups could not be loaded. Enter the SPG name below, or try again later.");
+      })
+      .finally(() => { if (active) setMemberSpgsLoading(false); });
+    return () => { active = false; };
+  }, [isModalOpen, selectedCategory, token, profile.id]);
 
   const closeModal = () => {
     router.push(pathname, { scroll: false });
@@ -295,8 +323,8 @@ export default function TicketManagementClient() {
       fields: fieldsObj,
     };
 
-    if (selectedCategory === "resource_request" || selectedCategory === "spg_registration") {
-      if (formSpgId.trim()) {
+    if (selectedCategory === "resource_request") {
+      if (formSpgId.trim() && memberSpgs.some((group) => group.id === formSpgId)) {
         payload.spg_id = formSpgId.trim();
       }
     }
@@ -319,6 +347,8 @@ export default function TicketManagementClient() {
       }
       setFormTitle("");
       setFormDescription("");
+      setFormSpgId("");
+      setResSpgName("");
       closeModal();
       setSuccessMessage(created.category === "report" ? "Confidential report submitted to the club team." : `Ticket created successfully (${created.id})!`);
       setTimeout(() => setSuccessMessage(""), 4500);
@@ -845,13 +875,16 @@ export default function TicketManagementClient() {
                         id="modal-res-spg-id"
                         className={styles.selectInput}
                         value={formSpgId}
-                        onChange={(e) => setFormSpgId(e.target.value)}
+                        onChange={(e) => {
+                          const selectedId = e.target.value;
+                          setFormSpgId(selectedId);
+                          if (selectedId) setResSpgName(memberSpgs.find((group) => group.id === selectedId)?.name || "");
+                        }}
                       >
-                        <option value="spg_drone_swarms">SP-1 Autonomous Drone Swarms</option>
-                        <option value="spg_decentralized_compute">SP-2 Decentralized Compute</option>
-                        <option value="spg_llm_benchmark">SPG-3 LLM Benchmark 2025</option>
-                        <option value="spg_quantum_gate">SPG-X Quantum Gate Sim</option>
+                        <option value="">{memberSpgsLoading ? "Loading project groups…" : "Select a project group (optional)"}</option>
+                        {memberSpgs.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
                       </select>
+                      {memberSpgsError && <p role="alert">{memberSpgsError}</p>}
                     </div>
 
                     <div className={styles.formGroup}>
@@ -863,7 +896,10 @@ export default function TicketManagementClient() {
                         type="text"
                         className={styles.textInput}
                         value={resSpgName}
-                        onChange={(e) => setResSpgName(e.target.value)}
+                        onChange={(e) => {
+                          setResSpgName(e.target.value);
+                          if (formSpgId && memberSpgs.find((group) => group.id === formSpgId)?.name !== e.target.value) setFormSpgId("");
+                        }}
                       />
                     </div>
                   </div>

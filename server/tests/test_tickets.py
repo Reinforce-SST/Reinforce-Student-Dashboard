@@ -56,7 +56,7 @@ class TicketTests(unittest.TestCase):
 
     def test_one_sided_link_cannot_list_or_open_old_ticket(self):
         self.ticket("own")
-        self.db.store["users/" + USER["email"]]["email"] = "other@sst.scaler.com"
+        self.db.store["users/" + USER["uid"]]["email"] = "other@sst.scaler.com"
         self.assertEqual(tickets.list_my_tickets(USER).items, [])
         with self.assertRaises(HTTPException) as error:
             tickets.get_ticket("own", USER)
