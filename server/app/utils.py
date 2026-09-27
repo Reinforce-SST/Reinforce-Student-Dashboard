@@ -25,6 +25,27 @@ def iso_str(value: Any) -> Optional[str]:
     return isoformat() if callable(isoformat) else str(value)
 
 
+def batch_year_from_email(email: str) -> Optional[int]:
+    """Derive a graduation batch from an SST enrollment-year email prefix."""
+    match = re.search(r"(?:^|\.)(\d{2})[a-zA-Z]", (email or "").lower())
+    if match:
+        start_year = int(match.group(1))
+        if 20 <= start_year <= 40:
+            return 2000 + start_year + 4
+    return None
+
+
+def resolve_batch_year(stored: Any, email: str) -> Optional[int]:
+    """Prefer a stored graduation year; repair old study-year values when possible."""
+    if type(stored) is int and 2000 <= stored <= 2100:
+        return stored
+    derived = batch_year_from_email(email)
+    if derived is not None:
+        return derived
+    # Preserve an unresolvable legacy value; never guess its graduation year.
+    return stored if type(stored) is int and 1 <= stored <= 5 else None
+
+
 def slugify(text: str) -> str:
     """Generate a clean URL-friendly slug from text."""
     s = text.lower().strip()
