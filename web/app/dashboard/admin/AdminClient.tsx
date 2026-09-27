@@ -134,14 +134,19 @@ export default function AdminClient() {
   const [awardPoints, setAwardPoints] = useState<number | "">(25);
   const [awardReason, setAwardReason] = useState("");
   const [awardType, setAwardType] = useState("project_milestone");
+  const [awardTrack, setAwardTrack] = useState<"misc" | "research" | "product" | "kaggle">("misc");
   const [awardLoading, setAwardLoading] = useState(false);
   const [awardSearch, setAwardSearch] = useState("");
   const [awardCandidates, setAwardCandidates] = useState<StudentProfile[]>([]);
   const [awardSearchLoading, setAwardSearchLoading] = useState(false);
   const [awardSearchError, setAwardSearchError] = useState("");
   const [awardCandidateTotal, setAwardCandidateTotal] = useState(0);
+  const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [selectedRecipients, setSelectedRecipients] = useState<Record<string, StudentProfile>>({});
   const [awardCustomType, setAwardCustomType] = useState("");
+  const [manualAddInput, setManualAddInput] = useState("");
+  const [manualAddLoading, setManualAddLoading] = useState(false);
+  const [manualAddError, setManualAddError] = useState("");
   const awardOccurredAtRef = useRef<string | null>(null);
   const [memberSearch, setMemberSearch] = useState("");
   const [memberPage, setMemberPage] = useState(1);
@@ -162,18 +167,93 @@ export default function AdminClient() {
   }, [activeTab, token, memberSearch, memberPage, directoryRevision]);
 
   useEffect(() => {
-    if (activeTab !== "contributions" || !token || !awardSearch.trim()) {
+    if (activeTab !== "contributions" || !token) {
       return;
     }
     let active = true;
+    setCandidatesLoading(true);
     const timer = setTimeout(() => {
-      api.adminDirectory(token, { search: awardSearch.trim(), page_size: 50 })
-        .then((result) => { if (active) { setAwardCandidates(result.items); setAwardCandidateTotal(result.total); setAwardSearchError(""); } })
-        .catch((error) => { if (active) { setAwardCandidates([]); setAwardSearchError(error instanceof Error ? error.message : "Could not search members."); } })
-        .finally(() => { if (active) setAwardSearchLoading(false); });
+      api.adminDirectory(token, { search: awardSearch.trim() || undefined, page_size: 100 })
+        .then((result) => {
+          if (active) {
+            setAwardCandidates(result.items || []);
+            setCandidatesLoading(false);
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setAwardCandidates([]);
+            setCandidatesLoading(false);
+          }
+        });
     }, 250);
     return () => { active = false; clearTimeout(timer); };
   }, [activeTab, token, awardSearch]);
+
+  const handleSelectAllVisible = () => {
+    setSelectedRecipients((prev) => {
+      const next = { ...prev };
+      for (const m of awardCandidates) {
+        const uid = m.id || m.email;
+        if (uid) next[uid] = m;
+      }
+      return next;
+    });
+  };
+
+  const handleDeselectAllVisible = () => {
+    setSelectedRecipients((prev) => {
+      const next = { ...prev };
+      for (const m of awardCandidates) {
+        const uid = m.id || m.email;
+        if (uid) delete next[uid];
+      }
+      return next;
+    });
+  };
+
+  const handleClearAllRecipients = () => {
+    setSelectedRecipients({});
+  };
+
+  const handleToggleRecipient = (m: StudentProfile) => {
+    const uid = m.id || m.email;
+    if (!uid) return;
+    setSelectedRecipients((prev) => {
+      const next = { ...prev };
+      if (next[uid]) {
+        delete next[uid];
+      } else {
+        next[uid] = m;
+      }
+      return next;
+    });
+  };
+
+  const handleRemoveRecipient = (uid: string) => {
+    setSelectedRecipients((prev) => {
+      const next = { ...prev };
+      delete next[uid];
+      return next;
+    });
+  };
+
+  const handleAddManualRecipient = async () => {
+    if (!manualAddInput.trim() || !token) return;
+    setManualAddLoading(true);
+    setManualAddError("");
+    try {
+      const resolved = await api.getUserProfile(token, manualAddInput.trim());
+      const uid = resolved.id || resolved.email;
+      if (!uid) throw new Error("Could not resolve member ID.");
+      setSelectedRecipients((prev) => ({ ...prev, [uid]: resolved }));
+      setManualAddInput("");
+    } catch (err) {
+      setManualAddError(err instanceof Error ? err.message : "Member not found.");
+    } finally {
+      setManualAddLoading(false);
+    }
+  };
 
   // Banner File Upload Handler
   const handleBannerFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -438,7 +518,7 @@ export default function AdminClient() {
       const occurredAt = awardOccurredAtRef.current || new Date().toISOString();
       awardOccurredAtRef.current = occurredAt;
       const payload = {
-        track: "misc",
+        track: awardTrack,
         category,
         title: {
           project_milestone: "Project milestone",
@@ -1318,57 +1398,190 @@ export default function AdminClient() {
               </div>
             </div>
 
-            <form onSubmit={handleAwardMerit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-              <div className={styles.formGroup}>
-                <label className={styles.formLabel} htmlFor="award-search">Find members</label>
-                <input id="award-search" type="search" value={awardSearch} onChange={(event) => { setAwardSearch(event.target.value); setAwardCandidates([]); setAwardCandidateTotal(0); setAwardSearchError(""); setAwardSearchLoading(Boolean(event.target.value.trim())); }} placeholder="Search name or college email" className={styles.formInput} />
-                {awardSearch.trim() && <div className={styles.candidateList}>
-                  {awardSearchLoading && <span className={styles.candidateRow} role="status">Searching members…</span>}
-                  {awardSearchError && <span className={styles.candidateRow} role="alert">{awardSearchError}</span>}
-                  {!awardSearchLoading && !awardSearchError && awardCandidateTotal > awardCandidates.length && <span className={styles.candidateRow}>Showing the first {awardCandidates.length} of {awardCandidateTotal} matches. Narrow your search to find others.</span>}
-                  {!awardSearchLoading && awardCandidates.length > 0 && <label className={styles.candidateRow}>
-                    <input type="checkbox" checked={awardCandidates.every((member) => Boolean(member.id && selectedRecipients[member.id]))} onChange={(event) => setSelectedRecipients((current) => {
-                      const next = { ...current };
-                      for (const member of awardCandidates) {
-                        if (!member.id) continue;
-                        if (event.target.checked) next[member.id] = member;
-                        else delete next[member.id];
-                      }
-                      return next;
-                    })} /> Select all results on this page
-                  </label>}
-                  {!awardSearchLoading && awardCandidates.map((member) => member.id && <label className={styles.candidateRow} key={member.id}>
-                    <input type="checkbox" checked={Boolean(selectedRecipients[member.id])} onChange={(event) => setSelectedRecipients((current) => {
-                      const next = { ...current };
-                      if (event.target.checked) next[member.id!] = member;
-                      else delete next[member.id!];
-                      return next;
-                    })} />
-                    {member.full_name} · {member.email}
-                  </label>)}
-                  {!awardSearchLoading && !awardSearchError && awardCandidates.length === 0 && <span className={styles.candidateRow}>No matching members.</span>}
-                </div>}
-                <span className={styles.selectedMembers}>{Object.keys(selectedRecipients).length} selected for this award</span>
-                {Object.keys(selectedRecipients).length > 0 && <div className={styles.selectedRecipientList} aria-label="Selected members">
-                  {Object.entries(selectedRecipients).map(([uid, member]) => <button key={uid} type="button" className={styles.selectedRecipient} onClick={() => setSelectedRecipients((current) => { const next = { ...current }; delete next[uid]; return next; })} aria-label={`Remove ${member.full_name} from award`} title="Remove from award">
-                    {member.full_name} <span aria-hidden="true">×</span>
-                  </button>)}
-                </div>}
-              </div>
-              <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Or enter one Student Email / User ID</label>
-                <input
-                  type="text"
-                  value={awardEmail}
-                  onChange={(e) => setAwardEmail(e.target.value)}
-                  placeholder="student@sst.scaler.com"
-                  className={styles.formInput}
-                />
+            <form onSubmit={handleAwardMerit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              {/* Member Selection & Search */}
+              <div className={styles.recipientSearchContainer}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <label className={styles.formLabel} style={{ marginBottom: 0 }}>
+                    Select Recipients ({Object.keys(selectedRecipients).length} Selected)
+                  </label>
+                  {Object.keys(selectedRecipients).length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearAllRecipients}
+                      className={styles.bulkActionBtn}
+                      style={{ color: "#f87171", borderColor: "rgba(239, 68, 68, 0.3)" }}
+                    >
+                      Clear Selection ({Object.keys(selectedRecipients).length})
+                    </button>
+                  )}
+                </div>
+
+                {/* Selected Recipients Chip Tray */}
+                {Object.keys(selectedRecipients).length > 0 && (
+                  <div className={styles.selectedChipsTray}>
+                    {Object.values(selectedRecipients).map((m) => {
+                      const uid = m.id || m.email;
+                      const initials = m.full_name
+                        ? m.full_name.split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase()
+                        : "MB";
+                      return (
+                        <div key={uid} className={styles.recipientChip}>
+                          <div className={styles.chipAvatar}>
+                            {m.avatar_url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={m.avatar_url} alt={m.full_name} className={styles.chipAvatarImg} />
+                            ) : (
+                              initials
+                            )}
+                          </div>
+                          <span>{m.full_name}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveRecipient(uid)}
+                            className={styles.chipRemoveBtn}
+                            aria-label={`Remove ${m.full_name}`}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Search Bar */}
+                <div className={styles.recipientSearchBox}>
+                  <span className={styles.recipientSearchIcon}>
+                    <MemberIcon name="search" size={16} />
+                  </span>
+                  <input
+                    type="search"
+                    value={awardSearch}
+                    onChange={(e) => setAwardSearch(e.target.value)}
+                    placeholder="Search by student name or college email..."
+                    className={styles.recipientSearchInput}
+                  />
+                  {awardSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setAwardSearch("")}
+                      className={styles.clearSearchBtn}
+                      aria-label="Clear search"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                {/* Bulk Actions Header */}
+                <div className={styles.bulkActionBar}>
+                  <div className={styles.bulkActionBtns}>
+                    <button
+                      type="button"
+                      onClick={handleSelectAllVisible}
+                      disabled={awardCandidates.length === 0}
+                      className={styles.bulkActionBtn}
+                    >
+                      Select All Filtered ({awardCandidates.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeselectAllVisible}
+                      disabled={awardCandidates.length === 0 || !awardCandidates.some(m => Boolean(selectedRecipients[m.id || m.email]))}
+                      className={styles.bulkActionBtn}
+                    >
+                      Deselect Filtered
+                    </button>
+                  </div>
+                  <span className={styles.selectedCountBadge}>
+                    {Object.keys(selectedRecipients).length} selected
+                  </span>
+                </div>
+
+                {/* Candidate Selection List */}
+                <div className={styles.candidateListContainer}>
+                  {candidatesLoading ? (
+                    <div className={styles.emptyCandidatesText}>Loading members…</div>
+                  ) : awardCandidates.length === 0 ? (
+                    <div className={styles.emptyCandidatesText}>
+                      {awardSearch ? `No members found matching "${awardSearch}".` : "No members found in directory."}
+                    </div>
+                  ) : (
+                    awardCandidates.map((member) => {
+                      const uid = member.id || member.email;
+                      const isSelected = Boolean(selectedRecipients[uid]);
+                      const initials = member.full_name
+                        ? member.full_name.split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase()
+                        : "MB";
+                      return (
+                        <div
+                          key={uid}
+                          onClick={() => handleToggleRecipient(member)}
+                          className={`${styles.candidateRow} ${isSelected ? styles.candidateRowSelected : ""}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {}} // Row click handles toggle
+                            className={styles.candidateCheckbox}
+                          />
+                          <div className={styles.candidateAvatar}>
+                            {member.avatar_url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={member.avatar_url} alt={member.full_name} className={styles.candidateAvatarImg} />
+                            ) : (
+                              initials
+                            )}
+                          </div>
+                          <div className={styles.candidateInfo}>
+                            <div className={styles.candidateNameRow}>
+                              <span className={styles.candidateName}>{member.full_name}</span>
+                              <div className={styles.candidateBadges}>
+                                {member.is_admin && <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Admin</span>}
+                                {member.role_label?.toLowerCase() === "core" && <span className={`${styles.candidateBadge} ${styles.candidateBadgeCore}`}>Core</span>}
+                                {member.tier && member.tier !== "beginner" && <span className={styles.candidateBadge}>{member.tier}</span>}
+                              </div>
+                            </div>
+                            <span className={styles.candidateEmail}>{member.email}</span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Optional Manual Add Input */}
+                <div className={styles.manualAddBox}>
+                  <span style={{ fontSize: "11.5px", color: "#8e8e93" }}>
+                    Can&apos;t find a member? Add directly by email or Firebase UID:
+                  </span>
+                  <div className={styles.manualAddRow}>
+                    <input
+                      type="text"
+                      value={manualAddInput}
+                      onChange={(e) => { setManualAddInput(e.target.value); setManualAddError(""); }}
+                      placeholder="student@sst.scaler.com or UID"
+                      className={styles.manualAddInput}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddManualRecipient(); } }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddManualRecipient}
+                      disabled={manualAddLoading || !manualAddInput.trim()}
+                      className={styles.manualAddBtn}
+                    >
+                      {manualAddLoading ? "Searching..." : "+ Add to Selection"}
+                    </button>
+                  </div>
+                  {manualAddError && <span style={{ color: "#ef4444", fontSize: "11px" }}>{manualAddError}</span>}
+                </div>
               </div>
 
-              <div className={styles.formRow}>
+              {/* Award Configuration: Points, Track, Contribution Type */}
+              <div className={styles.formRowThree}>
                 <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>Merit Points</label>
+                  <label className={styles.formLabel}>Merit Points (per member)</label>
                   <input
                     type="number"
                     value={awardPoints}
@@ -1378,6 +1591,20 @@ export default function AdminClient() {
                     max={500}
                     required
                   />
+                </div>
+
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Track</label>
+                  <select
+                    value={awardTrack}
+                    onChange={(e) => setAwardTrack(e.target.value as "misc" | "research" | "product" | "kaggle")}
+                    className={styles.formSelect}
+                  >
+                    <option value="misc">General / Misc</option>
+                    <option value="research">Research Track</option>
+                    <option value="product">Product Track</option>
+                    <option value="kaggle">Kaggle Track</option>
+                  </select>
                 </div>
 
                 <div className={styles.formGroup}>
@@ -1397,10 +1624,19 @@ export default function AdminClient() {
                 </div>
               </div>
 
-              {awardType === "other" && <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Custom contribution type</label>
-                <input className={styles.formInput} value={awardCustomType} onChange={(event) => setAwardCustomType(event.target.value)} maxLength={200} placeholder="e.g. Competition mentor" required />
-              </div>}
+              {awardType === "other" && (
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Custom contribution type</label>
+                  <input
+                    className={styles.formInput}
+                    value={awardCustomType}
+                    onChange={(event) => setAwardCustomType(event.target.value)}
+                    maxLength={200}
+                    placeholder="e.g. Competition mentor"
+                    required
+                  />
+                </div>
+              )}
 
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Reason / Reference Link</label>
@@ -1415,11 +1651,15 @@ export default function AdminClient() {
 
               <button
                 type="submit"
-                disabled={awardLoading}
+                disabled={awardLoading || Object.keys(selectedRecipients).length === 0}
                 className={styles.publishBtn}
               >
                 <MemberIcon name="award" size={16} />
-                {awardLoading ? "Awarding Points..." : "Award Merits"}
+                {awardLoading
+                  ? "Awarding Points..."
+                  : Object.keys(selectedRecipients).length === 0
+                  ? "Select At Least 1 Member"
+                  : `Award ${awardPoints} Points to ${Object.keys(selectedRecipients).length} Member${Object.keys(selectedRecipients).length === 1 ? "" : "s"}`}
               </button>
             </form>
           </div>

@@ -371,7 +371,7 @@ def update_user_status(
 def admin_directory(
     search: str = Query("", max_length=100),
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=50),
+    page_size: int = Query(20, ge=1, le=100),
     admin: dict = Depends(get_admin_user),
 ) -> AdminMemberListResponse:
     query = search.strip().lower()
