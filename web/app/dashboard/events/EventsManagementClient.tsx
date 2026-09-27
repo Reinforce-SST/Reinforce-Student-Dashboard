@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMember } from "@/lib/useMember";
-import { api, EventSummaryItem } from "@/lib/api";
+import { api } from "@/lib/api";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import styles from "./EventsManagement.module.css";
 
@@ -20,18 +21,19 @@ export type CalendarEventItem = {
   location: string;
   statusText: string;
   statusType: "registered" | "slots" | "available" | "limited" | "full";
-  actionState: "joined" | "rsvp" | "closed";
+  registrationOpen: boolean;
   startDate: Date;
   bannerUrl?: string | null;
 };
 
 export default function EventsManagementClient() {
+  const router = useRouter();
   const { token } = useMember();
   const [activeTab, setActiveTab] = useState<"ALL" | "WORKSHOPS" | "HACKATHONS" | "MEETUPS">("ALL");
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [events, setEvents] = useState<CalendarEventItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [rsvpState, setRsvpState] = useState<Record<string, boolean>>({});
+  const [loadError, setLoadError] = useState("");
 
   // Current calendar month view (default to current date)
   const [currentCalendarDate, setCurrentCalendarDate] = useState(() => new Date());
@@ -39,17 +41,15 @@ export default function EventsManagementClient() {
   useEffect(() => {
     let active = true;
     async function fetchEvents() {
-      setLoading(true);
       try {
-        const res = await api.listEvents(token, { status: "published", limit: 50 });
+        const res = await api.listEvents(token, { timeline: "upcoming", limit: 100 });
         if (!active) return;
+        setLoadError("");
 
         if (res.events && res.events.length > 0) {
-          const mapped: CalendarEventItem[] = res.events.map((ev) => {
-            let start = new Date(ev.schedule.start_time);
-            if (isNaN(start.getTime())) {
-              start = new Date();
-            }
+          const mapped: CalendarEventItem[] = res.events.filter((ev) =>
+            new Date(ev.schedule.start_time).getTime() >= Date.now()).map((ev) => {
+            const start = new Date(ev.schedule.start_time);
 
             const monthStr = start.toLocaleString("en-US", { month: "short" }).toUpperCase();
             const dayNum = start.getDate();
@@ -60,11 +60,13 @@ export default function EventsManagementClient() {
               hour12: true,
             });
 
-            const rawType = (ev.event_type || "workshop").toLowerCase();
+            const rawType = ev.event_type.toLowerCase();
+            const registrationOpen = (ev.status === "published" || ev.status === "ongoing") &&
+              (!ev.schedule.registration_deadline || new Date(ev.schedule.registration_deadline).getTime() >= Date.now());
             const loc =
               ev.venue_info?.room ||
               ev.venue_info?.venue_name ||
-              (ev.format === "online" ? "Virtual • Discord" : "Campus Guild Lab");
+              (ev.format === "online" ? "Online" : "Venue to be announced");
 
             return {
               id: ev.id,
@@ -74,12 +76,12 @@ export default function EventsManagementClient() {
               year: yearNum,
               title: ev.title,
               type: rawType,
-              typeLabel: ev.event_type?.toUpperCase() || "WORKSHOP",
-              time: `${timeStr} IST`,
+              typeLabel: ev.event_type.toUpperCase(),
+              time: timeStr,
               location: loc,
-              statusText: ev.status.toUpperCase(),
+              statusText: registrationOpen ? "OPEN" : "REGISTRATION CLOSED",
               statusType: "available",
-              actionState: "rsvp",
+              registrationOpen,
               startDate: start,
               bannerUrl: ev.banner_url,
             };
@@ -91,8 +93,8 @@ export default function EventsManagementClient() {
         } else {
           setEvents([]);
         }
-      } catch (err) {
-        console.error("Failed to load events from backend:", err);
+      } catch {
+        if (active) setLoadError("Events could not be loaded. Please refresh.");
       } finally {
         if (active) setLoading(false);
       }
@@ -104,14 +106,10 @@ export default function EventsManagementClient() {
     };
   }, [token]);
 
-  const handleToggleRsvp = (id: string, e: React.MouseEvent) => {
+  const handleToggleRsvp = (slug: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-
-    setRsvpState((prev) => ({
-      ...prev,
-      [id]: !prev[id],
-    }));
+    router.push(`/dashboard/events/${slug}`);
   };
 
   // Filter events by tab and selected day
@@ -127,7 +125,7 @@ export default function EventsManagementClient() {
         const matchesMonth =
           ev.startDate.getMonth() === currentCalendarDate.getMonth() &&
           ev.startDate.getFullYear() === currentCalendarDate.getFullYear();
-        if (matchesMonth && ev.day !== selectedDay) {
+        if (!matchesMonth || ev.day !== selectedDay) {
           return false;
         }
       }
@@ -210,6 +208,8 @@ export default function EventsManagementClient() {
             <div style={{ textAlign: "center", padding: "60px 20px", color: "#8e8e93" }}>
               Loading upcoming club events...
             </div>
+          ) : loadError ? (
+            <div className={styles.eventCard} role="alert">{loadError}</div>
           ) : filteredEvents.length === 0 ? (
             <div className={styles.eventCard} style={{ padding: "40px 24px", textAlign: "center", flexDirection: "column", gap: "12px" }}>
               <div style={{ color: "#e5b731" }}>
@@ -238,7 +238,6 @@ export default function EventsManagementClient() {
             </div>
           ) : (
             filteredEvents.map((ev) => {
-              const isJoined = rsvpState[ev.id];
               return (
                 <article key={ev.id} className={styles.eventCard}>
                   <Link
@@ -278,32 +277,14 @@ export default function EventsManagementClient() {
                       <span className={styles.statusHeader}>STATUS</span>
                       <span
                         className={`${styles.statusValue} ${
-                          isJoined ? styles.statusRegistered : styles.statusAvailable
+                          styles.statusAvailable
                         }`}
                       >
-                        {isJoined ? "REGISTERED" : "AVAILABLE"}
+                        {ev.statusText}
                       </span>
                     </div>
 
-                    {isJoined ? (
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleRsvp(ev.id, e)}
-                        className={`${styles.actionBtn} ${styles.btnJoined}`}
-                        aria-label={`Joined ${ev.title}. Click to cancel RSVP`}
-                      >
-                        JOINED
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleRsvp(ev.id, e)}
-                        className={`${styles.actionBtn} ${styles.btnRsvp}`}
-                        aria-label={`RSVP for ${ev.title}`}
-                      >
-                        RSVP NOW
-                      </button>
-                    )}
+                    <button type="button" onClick={(e) => handleToggleRsvp(ev.slug, e)} className={`${styles.actionBtn} ${styles.btnRsvp}`} aria-label={`Open ${ev.title}`}>{ev.registrationOpen ? "RSVP NOW" : "VIEW EVENT"}</button>
                   </div>
                 </article>
               );
@@ -356,6 +337,7 @@ export default function EventsManagementClient() {
 
             {/* Days Grid */}
             <div className={styles.daysGrid} role="grid">
+              {Array.from({ length: new Date(calYear, calMonth, 1).getDay() }, (_, index) => <span key={`blank-${index}`} className={styles.dayMuted} aria-hidden="true" />)}
               {calendarDays.map((d) => {
                 const isSelected = selectedDay === d;
                 const hasEvent = eventDaysInMonth.has(d);
@@ -383,7 +365,7 @@ export default function EventsManagementClient() {
 
             <div className={styles.statsRowsList}>
               <div className={styles.statRow}>
-                <span className={styles.statRowLabel}>Total Published</span>
+                <span className={styles.statRowLabel}>Visible upcoming</span>
                 <span className={`${styles.statRowValue} ${styles.valGold}`}>{events.length}</span>
               </div>
 
@@ -407,11 +389,11 @@ export default function EventsManagementClient() {
               <div className={styles.progressTrack}>
                 <div
                   className={styles.progressFill}
-                  style={{ width: `${Math.min(100, Math.max(15, events.length * 20))}%` }}
+                  style={{ width: `${Math.round(eventDaysInMonth.size / daysInMonth * 100)}%` }}
                 />
               </div>
               <span className={styles.progressFootnote}>
-                {events.length > 0 ? "LIVE SYNCHRONIZED CALENDAR" : "AWAITING UPCOMING SESSIONS"}
+                {eventDaysInMonth.size} EVENT DAYS THIS MONTH
               </span>
             </div>
           </section>

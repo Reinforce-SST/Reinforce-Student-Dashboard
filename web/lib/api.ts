@@ -75,8 +75,6 @@ export type EventSummaryItem = {
     end_time?: string | null;
     duration_minutes?: number | null;
     registration_deadline?: string | null;
-    display_date?: string;
-    badge?: string;
   };
   venue_info?: {
     venue_name?: string | null;
@@ -112,8 +110,6 @@ export type EventDocument = {
     end_time?: string | null;
     duration_minutes?: number | null;
     registration_deadline?: string | null;
-    display_date?: string;
-    badge?: string;
   };
   eligibility?: {
     access_scope?: string;
@@ -230,6 +226,9 @@ export type TicketSummary = {
   category: TicketCategory;
   title: string;
   status: TicketStatus;
+  priority?: "low" | "medium" | "high" | "urgent";
+  created_by_uid?: string;
+  spg_id?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
   thread_url?: string | null;
@@ -241,11 +240,20 @@ export type TicketListResponse = {
   tickets: TicketSummary[];
 };
 
-type ApiTicketDetail = TicketSummary & {
+export type ApiTicketDetail = TicketSummary & {
   description?: string | null;
   fields?: Record<string, unknown>;
   close_reason?: string | null;
   closed_at?: string | null;
+  discord_meta?: { thread_url?: string | null } | null;
+};
+
+export type TicketCreateRequest = {
+  category: TicketCategory;
+  title: string;
+  description?: string;
+  fields: Record<string, unknown>;
+  spg_id?: string;
 };
 
 type ApiTicketMessage = {
@@ -302,6 +310,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ link_token: linkToken }),
     }),
+
+  createTicket: (token: string, body: TicketCreateRequest) =>
+    request<ApiTicketDetail>("/tickets", token, { method: "POST", body: JSON.stringify(body) }),
+
+  ticketDetail: (token: string, id: string) =>
+    request<ApiTicketDetail>(`/tickets/${encodeURIComponent(id)}`, token),
 
   ticket: async (token: string, id: string): Promise<TicketThread> => {
     const path = `/tickets/${encodeURIComponent(id)}`;
@@ -571,7 +585,26 @@ export const api = {
   },
 
   getEvent: (idOrSlug: string, token?: string | null) =>
-    request<EventSummaryItem>(`/events/${encodeURIComponent(idOrSlug)}`, token || undefined),
+    request<EventDocument>(`/events/${encodeURIComponent(idOrSlug)}`, token || undefined),
+
+  myEventRegistration: (token: string, id: string) =>
+    request<{ is_registered: boolean; registration: { status: string } | null }>(
+      `/events/${encodeURIComponent(id)}/my-registration`, token),
+
+  registerForEvent: (token: string, id: string, payload: { team_name?: string; member_uids?: string[] }) =>
+    request<{ status: string }>(`/events/${encodeURIComponent(id)}/register`, token, {
+      method: "POST", body: JSON.stringify(payload),
+    }),
+
+  cancelEventRegistration: (token: string, id: string) =>
+    request<unknown>(`/events/${encodeURIComponent(id)}/register`, token, { method: "DELETE" }),
+
+  submitEventFeedback: (token: string, id: string, payload: {
+    rating_content: number; rating_organization: number; rating_overall: number;
+    takeaways?: string; improvements?: string; is_anonymous: boolean;
+  }) => request<unknown>(`/events/${encodeURIComponent(id)}/feedback`, token, {
+    method: "POST", body: JSON.stringify(payload),
+  }),
 
   /* ----------------------------------------------------------- Admin APIs */
   adminCreateEvent: (token: string, payload: Record<string, unknown>) =>
@@ -604,15 +637,15 @@ export const api = {
   adminUpdateUserStatus: (
     token: string,
     userId: string,
-    payload: { is_admin?: boolean; is_member?: boolean; tier?: string; batch_year?: number | null }
+    payload: { is_admin?: boolean; is_member?: boolean; tier?: string }
   ) =>
     request<StudentProfile>(`/users/${encodeURIComponent(userId)}/status`, token, {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
 
-  adminAwardContribution: (token: string, payload: Record<string, unknown>) =>
-    request<Record<string, unknown>>("/contributions/award", token, {
+  adminAwardContribution: (token: string, userId: string, payload: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/contributions/award/user/${encodeURIComponent(userId)}`, token, {
       method: "POST",
       body: JSON.stringify(payload),
     }),

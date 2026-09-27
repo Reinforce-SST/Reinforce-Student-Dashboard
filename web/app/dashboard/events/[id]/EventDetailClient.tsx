@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useMember } from "@/lib/useMember";
+import { api } from "@/lib/api";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import { type EventDocument } from "@/lib/api";
 import styles from "./EventDetail.module.css";
@@ -149,34 +151,64 @@ function renderMarkdown(md?: string | null) {
 }
 
 export default function EventDetailClient({ event }: { event: EventDocument }) {
+  const { token } = useMember();
   const [isRegistered, setIsRegistered] = useState(false);
+  const [registrationStatus, setRegistrationStatus] = useState("");
+  const [registrationLoading, setRegistrationLoading] = useState(true);
+  const [registrationBusy, setRegistrationBusy] = useState(false);
+  const [registrationError, setRegistrationError] = useState("");
+  const [teamName, setTeamName] = useState("");
+  const [teammateIds, setTeammateIds] = useState("");
   const [registeredCount, setRegisteredCount] = useState(event.stats?.registered_count ?? 0);
+  const [deadlinePassed, setDeadlinePassed] = useState(false);
 
-  // Feedback State
-  const [ratingContent, setRatingContent] = useState(5);
-  const [ratingOrg, setRatingOrg] = useState(5);
-  const [ratingOverall, setRatingOverall] = useState(5);
-  const [takeaways, setTakeaways] = useState("");
-  const [improvements, setImprovements] = useState("");
-  const [isAnonymous, setIsAnonymous] = useState(false);
-  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  useEffect(() => {
+    const deadline = event.schedule?.registration_deadline;
+    const check = () => setDeadlinePassed(Boolean(deadline && Date.parse(deadline) <= Date.now()));
+    const initial = setTimeout(check, 0);
+    const interval = setInterval(check, 60_000);
+    return () => { clearTimeout(initial); clearInterval(interval); };
+  }, [event.schedule?.registration_deadline]);
 
-  const handleToggleRsvp = () => {
-    if (isRegistered) {
-      setIsRegistered(false);
-      setRegisteredCount((c) => Math.max(0, c - 1));
-    } else {
-      setIsRegistered(true);
-      setRegisteredCount((c) => c + 1);
+  useEffect(() => {
+    let active = true;
+    api.myEventRegistration(token, event.id).then((result) => {
+      if (active) {
+        setIsRegistered(result.is_registered);
+        setRegistrationStatus(result.registration?.status || "");
+      }
+    }).catch(() => { if (active) setRegistrationError("Registration status could not be loaded."); })
+      .finally(() => { if (active) setRegistrationLoading(false); });
+    return () => { active = false; };
+  }, [token, event.id]);
+
+  const handleToggleRsvp = async () => {
+    if (registrationBusy || registrationLoading) return;
+    setRegistrationBusy(true);
+    setRegistrationError("");
+    try {
+      if (isRegistered) {
+        await api.cancelEventRegistration(token, event.id);
+        setIsRegistered(false);
+        setRegistrationStatus("");
+      } else {
+        const memberUids = teammateIds.split(/[\s,]+/).map((id) => id.trim()).filter(Boolean);
+        if (event.participation?.mode === "team" && !teamName.trim()) {
+          setRegistrationError("Enter a team name before registering.");
+          return;
+        }
+        const result = await api.registerForEvent(token, event.id, event.participation?.mode === "team"
+          ? { team_name: teamName.trim(), member_uids: memberUids } : {});
+        setIsRegistered(true);
+        setRegistrationStatus(result.status);
+      }
+      const refreshed = await api.getEvent(event.id, token);
+      setRegisteredCount(refreshed.stats?.registered_count ?? registeredCount);
+    } catch (err) {
+      setRegistrationError(err instanceof Error ? err.message : "Registration could not be updated.");
+    } finally {
+      setRegistrationBusy(false);
     }
-  };
-
-  const handleSubmitFeedback = (e: React.FormEvent) => {
-    e.preventDefault();
-    setFeedbackSubmitted(true);
-    setTimeout(() => setFeedbackSubmitted(false), 5000);
-    setTakeaways("");
-    setImprovements("");
   };
 
   const getTrackChipClass = (track: string) => {
@@ -210,10 +242,17 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
         hour: "2-digit",
         minute: "2-digit",
       })
-    : "Until start time";
+    : "No deadline specified";
 
-  const capacity = event.participation?.max_participants || 100;
-  const fillPercent = Math.min(100, Math.round((registeredCount / capacity) * 100));
+  const durationMinutes = event.schedule?.duration_minutes ?? (
+    event.schedule?.start_time && event.schedule?.end_time
+      ? Math.max(0, Math.round((new Date(event.schedule.end_time).getTime() - new Date(event.schedule.start_time).getTime()) / 60000))
+      : null
+  );
+
+  const capacity = event.participation?.max_participants;
+  const fillPercent = capacity ? Math.min(100, Math.round((registeredCount / capacity) * 100)) : 0;
+  const registrationOpen = (event.status === "published" || event.status === "ongoing") && !deadlinePassed;
 
   return (
     <div className={styles.pageContainer}>
@@ -247,16 +286,17 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
             type="button"
             className={isRegistered ? styles.joinedButton : styles.rsvpButton}
             onClick={handleToggleRsvp}
+            disabled={registrationBusy || registrationLoading || (!isRegistered && !registrationOpen)}
           >
             {isRegistered ? (
               <>
                 <MemberIcon name="check" size={16} />
-                Registered & Confirmed (Cancel RSVP)
+                {registrationStatus === "waitlisted" ? "Waitlisted" : "Registered"} (Cancel RSVP)
               </>
             ) : (
               <>
                 <MemberIcon name="plus" size={16} />
-                {event.participation?.mode === "team" ? "Register Team (RSVP)" : "RSVP for Event"}
+                {!registrationOpen ? "Registration Closed" : event.participation?.mode === "team" ? "Register Team (RSVP)" : "RSVP for Event"}
               </>
             )}
           </button>
@@ -273,6 +313,12 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
             </a>
           )}
         </div>
+        {event.participation?.mode === "team" && registrationOpen && !isRegistered && <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input aria-label="Team name" placeholder="Team name" value={teamName} onChange={(e) => setTeamName(e.target.value)} style={{ background: "#141416", border: "1px solid #35353f", borderRadius: 8, color: "#fff", padding: "10px 12px", width: "min(100%, 260px)" }} />
+          <input aria-label="Teammate user IDs" placeholder="Teammate IDs, comma-separated" value={teammateIds} onChange={(e) => setTeammateIds(e.target.value)} style={{ background: "#141416", border: "1px solid #35353f", borderRadius: 8, color: "#fff", padding: "10px 12px", width: "min(100%, 320px)" }} />
+          <span style={{ color: "#8c8c98", fontSize: 12, alignSelf: "center" }}>Your account is included automatically.</span>
+        </div>}
+        {registrationError && <p role="alert" style={{ margin: "0 24px 16px" }}>{registrationError}</p>}
       </section>
 
       {/* Main 2-Column Content Grid */}
@@ -314,7 +360,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                   <span className={styles.ruleLabel}>Team Size</span>
                   <span className={styles.ruleVal}>
                     {event.participation?.mode === "team"
-                      ? `${event.participation.min_team_size || 1} - ${event.participation.max_team_size || 4} Members`
+                      ? `${event.participation.min_team_size ?? 1} - ${event.participation.max_team_size ?? 1} Members`
                       : "Individual (Solo)"}
                   </span>
                 </div>
@@ -331,9 +377,8 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                 <div className={styles.spgRuleItem}>
                   <span className={styles.ruleLabel}>Access Scope</span>
                   <span className={styles.ruleVal}>
-                    {event.eligibility?.access_scope === "open_to_all"
-                      ? "Open to All Students"
-                      : "Members Only"}
+                    {event.eligibility?.access_scope === "invite_only" ? "Invite Only" :
+                      event.eligibility?.access_scope === "members_only" ? "Members Only" : "Open to All Students"}
                   </span>
                 </div>
 
@@ -394,7 +439,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                 !event.resources?.writeup_url &&
                 !event.resources?.recording_url && (
                   <p style={{ color: "#8c8c98", fontSize: "0.82rem", margin: 0 }}>
-                    Artifacts and slides will be uploaded here following the live session.
+                    No event materials have been published yet.
                   </p>
                 )}
             </div>
@@ -439,7 +484,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                 <div className={styles.specContent}>
                   <span className={styles.specLabel}>Estimated Duration</span>
                   <span className={styles.specValue}>
-                    {event.schedule?.duration_minutes || 120} Minutes
+                    {durationMinutes ? `${durationMinutes} Minutes` : "Not specified"}
                   </span>
                 </div>
               </div>
@@ -452,7 +497,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                   <span className={styles.specLabel}>Venue / Stage</span>
                   <span className={styles.specValue}>
                     {event.venue_info?.venue_name ||
-                      (event.format === "online" ? "Virtual (Discord / Meet)" : "Campus Guild Lab")}
+                      (event.format === "online" ? "Online; link to be announced" : "Venue to be announced")}
                     {event.venue_info?.room ? ` (${event.venue_info.room})` : ""}
                   </span>
                 </div>
@@ -481,7 +526,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
               <div className={styles.statRow}>
                 <span style={{ color: "#8c8c98" }}>Confirmed Attendees</span>
                 <span className={styles.statValueMono}>
-                  {registeredCount} / {capacity}
+                  {registeredCount}{capacity ? ` / ${capacity}` : ""}
                 </span>
               </div>
 
@@ -498,7 +543,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                     fontFamily: "var(--font-mono, monospace)",
                   }}
                 >
-                  ⭐ {(event.stats?.average_rating ?? 5.0).toFixed(1)} / 5.0
+                  {event.stats?.feedback_count ? `⭐ ${(event.stats.average_rating ?? 0).toFixed(1)} / 5.0` : "No ratings yet"}
                 </span>
               </div>
             </div>

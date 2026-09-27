@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { googleSignIn, readLink } from '../.test-build/auth-flow.js';
+import { googleSignIn, readLink } from '../.test-build/lib/auth-flow.js';
 
 test('deliberately closing the popup stays on the page even when its message says popup', async () => {
   const result = await googleSignIn(async () => { throw { code: 'auth/popup-closed-by-user', message: 'Firebase: Error (auth/popup-closed-by-user).' }; });
