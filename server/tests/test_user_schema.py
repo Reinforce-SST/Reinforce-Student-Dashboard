@@ -40,7 +40,7 @@ def sample_user(**overrides):
         "email": "julian.chen@sst.scaler.com",
         "avatar_url": "https://example.com/avatar.png",
         "bio": "Machine learning enthusiast & research track member.",
-        "batch_year": 2,
+        "batch_year": 2029,
         "skills": ["python", "pytorch"],
         "social_links": {"github": "https://github.com/julian", "kaggle": None},
     }
@@ -53,7 +53,7 @@ class UserBaseTests(unittest.TestCase):
         user = UserBase.model_validate(sample_user())
         self.assertEqual(user.full_name, "Julian Chen")
         self.assertEqual(user.email, "julian.chen@sst.scaler.com")
-        self.assertEqual(user.batch_year, 2)
+        self.assertEqual(user.batch_year, 2029)
         self.assertEqual(user.skills, ["python", "pytorch"])
 
     def test_scaler_email_domain_enforced(self):
@@ -79,18 +79,23 @@ class UserBaseTests(unittest.TestCase):
                     UserBase.model_validate(sample_user(email=email))
 
     def test_batch_year_bounds(self):
-        for year in (1, 2, 3, 4, 5):
+        for year in (2027, 2029, 2030):
             with self.subTest(year=year):
                 user = UserBase.model_validate(sample_user(batch_year=year))
                 self.assertEqual(user.batch_year, year)
 
-        for bad in (0, 6, -1):
+        for bad in (0, 1, 2, 5, 2101):
             with self.subTest(year=bad):
                 with self.assertRaises(ValidationError):
                     UserBase.model_validate(sample_user(batch_year=bad))
 
 
 class UserUpdateRequestTests(unittest.TestCase):
+    def test_batch_update_accepts_graduation_year_only(self):
+        self.assertEqual(UserUpdateRequest(batch_year=2029).batch_year, 2029)
+        with self.assertRaises(ValidationError):
+            UserUpdateRequest(batch_year=2)
+
     def test_partial_update_keeps_only_sent_fields(self):
         update = UserUpdateRequest.model_validate({"skills": ["rust", "cuda"]})
         self.assertEqual(update.model_dump(exclude_unset=True), {"skills": ["rust", "cuda"]})

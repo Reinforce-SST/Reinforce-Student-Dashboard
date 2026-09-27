@@ -59,6 +59,10 @@ field name `eligibility.allowed_years`, but its values are graduation years. The
 four choices advance on July 1 in the `Asia/Kolkata` timezone. New event records
 keep the choices saved when they were published. Older events with the former
 default `[1, 2, 3, 4]` are interpreted as open to the current four cohorts.
+Older profiles storing a study-year value (1–5) are converted from their SST email
+prefix on sign-in; event registration also resolves that batch for members who
+have not signed in again. If the email cannot identify a graduation batch, the
+old value is retained rather than guessed and cannot satisfy a new batch rule.
 
 ## `discord_link_tokens/{sha256(token)}`
 

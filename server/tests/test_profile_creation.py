@@ -10,6 +10,26 @@ USER = {"email": "member@sst.scaler.com", "uid": "uid-1", "name": "Member"}
 
 
 class ProfileCreationTests(unittest.TestCase):
+    def test_existing_legacy_study_year_is_backfilled_from_email(self):
+        token = {"email": "review.25bcs00000@sst.scaler.com", "uid": "uid-25", "name": "Member"}
+        db = DB({"users/uid-25": {
+            "email": token["email"], "full_name": "Member", "batch_year": 2,
+        }})
+        with patch.object(users, "db", db):
+            result = users.sync_user(token)
+        self.assertEqual(result.batch_year, 2029)
+        self.assertEqual(db.data["users/uid-25"]["batch_year"], 2029)
+
+    def test_stored_graduation_batch_is_not_replaced_by_email_guess(self):
+        token = {"email": "review.25bcs00000@sst.scaler.com", "uid": "uid-25", "name": "Member"}
+        db = DB({"users/uid-25": {
+            "email": token["email"], "full_name": "Member", "batch_year": 2030,
+        }})
+        with patch.object(users, "db", db):
+            result = users.sync_user(token)
+        self.assertEqual(result.batch_year, 2030)
+        self.assertEqual(db.data["users/uid-25"]["batch_year"], 2030)
+
     def test_legacy_profile_fields_migrate_without_raw_discord_claim(self):
         db = DB({"users/member@sst.scaler.com": {
             "email": USER["email"], "full_name": "Saved name", "skills": ["Python"],

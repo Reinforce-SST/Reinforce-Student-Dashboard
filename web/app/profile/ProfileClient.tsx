@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMember } from "@/lib/useMember";
 import { api, type StudentProfile, type TrackPoints } from "@/lib/api";
+import { graduationBatchYear } from "@/lib/batchYear";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import MemberLoading from "@/components/dashboard/MemberLoading";
 import {
@@ -96,25 +97,6 @@ function buildHeatmapGrid(contributions: ContributionRecord[]): HeatmapDayCell[]
     grid.push(weekDays);
   }
   return grid;
-}
-
-export function deriveBatchYear(batchYear?: number | null, email?: string | null): number | null {
-  if (batchYear && batchYear >= 2000) {
-    return batchYear;
-  }
-  if (batchYear && batchYear >= 1 && batchYear <= 5) {
-    return 2028 - batchYear + 1;
-  }
-  if (email) {
-    const match = email.toLowerCase().match(/(?:^|\.)(\d{2})[a-zA-Z]/);
-    if (match && match[1]) {
-      const prefix = parseInt(match[1], 10);
-      if (prefix >= 20 && prefix <= 40) {
-        return 2000 + prefix + 4;
-      }
-    }
-  }
-  return null;
 }
 
 function formatBatchDisplay(batchYear?: number | null): string | null {
@@ -243,10 +225,8 @@ function ProfileClientContent() {
     discord: activeProfile?.social_links?.discord || activeProfile?.discord_id || "",
   };
 
-  // Derive 4-digit graduation batch year from email or profile (e.g. 25bcs -> 2029, 26bcs -> 2030)
-  const derivedBatchYear = useMemo(() => {
-    return deriveBatchYear(activeProfile?.batch_year, activeProfile?.email || loggedInProfile?.email);
-  }, [activeProfile?.batch_year, activeProfile?.email, loggedInProfile?.email]);
+  // The API stores the graduation batch; study year is not inferred here.
+  const derivedBatchYear = graduationBatchYear(activeProfile?.batch_year);
 
   const batchDisplay = formatBatchDisplay(derivedBatchYear);
 

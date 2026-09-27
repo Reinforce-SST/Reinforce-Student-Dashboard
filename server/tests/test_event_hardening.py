@@ -119,6 +119,22 @@ class EventHardeningTests(unittest.TestCase):
         response = self.client.post("/api/v1/events/event-one/register", json={})
         self.assertEqual(response.status_code, 201)
 
+    def test_legacy_study_year_uses_email_batch_for_new_event(self):
+        self.db.store["events/event-one"]["eligibility"]["allowed_years"] = [
+            2027, 2028, 2029, 2030
+        ]
+        self.db.store["users/uid-one"].update({
+            "batch_year": 2, "email": "review.25bcs00000@sst.scaler.com"
+        })
+        response = self.client.post("/api/v1/events/event-one/register", json={})
+        self.assertEqual(response.status_code, 201)
+
+    def test_legacy_study_year_without_batch_email_cannot_join_new_event(self):
+        self.db.store["events/event-one"]["eligibility"]["allowed_years"] = [2029]
+        self.db.store["users/uid-one"]["batch_year"] = 2
+        response = self.client.post("/api/v1/events/event-one/register", json={})
+        self.assertEqual(response.status_code, 403)
+
     def test_outside_graduation_batch_cannot_register(self):
         self.db.store["events/event-one"]["eligibility"]["allowed_years"] = [
             2027, 2028, 2029, 2030

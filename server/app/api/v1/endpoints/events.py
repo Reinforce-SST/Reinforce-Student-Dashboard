@@ -19,7 +19,7 @@ from app.api.security import get_admin_user, get_current_user, get_optional_curr
 from app.services.firebase import db
 from app.services import contributions as contribution_service
 from app.services.contributions import ContributionError
-from app.utils import get_user_uid, is_admin_user, now_iso, slugify
+from app.utils import get_user_uid, is_admin_user, now_iso, resolve_batch_year, slugify
 from app.schemas.contributions import (
     AdminAwardUser,
     ContributionCategory,
@@ -192,6 +192,8 @@ def _check_member_eligibility(
         )
     legacy_default_years = {1, 2, 3, 4}
     batch_year = profile.get("batch_year")
+    if any(year >= 2000 for year in eligibility.allowed_years):
+        batch_year = resolve_batch_year(batch_year, profile.get("email") or "")
     allowed_years = set(eligibility.allowed_years)
     if allowed_years == legacy_default_years:
         # Existing events used 1–4 as the default before profiles stored
