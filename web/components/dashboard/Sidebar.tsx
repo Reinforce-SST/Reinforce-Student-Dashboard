@@ -50,7 +50,7 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <div className={styles.sidebar}>
-      <Link href="/" onClick={onNavigate} className={styles.logoLink}>
+      <Link href="/dashboard" onClick={onNavigate} className={styles.logoLink}>
         <Image
           src={logo}
           priority
