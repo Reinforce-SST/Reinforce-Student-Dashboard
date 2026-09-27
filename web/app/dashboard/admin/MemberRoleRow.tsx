@@ -16,7 +16,7 @@ function currentRole(member: StudentProfile): RoleChoice {
 export default function MemberRoleRow({ member, token, onSaved }: {
   member: StudentProfile;
   token: string;
-  onSaved: () => void;
+  onSaved: (message: string) => void;
 }) {
   const [role, setRole] = useState<RoleChoice>(() => currentRole(member));
   const [customRole, setCustomRole] = useState(member.role_label && member.role_label.toLowerCase() !== "core" ? member.role_label : "");
@@ -38,8 +38,7 @@ export default function MemberRoleRow({ member, token, onSaved }: {
         tier: role === "beginner" || role === "advanced" ? role as MemberTier : member.tier || "beginner",
         role_label: role === "core" ? "core" : role === "custom" ? customRole.trim() : null,
       });
-      setMessage(role === "admin" || member.is_admin ? "Saved. Admin access updates after the member signs in again." : "Saved.");
-      onSaved();
+      onSaved(`${member.full_name} saved.${role === "admin" || member.is_admin ? " Admin access updates after the member signs in again." : ""}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save this role.");
     } finally {

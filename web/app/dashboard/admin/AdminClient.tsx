@@ -59,7 +59,7 @@ export default function AdminClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { profile, token } = useMember();
-  const { isAdminMode, setAdminMode } = useAdminMode();
+  const { setAdminMode } = useAdminMode();
 
   const tabParam = (searchParams.get("tab") as AdminTab) || "banners";
   const [activeTab, setActiveTab] = useState<AdminTab>(tabParam);
@@ -72,6 +72,9 @@ export default function AdminClient() {
 
   const handleTabChange = (tab: AdminTab) => {
     setActiveTab(tab);
+    setSubmitSuccess(null);
+    setSubmitError(null);
+    setDirectoryMessage("");
     router.push(`/dashboard/admin?tab=${tab}`);
   };
 
@@ -84,8 +87,8 @@ export default function AdminClient() {
   const [bannerDescription, setBannerDescription] = useState("");
   const [bannerCtaText, setBannerCtaText] = useState("");
   const [bannerCtaLink, setBannerCtaLink] = useState("");
-  const [bannerTrack, setBannerTrack] = useState("all");
-  const [bannerFormat, setBannerFormat] = useState("offline");
+  const bannerTrack = "all";
+  const bannerFormat = "offline";
   const [bannerUrl, setBannerUrl] = useState("");
   const [bannerFilePreview, setBannerFilePreview] = useState<string | null>(null);
   const [bannerFile, setBannerFile] = useState<File | null>(null);
@@ -134,6 +137,9 @@ export default function AdminClient() {
   const [awardLoading, setAwardLoading] = useState(false);
   const [awardSearch, setAwardSearch] = useState("");
   const [awardCandidates, setAwardCandidates] = useState<StudentProfile[]>([]);
+  const [awardSearchLoading, setAwardSearchLoading] = useState(false);
+  const [awardSearchError, setAwardSearchError] = useState("");
+  const [awardCandidateTotal, setAwardCandidateTotal] = useState(0);
   const [selectedRecipients, setSelectedRecipients] = useState<Record<string, StudentProfile>>({});
   const [awardCustomType, setAwardCustomType] = useState("");
   const awardOccurredAtRef = useRef<string | null>(null);
@@ -141,6 +147,7 @@ export default function AdminClient() {
   const [memberPage, setMemberPage] = useState(1);
   const [memberDirectory, setMemberDirectory] = useState<{ items: StudentProfile[]; total: number; has_more: boolean } | null>(null);
   const [directoryError, setDirectoryError] = useState("");
+  const [directoryMessage, setDirectoryMessage] = useState("");
   const [directoryRevision, setDirectoryRevision] = useState(0);
 
   useEffect(() => {
@@ -161,8 +168,9 @@ export default function AdminClient() {
     let active = true;
     const timer = setTimeout(() => {
       api.adminDirectory(token, { search: awardSearch.trim(), page_size: 50 })
-        .then((result) => { if (active) setAwardCandidates(result.items); })
-        .catch(() => { if (active) setAwardCandidates([]); });
+        .then((result) => { if (active) { setAwardCandidates(result.items); setAwardCandidateTotal(result.total); setAwardSearchError(""); } })
+        .catch((error) => { if (active) { setAwardCandidates([]); setAwardSearchError(error instanceof Error ? error.message : "Could not search members."); } })
+        .finally(() => { if (active) setAwardSearchLoading(false); });
     }, 250);
     return () => { active = false; clearTimeout(timer); };
   }, [activeTab, token, awardSearch]);
@@ -244,6 +252,14 @@ export default function AdminClient() {
     setSubmitError(null);
 
     try {
+      const startDateObj = new Date(bannerStartDateTime);
+      const endDateObj = bannerEndDateTime ? new Date(bannerEndDateTime) : null;
+      if (Number.isNaN(startDateObj.getTime()) || (endDateObj && Number.isNaN(endDateObj.getTime()))) {
+        throw new Error("Enter valid banner dates before publishing.");
+      }
+      if (endDateObj && endDateObj <= startDateObj) {
+        throw new Error("The banner end time must be after its start time.");
+      }
       const imageUrl = bannerFile
         ? (await api.adminUploadEventMedia(token, bannerFile)).url
         : bannerUrl.trim();
@@ -252,8 +268,6 @@ export default function AdminClient() {
         setBannerFile(null);
         setBannerFilePreview(null);
       }
-      const startDateObj = new Date(bannerStartDateTime);
-      const endDateObj = bannerEndDateTime ? new Date(bannerEndDateTime) : null;
       const durationMinutes = endDateObj
         ? Math.max(1, Math.round((endDateObj.getTime() - startDateObj.getTime()) / 60000))
         : undefined;
@@ -313,6 +327,15 @@ export default function AdminClient() {
     setSubmitError(null);
 
     try {
+      const startDateObj = new Date(eventStartDateTime);
+      const endDateObj = eventEndDateTime ? new Date(eventEndDateTime) : null;
+      const deadlineDateObj = eventRegDeadline ? new Date(eventRegDeadline) : null;
+      if (Number.isNaN(startDateObj.getTime()) || (endDateObj && Number.isNaN(endDateObj.getTime())) || (deadlineDateObj && Number.isNaN(deadlineDateObj.getTime()))) {
+        throw new Error("Enter valid event dates before publishing.");
+      }
+      if (endDateObj && endDateObj <= startDateObj) {
+        throw new Error("The event end time must be after its start time.");
+      }
       const imageUrl = eventFile
         ? (await api.adminUploadEventMedia(token, eventFile)).url
         : eventBannerUrl.trim();
@@ -321,8 +344,6 @@ export default function AdminClient() {
         setEventFile(null);
         setEventFilePreview(null);
       }
-      const startDateObj = new Date(eventStartDateTime);
-      const endDateObj = eventEndDateTime ? new Date(eventEndDateTime) : null;
       const durationMinutes = endDateObj
         ? Math.max(1, Math.round((endDateObj.getTime() - startDateObj.getTime()) / 60000))
         : undefined;
@@ -344,7 +365,7 @@ export default function AdminClient() {
           start_time: startDateObj.toISOString(),
           end_time: endDateObj ? endDateObj.toISOString() : undefined,
           duration_minutes: durationMinutes,
-          registration_deadline: eventRegDeadline ? new Date(eventRegDeadline).toISOString() : undefined,
+          registration_deadline: deadlineDateObj?.toISOString(),
         },
         eligibility: {
           access_scope: eventAccessScope,
@@ -1283,7 +1304,7 @@ export default function AdminClient() {
 
       {/* TAB 5: Merit Auditing */}
       {activeTab === "contributions" && (
-        <div className={styles.managerGrid}>
+        <div className={`${styles.managerGrid} ${styles.meritGrid}`}>
           <div className={styles.card}>
             <div className={styles.cardHeader}>
               <div>
@@ -1300,9 +1321,12 @@ export default function AdminClient() {
             <form onSubmit={handleAwardMerit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
               <div className={styles.formGroup}>
                 <label className={styles.formLabel} htmlFor="award-search">Find members</label>
-                <input id="award-search" type="search" value={awardSearch} onChange={(event) => { setAwardSearch(event.target.value); setAwardCandidates([]); }} placeholder="Search name or college email" className={styles.formInput} />
+                <input id="award-search" type="search" value={awardSearch} onChange={(event) => { setAwardSearch(event.target.value); setAwardCandidates([]); setAwardCandidateTotal(0); setAwardSearchError(""); setAwardSearchLoading(Boolean(event.target.value.trim())); }} placeholder="Search name or college email" className={styles.formInput} />
                 {awardSearch.trim() && <div className={styles.candidateList}>
-                  {awardCandidates.length > 0 && <label className={styles.candidateRow}>
+                  {awardSearchLoading && <span className={styles.candidateRow} role="status">Searching members…</span>}
+                  {awardSearchError && <span className={styles.candidateRow} role="alert">{awardSearchError}</span>}
+                  {!awardSearchLoading && !awardSearchError && awardCandidateTotal > awardCandidates.length && <span className={styles.candidateRow}>Showing the first {awardCandidates.length} of {awardCandidateTotal} matches. Narrow your search to find others.</span>}
+                  {!awardSearchLoading && awardCandidates.length > 0 && <label className={styles.candidateRow}>
                     <input type="checkbox" checked={awardCandidates.every((member) => Boolean(member.id && selectedRecipients[member.id]))} onChange={(event) => setSelectedRecipients((current) => {
                       const next = { ...current };
                       for (const member of awardCandidates) {
@@ -1313,7 +1337,7 @@ export default function AdminClient() {
                       return next;
                     })} /> Select all results on this page
                   </label>}
-                  {awardCandidates.map((member) => member.id && <label className={styles.candidateRow} key={member.id}>
+                  {!awardSearchLoading && awardCandidates.map((member) => member.id && <label className={styles.candidateRow} key={member.id}>
                     <input type="checkbox" checked={Boolean(selectedRecipients[member.id])} onChange={(event) => setSelectedRecipients((current) => {
                       const next = { ...current };
                       if (event.target.checked) next[member.id!] = member;
@@ -1322,9 +1346,14 @@ export default function AdminClient() {
                     })} />
                     {member.full_name} · {member.email}
                   </label>)}
-                  {awardCandidates.length === 0 && <span className={styles.candidateRow}>No matching members.</span>}
+                  {!awardSearchLoading && !awardSearchError && awardCandidates.length === 0 && <span className={styles.candidateRow}>No matching members.</span>}
                 </div>}
                 <span className={styles.selectedMembers}>{Object.keys(selectedRecipients).length} selected for this award</span>
+                {Object.keys(selectedRecipients).length > 0 && <div className={styles.selectedRecipientList} aria-label="Selected members">
+                  {Object.entries(selectedRecipients).map(([uid, member]) => <button key={uid} type="button" className={styles.selectedRecipient} onClick={() => setSelectedRecipients((current) => { const next = { ...current }; delete next[uid]; return next; })} aria-label={`Remove ${member.full_name} from award`} title="Remove from award">
+                    {member.full_name} <span aria-hidden="true">×</span>
+                  </button>)}
+                </div>}
               </div>
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Or enter one Student Email / User ID</label>
@@ -1358,11 +1387,11 @@ export default function AdminClient() {
                     onChange={(e) => setAwardType(e.target.value)}
                     className={styles.formSelect}
                   >
-                    <option value="project_milestone">Project Milestone (100 pts)</option>
-                    <option value="open_source_pr">Open Source PR (50 pts)</option>
-                    <option value="workshop_lead">Workshop Speaker / Lead (75 pts)</option>
-                    <option value="community_support">Community Support (25 pts)</option>
-                    <option value="attendance">Event Attendance (10 pts)</option>
+                    <option value="project_milestone">Project Milestone</option>
+                    <option value="open_source_pr">Open Source PR</option>
+                    <option value="workshop_lead">Workshop Speaker / Lead</option>
+                    <option value="community_support">Community Support</option>
+                    <option value="attendance">Event Attendance</option>
                     <option value="other">Other (custom)</option>
                   </select>
                 </div>
@@ -1394,27 +1423,6 @@ export default function AdminClient() {
               </button>
             </form>
           </div>
-
-          <div className={styles.card}>
-            <div className={styles.cardHeader}>
-              <div>
-                <h3 className={styles.cardTitle}>
-                  <MemberIcon name="check-circle" size={18} />
-                  Pending Contribution Submissions
-                </h3>
-                <div className={styles.cardSubtitle}>
-                  Submissions logged by students waiting for admin review.
-                </div>
-              </div>
-            </div>
-
-            <div style={{ textAlign: "center", padding: "30px 10px", color: "#8e8e93" }}>
-              <MemberIcon name="check-circle" size={32} />
-              <p style={{ marginTop: "10px", fontSize: "13px" }}>
-                All student contribution logs are currently audited and up to date!
-              </p>
-            </div>
-          </div>
         </div>
       )}
 
@@ -1435,17 +1443,18 @@ export default function AdminClient() {
 
           <div className={styles.formGroup}>
             <label className={styles.formLabel} htmlFor="member-search">Search members by name or email</label>
-            <input id="member-search" className={styles.formInput} value={memberSearch} onChange={(event) => { setMemberSearch(event.target.value); setMemberPage(1); setMemberDirectory(null); }} placeholder="Name or college email" />
+            <input id="member-search" className={styles.formInput} value={memberSearch} onChange={(event) => { setMemberSearch(event.target.value); setMemberPage(1); setMemberDirectory(null); setDirectoryError(""); setDirectoryMessage(""); }} placeholder="Name or college email" />
           </div>
-          {directoryError && <p role="alert" className={styles.memberMessage}>{directoryError}</p>}
+          {directoryError && <p role="alert" className={styles.memberMessage}>{directoryError} <button type="button" className={styles.smallAction} onClick={() => { setDirectoryError(""); setMemberDirectory(null); setDirectoryRevision((value) => value + 1); }}>Retry</button></p>}
+          {directoryMessage && <p role="status" className={styles.memberMessage}>{directoryMessage}</p>}
           <div className={styles.memberList}>
-            {memberDirectory?.items.map((member) => <MemberRoleRow key={`${member.id}-${member.updated_at}`} member={member} token={token} onSaved={() => setDirectoryRevision((value) => value + 1)} />)}
+            {memberDirectory?.items.map((member) => <MemberRoleRow key={`${member.id}-${member.updated_at}`} member={member} token={token} onSaved={(message) => { setDirectoryMessage(message); setDirectoryRevision((value) => value + 1); }} />)}
             {memberDirectory?.items.length === 0 && !directoryError && <p className={styles.cardSubtitle}>No members found.</p>}
           </div>
           <div className={styles.directoryPager}>
-            <span>{memberDirectory ? `${memberDirectory.total} members · page ${memberPage}` : "Loading members…"}</span>
-            <button type="button" className={styles.smallAction} disabled={memberPage <= 1} onClick={() => setMemberPage((page) => page - 1)}>Previous</button>
-            <button type="button" className={styles.smallAction} disabled={!memberDirectory?.has_more} onClick={() => setMemberPage((page) => page + 1)}>Next</button>
+            <span>{memberDirectory ? `${memberDirectory.total} members · page ${memberPage}` : directoryError ? "Members unavailable" : "Loading members…"}</span>
+            <button type="button" className={styles.smallAction} disabled={memberPage <= 1} onClick={() => { setMemberPage((page) => page - 1); setMemberDirectory(null); setDirectoryError(""); setDirectoryMessage(""); }}>Previous</button>
+            <button type="button" className={styles.smallAction} disabled={!memberDirectory?.has_more} onClick={() => { setMemberPage((page) => page + 1); setMemberDirectory(null); setDirectoryError(""); setDirectoryMessage(""); }}>Next</button>
           </div>
         </div>
       )}

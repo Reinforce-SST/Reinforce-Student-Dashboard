@@ -219,6 +219,7 @@
   grid-template-columns: 1fr 1fr;
   gap: 24px;
 }
+.meritGrid { grid-template-columns: minmax(0, 760px); justify-content: center; }
 
 @media (max-width: 1024px) {
   .managerGrid {
@@ -647,6 +648,10 @@
 .candidateRow + .candidateRow { border-top: 1px solid #31343a; }
 .candidateRow:hover { background: #242427; }
 .selectedMembers { color: #e5b731; font-size: 12px; }
+.selectedRecipientList { display: flex; flex-wrap: wrap; gap: 6px; max-height: 120px; overflow-y: auto; }
+.selectedRecipient { display: inline-flex; align-items: center; gap: 8px; border: 1px solid #5d4d20; border-radius: 999px; background: #2a2518; color: #f2d574; padding: 5px 9px; font: inherit; font-size: 12px; cursor: pointer; }
+.selectedRecipient:hover { background: #403418; }
+.selectedRecipient:focus-visible { outline: 2px solid #e5b731; outline-offset: 2px; }
 
 .secondaryBtn {
   background: #212121;
