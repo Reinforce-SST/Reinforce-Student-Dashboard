@@ -23,6 +23,11 @@ class FakeStorage:
         self.uploads.append((destination_path, payload))
         return f"https://storage.test/{destination_path}"
 
+    def delete(self, destination_path: str) -> None:
+        """Matches the signature of app.services.uploads.delete_file."""
+        self.objects.pop(destination_path, None)
+        self.deleted.append(destination_path)
+
     def paths(self) -> List[str]:
         return [path for path, _ in self.uploads]
 
