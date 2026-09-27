@@ -5,9 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useMember } from "@/lib/useMember";
 import { useAdminMode } from "@/lib/useAdminMode";
-import { api } from "@/lib/api";
+import { api, type StudentProfile } from "@/lib/api";
 import { getEventGraduationBatches } from "@/lib/eventsData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
+import MemberRoleRow from "./MemberRoleRow";
 import styles from "./Admin.module.css";
 
 type AdminTab =
@@ -87,6 +88,7 @@ export default function AdminClient() {
   const [bannerFormat, setBannerFormat] = useState("offline");
   const [bannerUrl, setBannerUrl] = useState("");
   const [bannerFilePreview, setBannerFilePreview] = useState<string | null>(null);
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
 
   // --- TAB 2: Full Club Event Publisher State ---
   const [eventTitle, setEventTitle] = useState("");
@@ -114,6 +116,7 @@ export default function AdminClient() {
   const [eventDiscordThread, setEventDiscordThread] = useState("");
   const [eventBannerUrl, setEventBannerUrl] = useState("");
   const [eventFilePreview, setEventFilePreview] = useState<string | null>(null);
+  const [eventFile, setEventFile] = useState<File | null>(null);
   const [eventStatus, setEventStatus] = useState("published");
 
   // Status & Refs
@@ -129,6 +132,40 @@ export default function AdminClient() {
   const [awardReason, setAwardReason] = useState("");
   const [awardType, setAwardType] = useState("project_milestone");
   const [awardLoading, setAwardLoading] = useState(false);
+  const [awardSearch, setAwardSearch] = useState("");
+  const [awardCandidates, setAwardCandidates] = useState<StudentProfile[]>([]);
+  const [selectedRecipients, setSelectedRecipients] = useState<Record<string, StudentProfile>>({});
+  const [awardCustomType, setAwardCustomType] = useState("");
+  const awardOccurredAtRef = useRef<string | null>(null);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [memberPage, setMemberPage] = useState(1);
+  const [memberDirectory, setMemberDirectory] = useState<{ items: StudentProfile[]; total: number; has_more: boolean } | null>(null);
+  const [directoryError, setDirectoryError] = useState("");
+  const [directoryRevision, setDirectoryRevision] = useState(0);
+
+  useEffect(() => {
+    if (activeTab !== "members" || !token) return;
+    let active = true;
+    const timer = setTimeout(() => {
+      api.adminDirectory(token, { search: memberSearch.trim(), page: memberPage, page_size: 20 })
+        .then((result) => { if (active) { setMemberDirectory(result); setDirectoryError(""); } })
+        .catch((error) => { if (active) setDirectoryError(error instanceof Error ? error.message : "Could not load members."); });
+    }, 250);
+    return () => { active = false; clearTimeout(timer); };
+  }, [activeTab, token, memberSearch, memberPage, directoryRevision]);
+
+  useEffect(() => {
+    if (activeTab !== "contributions" || !token || !awardSearch.trim()) {
+      return;
+    }
+    let active = true;
+    const timer = setTimeout(() => {
+      api.adminDirectory(token, { search: awardSearch.trim(), page_size: 50 })
+        .then((result) => { if (active) setAwardCandidates(result.items); })
+        .catch(() => { if (active) setAwardCandidates([]); });
+    }, 250);
+    return () => { active = false; clearTimeout(timer); };
+  }, [activeTab, token, awardSearch]);
 
   // Banner File Upload Handler
   const handleBannerFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -136,7 +173,15 @@ export default function AdminClient() {
     if (!file) return;
 
     if (file.size > 5 * 1024 * 1024) {
+      setBannerFile(null);
+      setBannerFilePreview(null);
       setSubmitError("Image file size exceeds 5MB limit.");
+      return;
+    }
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      setBannerFile(null);
+      setBannerFilePreview(null);
+      setSubmitError("Use a PNG, JPG, or WebP image.");
       return;
     }
 
@@ -144,9 +189,11 @@ export default function AdminClient() {
     reader.onload = () => {
       const result = reader.result as string;
       setBannerFilePreview(result);
-      setBannerUrl(result);
+      setBannerFile(file);
+      setBannerUrl("");
       setSubmitError(null);
     };
+    reader.onerror = () => setSubmitError("Could not read this image. Try another file.");
     reader.readAsDataURL(file);
   };
 
@@ -156,7 +203,15 @@ export default function AdminClient() {
     if (!file) return;
 
     if (file.size > 5 * 1024 * 1024) {
+      setEventFile(null);
+      setEventFilePreview(null);
       setSubmitError("Image file size exceeds 5MB limit.");
+      return;
+    }
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      setEventFile(null);
+      setEventFilePreview(null);
+      setSubmitError("Use a PNG, JPG, or WebP image.");
       return;
     }
 
@@ -164,9 +219,11 @@ export default function AdminClient() {
     reader.onload = () => {
       const result = reader.result as string;
       setEventFilePreview(result);
-      setEventBannerUrl(result);
+      setEventFile(file);
+      setEventBannerUrl("");
       setSubmitError(null);
     };
+    reader.onerror = () => setSubmitError("Could not read this image. Try another file.");
     reader.readAsDataURL(file);
   };
 
@@ -181,16 +238,20 @@ export default function AdminClient() {
       setSubmitError("Custom badge and CTA fields are preview-only until the backend supports them. Clear these fields to publish with the standard event link.");
       return;
     }
-    if (bannerUrl.startsWith("data:")) {
-      setSubmitError("Upload the banner to a hosted image URL first; this image is only a local preview.");
-      return;
-    }
 
     setIsSubmitting(true);
     setSubmitSuccess(null);
     setSubmitError(null);
 
     try {
+      const imageUrl = bannerFile
+        ? (await api.adminUploadEventMedia(token, bannerFile)).url
+        : bannerUrl.trim();
+      if (bannerFile) {
+        setBannerUrl(imageUrl);
+        setBannerFile(null);
+        setBannerFilePreview(null);
+      }
       const startDateObj = new Date(bannerStartDateTime);
       const endDateObj = bannerEndDateTime ? new Date(bannerEndDateTime) : null;
       const durationMinutes = endDateObj
@@ -208,7 +269,7 @@ export default function AdminClient() {
           end_time: endDateObj ? endDateObj.toISOString() : undefined,
           duration_minutes: durationMinutes,
         },
-        banner_url: bannerUrl || undefined,
+        banner_url: imageUrl || undefined,
         status: "published" as const,
       };
 
@@ -238,10 +299,6 @@ export default function AdminClient() {
       setSubmitError("The eligible batches have changed. Reload this page and review your selection.");
       return;
     }
-    if (eventBannerUrl.startsWith("data:")) {
-      setSubmitError("Upload the poster to a hosted image URL first; this image is only a local preview.");
-      return;
-    }
     if (!["research", "product", "kaggle", "misc", "all"].includes(eventTrack)) {
       setSubmitError("This event track is not supported by the backend yet. Choose Research, Product, Kaggle, or General Community.");
       return;
@@ -256,6 +313,14 @@ export default function AdminClient() {
     setSubmitError(null);
 
     try {
+      const imageUrl = eventFile
+        ? (await api.adminUploadEventMedia(token, eventFile)).url
+        : eventBannerUrl.trim();
+      if (eventFile) {
+        setEventBannerUrl(imageUrl);
+        setEventFile(null);
+        setEventFilePreview(null);
+      }
       const startDateObj = new Date(eventStartDateTime);
       const endDateObj = eventEndDateTime ? new Date(eventEndDateTime) : null;
       const durationMinutes = endDateObj
@@ -304,7 +369,7 @@ export default function AdminClient() {
           slides_url: eventSlidesUrl.trim() || undefined,
           discord_thread_id: eventDiscordThread.trim() || undefined,
         },
-        banner_url: eventBannerUrl || undefined,
+        banner_url: imageUrl || undefined,
         status: eventStatus,
       };
 
@@ -322,16 +387,26 @@ export default function AdminClient() {
   // Submit Merit Award
   const handleAwardMerit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!awardEmail.trim()) {
-      setSubmitError("Student email or user ID is required.");
+    if (!awardEmail.trim() && Object.keys(selectedRecipients).length === 0) {
+      setSubmitError("Select at least one member or enter a student email / user ID.");
+      return;
+    }
+    if (awardType === "other" && !awardCustomType.trim()) {
+      setSubmitError("Enter a name for the other contribution type.");
       return;
     }
     setAwardLoading(true);
     setSubmitSuccess(null);
     setSubmitError(null);
     try {
-      const recipient = await api.getUserProfile(token || "", awardEmail.trim());
-      if (!recipient.id) throw new Error("The member could not be resolved to a user ID.");
+      const recipients = { ...selectedRecipients };
+      let directUid: string | null = null;
+      if (awardEmail.trim()) {
+        const direct = await api.getUserProfile(token, awardEmail.trim());
+        if (!direct.id) throw new Error("The member could not be resolved to a user ID.");
+        recipients[direct.id] = direct;
+        directUid = direct.id;
+      }
       const category = {
         project_milestone: "project_work",
         open_source_pr: "project_work",
@@ -339,7 +414,9 @@ export default function AdminClient() {
         community_support: "service",
         attendance: "other",
       }[awardType] || "other";
-      await api.adminAwardContribution(token || "", recipient.id, {
+      const occurredAt = awardOccurredAtRef.current || new Date().toISOString();
+      awardOccurredAtRef.current = occurredAt;
+      const payload = {
         track: "misc",
         category,
         title: {
@@ -348,14 +425,31 @@ export default function AdminClient() {
           workshop_lead: "Workshop speaker or lead",
           community_support: "Community support",
           attendance: "Event attendance",
-        }[awardType] || "Administrative merit award",
+        }[awardType] || awardCustomType.trim(),
         points: Number(awardPoints),
-        description: awardReason || "Administrative merit award",
-        occurred_at: new Date().toISOString(),
-      });
-      setSubmitSuccess(`Successfully awarded ${awardPoints} merits to ${awardEmail}!`);
-      setAwardEmail("");
-      setAwardReason("");
+        description: awardReason.trim() || (awardType === "other" ? awardCustomType.trim() : "Administrative merit award"),
+        occurred_at: occurredAt,
+      };
+      const entries = Object.entries(recipients);
+      const results: PromiseSettledResult<boolean>[] = [];
+      for (let start = 0; start < entries.length; start += 5) {
+        const batch = entries.slice(start, start + 5);
+        results.push(...await Promise.allSettled(batch.map(async ([uid]) => {
+          await api.adminAwardContribution(token, uid, payload);
+          return api.adminRecalculateUserPoints(token, uid).then(() => true).catch(() => false);
+        })));
+      }
+      const succeeded = entries.filter((_, index) => results[index].status === "fulfilled").map(([uid]) => uid);
+      const failed = entries.filter((_, index) => results[index].status === "rejected").map(([uid]) => uid);
+      const stale = results.filter((result) => result.status === "fulfilled" && !result.value).length;
+      setSelectedRecipients((current) => Object.fromEntries(Object.entries(current).filter(([uid]) => !succeeded.includes(uid))));
+      if (directUid && succeeded.includes(directUid)) setAwardEmail("");
+      if (succeeded.length) setSubmitSuccess(`Awarded ${awardPoints} points to ${succeeded.length} member${succeeded.length === 1 ? "" : "s"}.${stale ? ` ${stale} leaderboard total${stale === 1 ? "" : "s"} could not refresh yet.` : ""}`);
+      if (failed.length) setSubmitError(`${failed.length} award${failed.length === 1 ? "" : "s"} failed. The failed recipients remain in the form for retry.`);
+      if (!failed.length) {
+        awardOccurredAtRef.current = null;
+        setAwardReason("");
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to award merit points.";
       setSubmitError(msg);
@@ -544,6 +638,7 @@ export default function AdminClient() {
                       type="button"
                       onClick={() => {
                         setBannerFilePreview(null);
+                        setBannerFile(null);
                         setBannerUrl("");
                         if (bannerFileInputRef.current) bannerFileInputRef.current.value = "";
                       }}
@@ -581,7 +676,12 @@ export default function AdminClient() {
                 <input
                   type="text"
                   value={bannerUrl}
-                  onChange={(e) => setBannerUrl(e.target.value)}
+                  onChange={(e) => {
+                    setBannerUrl(e.target.value);
+                    setBannerFile(null);
+                    setBannerFilePreview(null);
+                    if (bannerFileInputRef.current) bannerFileInputRef.current.value = "";
+                  }}
                   placeholder="/banners/reinforce-placeholder.png or https://..."
                   className={styles.formInput}
                 />
@@ -712,7 +812,7 @@ export default function AdminClient() {
 
                 <div className={styles.livePreviewImageSide}>
                   <img
-                    src={bannerUrl || "/banners/reinforce-placeholder.png"}
+                    src={bannerFilePreview || bannerUrl || "/banners/reinforce-placeholder.png"}
                     alt="Banner Preview"
                     onError={(e) => {
                       (e.target as HTMLImageElement).src = "/banners/reinforce-placeholder.png";
@@ -1036,6 +1136,7 @@ export default function AdminClient() {
                     type="button"
                     onClick={() => {
                       setEventFilePreview(null);
+                      setEventFile(null);
                       setEventBannerUrl("");
                       if (eventFileInputRef.current) eventFileInputRef.current.value = "";
                     }}
@@ -1072,7 +1173,12 @@ export default function AdminClient() {
                 <input
                   type="text"
                   value={eventBannerUrl}
-                  onChange={(e) => setEventBannerUrl(e.target.value)}
+                  onChange={(e) => {
+                    setEventBannerUrl(e.target.value);
+                    setEventFile(null);
+                    setEventFilePreview(null);
+                    if (eventFileInputRef.current) eventFileInputRef.current.value = "";
+                  }}
                   placeholder="/banners/reinforce-placeholder.png or https://..."
                   className={styles.formInput}
                 />
@@ -1193,14 +1299,41 @@ export default function AdminClient() {
 
             <form onSubmit={handleAwardMerit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Student Email / User ID</label>
+                <label className={styles.formLabel} htmlFor="award-search">Find members</label>
+                <input id="award-search" type="search" value={awardSearch} onChange={(event) => { setAwardSearch(event.target.value); setAwardCandidates([]); }} placeholder="Search name or college email" className={styles.formInput} />
+                {awardSearch.trim() && <div className={styles.candidateList}>
+                  {awardCandidates.length > 0 && <label className={styles.candidateRow}>
+                    <input type="checkbox" checked={awardCandidates.every((member) => Boolean(member.id && selectedRecipients[member.id]))} onChange={(event) => setSelectedRecipients((current) => {
+                      const next = { ...current };
+                      for (const member of awardCandidates) {
+                        if (!member.id) continue;
+                        if (event.target.checked) next[member.id] = member;
+                        else delete next[member.id];
+                      }
+                      return next;
+                    })} /> Select all results on this page
+                  </label>}
+                  {awardCandidates.map((member) => member.id && <label className={styles.candidateRow} key={member.id}>
+                    <input type="checkbox" checked={Boolean(selectedRecipients[member.id])} onChange={(event) => setSelectedRecipients((current) => {
+                      const next = { ...current };
+                      if (event.target.checked) next[member.id!] = member;
+                      else delete next[member.id!];
+                      return next;
+                    })} />
+                    {member.full_name} · {member.email}
+                  </label>)}
+                  {awardCandidates.length === 0 && <span className={styles.candidateRow}>No matching members.</span>}
+                </div>}
+                <span className={styles.selectedMembers}>{Object.keys(selectedRecipients).length} selected for this award</span>
+              </div>
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Or enter one Student Email / User ID</label>
                 <input
                   type="text"
                   value={awardEmail}
                   onChange={(e) => setAwardEmail(e.target.value)}
                   placeholder="student@sst.scaler.com"
                   className={styles.formInput}
-                  required
                 />
               </div>
 
@@ -1230,9 +1363,15 @@ export default function AdminClient() {
                     <option value="workshop_lead">Workshop Speaker / Lead (75 pts)</option>
                     <option value="community_support">Community Support (25 pts)</option>
                     <option value="attendance">Event Attendance (10 pts)</option>
+                    <option value="other">Other (custom)</option>
                   </select>
                 </div>
               </div>
+
+              {awardType === "other" && <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Custom contribution type</label>
+                <input className={styles.formInput} value={awardCustomType} onChange={(event) => setAwardCustomType(event.target.value)} maxLength={200} placeholder="e.g. Competition mentor" required />
+              </div>}
 
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Reason / Reference Link</label>
@@ -1289,19 +1428,24 @@ export default function AdminClient() {
                 Member Directory & Role Management
               </h3>
               <div className={styles.cardSubtitle}>
-                Manage student verification, batch cohorts, and admin permissions.
+                Manage membership and roles. Admin access takes effect after the member signs in again.
               </div>
             </div>
           </div>
 
-          <div style={{ textAlign: "center", padding: "40px 20px", color: "#8e8e93" }}>
-            <MemberIcon name="users" size={36} />
-            <p style={{ marginTop: "12px", fontSize: "14px", color: "#ffffff" }}>
-              Member directory sync connected to Firestore.
-            </p>
-            <p style={{ fontSize: "12.5px", maxWidth: "440px", margin: "0 auto" }}>
-              Batch roles, discord linkages, and access levels are maintained directly through authoritative user records.
-            </p>
+          <div className={styles.formGroup}>
+            <label className={styles.formLabel} htmlFor="member-search">Search members by name or email</label>
+            <input id="member-search" className={styles.formInput} value={memberSearch} onChange={(event) => { setMemberSearch(event.target.value); setMemberPage(1); setMemberDirectory(null); }} placeholder="Name or college email" />
+          </div>
+          {directoryError && <p role="alert" className={styles.memberMessage}>{directoryError}</p>}
+          <div className={styles.memberList}>
+            {memberDirectory?.items.map((member) => <MemberRoleRow key={`${member.id}-${member.updated_at}`} member={member} token={token} onSaved={() => setDirectoryRevision((value) => value + 1)} />)}
+            {memberDirectory?.items.length === 0 && !directoryError && <p className={styles.cardSubtitle}>No members found.</p>}
+          </div>
+          <div className={styles.directoryPager}>
+            <span>{memberDirectory ? `${memberDirectory.total} members · page ${memberPage}` : "Loading members…"}</span>
+            <button type="button" className={styles.smallAction} disabled={memberPage <= 1} onClick={() => setMemberPage((page) => page - 1)}>Previous</button>
+            <button type="button" className={styles.smallAction} disabled={!memberDirectory?.has_more} onClick={() => setMemberPage((page) => page + 1)}>Next</button>
           </div>
         </div>
       )}

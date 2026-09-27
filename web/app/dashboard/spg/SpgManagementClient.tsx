@@ -6,7 +6,7 @@ import MemberIcon from "@/components/dashboard/MemberIcon";
 import { useMember } from "@/lib/useMember";
 import { loadAllSpgs } from "@/lib/memberData";
 import { type SPGRecord } from "@/lib/spgData";
-import { api, type StudentProfile } from "@/lib/api";
+import { api } from "@/lib/api";
 import styles from "./SpgManagement.module.css";
 
 export default function SpgManagementClient() {
@@ -41,22 +41,22 @@ export default function SpgManagementClient() {
     void Promise.resolve().then(fetchSpgs);
   }, [fetchSpgs]);
 
-  // Fetch member directory lookup for member avatars & names
+  // Resolve the actual SPG members; a first directory page misses members
+  // outside the top 50 and leaves their avatars as initials.
   useEffect(() => {
-    if (!token) return;
-    void api.browseUsers(token, { page_size: 50 }).then((res) => {
-      if (res?.items) {
-        const map: Record<string, { full_name: string; avatar_url?: string | null }> = {};
-        res.items.forEach((u) => {
-          const uid = u.id || u.email;
-          if (uid) {
-            map[uid] = { full_name: u.full_name, avatar_url: u.avatar_url };
-          }
-        });
-        setMembersMap(map);
-      }
-    }).catch(() => {});
-  }, [token]);
+    if (!token || !spgs.length) return;
+    let active = true;
+    const uids = [...new Set(spgs.flatMap((spg) => spg.member_ids || []))];
+    void Promise.allSettled(uids.map((uid) => api.getUserProfile(token, uid))).then((results) => {
+      if (!active) return;
+      const map: Record<string, { full_name: string; avatar_url?: string | null }> = {};
+      results.forEach((result, index) => {
+        if (result.status === "fulfilled") map[uids[index]] = { full_name: result.value.full_name, avatar_url: result.value.avatar_url };
+      });
+      setMembersMap(map);
+    });
+    return () => { active = false; };
+  }, [token, spgs]);
 
   // Current member identifier
   const myId = profile?.id || "";

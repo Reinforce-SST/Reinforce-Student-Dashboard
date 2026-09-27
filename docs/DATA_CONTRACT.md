@@ -49,10 +49,13 @@ Timestamps here are **ISO-8601 strings**, written by the API with
 `datetime.now(timezone.utc).isoformat()`. This differs from the tickets collection —
 see the warning below.
 
-The UID-keyed profile also stores `is_member`, `tier`, `batch_year`, and
+The UID-keyed profile also stores `is_member`, `tier`, optional `role_label`, `batch_year`, and
 the cached per-track `points` map. `is_admin` in this profile is display metadata
 only; API authorization comes exclusively from the verified Firebase
 `admin == true` custom claim.
+`role_label` is a display-only string for core or custom club roles. It does not
+grant API privileges; only the separate Admin control updates the Firebase claim.
+Existing member documents without `role_label` remain valid.
 
 `batch_year` is the four-digit graduation year. New event records keep the legacy
 field name `eligibility.allowed_years`, but its values are graduation years. The

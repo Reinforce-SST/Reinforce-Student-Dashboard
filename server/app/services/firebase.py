@@ -9,6 +9,7 @@ resolve through the same lazy path.
 """
 
 import urllib.parse
+import uuid
 
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
@@ -63,16 +64,21 @@ db = _LazyClient(get_db)
 bucket = _LazyClient(get_bucket)
 
 
-def upload_file_to_storage(file_obj, destination_path: str, content_type: str) -> str:
-    """Uploads a file and returns the public download URL."""
+def upload_file_to_storage(file_obj, destination_path: str, content_type: str, *, shareable: bool = False) -> str:
+    """Upload a file, optionally issuing a persistent shareable download URL.
+
+    Cloud Storage buckets are private by default. Public website images need a
+    download token. Private documents keep their existing access behavior.
+    """
     bucket = get_bucket()
     blob = bucket.blob(destination_path)
-
-    # Upload the file buffer
+    token = str(uuid.uuid4()) if shareable else None
+    if token:
+        blob.metadata = {**(blob.metadata or {}), "firebaseStorageDownloadTokens": token}
     blob.upload_from_file(file_obj, content_type=content_type)
-
-    # Construct the public Firebase Storage URL manually
     encoded_path = urllib.parse.quote(destination_path, safe="")
     public_url = f"https://firebasestorage.googleapis.com/v0/b/{bucket.name}/o/{encoded_path}?alt=media"
+    if token:
+        public_url += f"&token={token}"
 
     return public_url

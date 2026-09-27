@@ -27,18 +27,18 @@ function UserAvatar({
   name?: string;
   className?: string;
 }) {
-  const [failed, setFailed] = useState(false);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const initials = getInitials(name);
 
   return (
     <div className={className}>
-      {src && !failed ? (
+      {src && src !== failedSrc ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={src}
           alt={name || "Member avatar"}
           className={styles.avatarImg}
-          onError={() => setFailed(true)}
+          onError={() => setFailedSrc(src)}
         />
       ) : (
         initials

@@ -111,15 +111,18 @@ function ProfileClientContent() {
   const queryId = searchParams ? searchParams.get("id") || searchParams.get("uid") : null;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState("");
 
   const handleSignOut = async () => {
     if (signingOut) return;
     setSigningOut(true);
+    setSignOutError("");
     try {
       await signOut();
       router.push("/auth");
     } catch {
       setSigningOut(false);
+      setSignOutError("Could not sign out. Please try again.");
     }
   };
 
@@ -229,6 +232,7 @@ function ProfileClientContent() {
   // Derived state fields from activeProfile
   const fullName = activeProfile?.full_name || (isOwner ? "Member Profile" : "Club Member");
   const avatarUrl = activeProfile?.avatar_url || null;
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
   const bio = activeProfile?.bio || "";
   const skills = activeProfile?.skills || [];
   const socialLinks = {
@@ -266,6 +270,7 @@ function ProfileClientContent() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editFormName, setEditFormName] = useState(fullName);
   const [editFormAvatarUrl, setEditFormAvatarUrl] = useState(avatarUrl || "");
+  const [failedPreviewUrl, setFailedPreviewUrl] = useState<string | null>(null);
   const [editFormBio, setEditFormBio] = useState(bio);
   const [editFormSkills, setEditFormSkills] = useState(skills.join(", "));
   const [editFormGithub, setEditFormGithub] = useState(socialLinks.github || "");
@@ -298,7 +303,7 @@ function ProfileClientContent() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith("image/")) {
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
       setAvatarUploadError("Please select a valid image file (.png, .jpg, .webp).");
       return;
     }
@@ -312,14 +317,6 @@ function ProfileClientContent() {
     try {
       setIsUploadingAvatar(true);
       setAvatarUploadError("");
-
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setEditFormAvatarUrl(event.target.result as string);
-        }
-      };
-      reader.readAsDataURL(file);
 
       const res = await api.uploadAvatar(token, file);
       if (res && res.avatar_url) {
@@ -448,16 +445,13 @@ function ProfileClientContent() {
               title={isOwner ? "Click to change profile picture or details" : undefined}
               style={{ cursor: isOwner ? "pointer" : "default" }}
             >
-              {avatarUrl ? (
+              {avatarUrl && avatarUrl !== failedAvatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={avatarUrl}
                   alt={fullName}
                   className={styles.avatarImg}
-                  onError={(e) => {
-                    // Fallback to initials if broken image
-                    (e.currentTarget as HTMLElement).style.display = "none";
-                  }}
+                  onError={() => setFailedAvatarUrl(avatarUrl)}
                 />
               ) : (
                 <span className={styles.avatarInitials}>{initials}</span>
@@ -541,6 +535,7 @@ function ProfileClientContent() {
                   <MemberIcon name="log-out" size={16} />
                   {signingOut ? "Signing out…" : "Sign Out"}
                 </button>
+                {signOutError && <span role="alert">{signOutError}</span>}
               </>
             ) : (
               <>
@@ -1229,15 +1224,13 @@ function ProfileClientContent() {
             {/* Avatar Upload Section */}
             <div className={styles.avatarEditSection}>
               <div className={styles.modalAvatarPreview}>
-                {editFormAvatarUrl ? (
+                {editFormAvatarUrl && editFormAvatarUrl !== failedPreviewUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={editFormAvatarUrl}
                     alt="Preview"
                     className={styles.modalAvatarImg}
-                    onError={(e) => {
-                      (e.currentTarget as HTMLElement).style.display = "none";
-                    }}
+                    onError={() => setFailedPreviewUrl(editFormAvatarUrl)}
                   />
                 ) : (
                   <span className={styles.avatarInitials} style={{ fontSize: "1.3rem" }}>

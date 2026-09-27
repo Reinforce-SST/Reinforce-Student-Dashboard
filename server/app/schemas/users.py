@@ -58,7 +58,7 @@ class UserUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     full_name: Optional[str] = Field(default=None, min_length=1, max_length=100)
-    avatar_url: Optional[str] = None
+    avatar_url: Optional[str] = Field(default=None, max_length=2048)
     bio: Optional[str] = Field(default=None, max_length=1000)
     skills: Optional[List[str]] = Field(default=None, max_length=30)
     social_links: Optional[SocialLinks] = None
@@ -70,6 +70,13 @@ class UserUpdateRequest(BaseModel):
             raise ValueError("Full name cannot be blank")
         return value
 
+    @field_validator("avatar_url")
+    @classmethod
+    def reject_inline_avatar(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None and value.strip().lower().startswith("data:"):
+            raise ValueError("Upload the image instead of saving a data URL")
+        return value
+
 
 class AdminUserUpdateRequest(BaseModel):
     """Payload for admins to update membership status, admin role, or club tier."""
@@ -78,6 +85,21 @@ class AdminUserUpdateRequest(BaseModel):
     is_member: Optional[bool] = None
     is_admin: Optional[bool] = None
     tier: Optional[MemberTier] = None
+    role_label: Optional[str] = Field(default=None, max_length=50)
+
+    @field_validator("role_label")
+    @classmethod
+    def validate_role_label(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        clean = value.strip()
+        if not clean:
+            raise ValueError("Custom role cannot be blank")
+        if not clean.isprintable():
+            raise ValueError("Custom role must contain printable text")
+        if clean.lower() in {"admin", "beginner", "advanced"}:
+            raise ValueError("Use the dedicated Admin or tier control for this role")
+        return clean
 
 
 class DiscordVerifyRequest(BaseModel):
@@ -102,6 +124,7 @@ class UserDocument(BaseModel):
     is_admin: bool = False
     is_member: bool = False
     tier: MemberTier = MemberTier.BEGINNER
+    role_label: Optional[str] = None
     batch_year: Optional[int] = None
     is_verified: bool = False
     verified_at: Optional[str] = None
@@ -122,6 +145,7 @@ class UserPublicResponse(BaseModel):
     bio: Optional[str] = None
     is_member: bool = False
     tier: MemberTier = MemberTier.BEGINNER
+    role_label: Optional[str] = None
     batch_year: Optional[int] = None
     is_verified: bool = False
     skills: List[str] = Field(default_factory=list)
@@ -140,6 +164,7 @@ class UserMeResponse(BaseModel):
     is_admin: bool = False
     is_member: bool = False
     tier: MemberTier = MemberTier.BEGINNER
+    role_label: Optional[str] = None
     batch_year: Optional[int] = None
     is_verified: bool = False
     verified_at: Optional[str] = None
@@ -174,3 +199,11 @@ class UserListResponse(BaseModel):
     page: int = 1
     page_size: int = 20
     has_more: bool = False
+
+
+class AdminMemberListResponse(BaseModel):
+    items: List[UserMeResponse]
+    total: int
+    page: int
+    page_size: int
+    has_more: bool

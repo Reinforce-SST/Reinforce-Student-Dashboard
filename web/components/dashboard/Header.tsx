@@ -41,7 +41,7 @@ export default function Header({
   const { profile } = useMember();
   const pathname = usePathname();
   const [searchQuery, setSearchQuery] = useState("");
-  const [avatarFailed, setAvatarFailed] = useState(false);
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
 
   const pageTitle = titles[pathname] || "Dashboard Overview";
   const section = pathname === "/profile" ? "profile" : pathname.split("/")[2] || "";
@@ -110,15 +110,15 @@ export default function Header({
         >
           <div className={styles.userText}>
             <span className={styles.userName}>{displayName}</span>
-            <span className={styles.userTrack}>{profile.tier ? `${profile.tier.toUpperCase()} MEMBER` : "MEMBER"}</span>
+            <span className={styles.userTrack}>{profile.is_admin ? "ADMIN" : profile.role_label?.toUpperCase() || (profile.tier ? `${profile.tier.toUpperCase()} MEMBER` : "MEMBER")}</span>
           </div>
           <div className={styles.userAvatar}>
-            {profile?.avatar_url && !avatarFailed ? (
+            {profile?.avatar_url && profile.avatar_url !== failedAvatarUrl ? (
               <img
                 src={profile.avatar_url}
                 alt={displayName}
                 className={styles.avatarImg}
-                onError={() => setAvatarFailed(true)}
+                onError={() => setFailedAvatarUrl(profile.avatar_url || null)}
               />
             ) : (
               initials

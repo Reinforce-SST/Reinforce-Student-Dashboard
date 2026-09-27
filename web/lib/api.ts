@@ -180,6 +180,7 @@ export type StudentProfile = {
   is_admin?: boolean;
   is_member?: boolean;
   tier?: MemberTier;
+  role_label?: string | null;
   batch_year?: number | null;
   bio?: string | null;
   points?: TrackPoints;
@@ -607,6 +608,33 @@ export const api = {
   }),
 
   /* ----------------------------------------------------------- Admin APIs */
+  adminUploadEventMedia: async (token: string, file: File): Promise<{ url: string }> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const response = await fetch(`${BASE}/events/media`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new ApiError(typeof body?.detail === "string" ? body.detail : `Image upload failed (${response.status}).`, response.status);
+      }
+      return response.json() as Promise<{ url: string }>;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new ApiError("Image upload timed out. Try again.", 504);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+
   adminCreateEvent: (token: string, payload: Record<string, unknown>) =>
     request<EventSummaryItem>("/events", token, {
       method: "POST",
@@ -637,18 +665,31 @@ export const api = {
   adminUpdateUserStatus: (
     token: string,
     userId: string,
-    payload: { is_admin?: boolean; is_member?: boolean; tier?: string }
+    payload: { is_admin?: boolean; is_member?: boolean; tier?: MemberTier; role_label?: string | null }
   ) =>
     request<StudentProfile>(`/users/${encodeURIComponent(userId)}/status`, token, {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
 
+  adminDirectory: (token: string, params: { search?: string; page?: number; page_size?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.search) query.set("search", params.search);
+    if (params.page) query.set("page", String(params.page));
+    if (params.page_size) query.set("page_size", String(params.page_size));
+    return request<{ items: StudentProfile[]; total: number; page: number; page_size: number; has_more: boolean }>(
+      `/users/admin-directory?${query.toString()}`, token
+    );
+  },
+
   adminAwardContribution: (token: string, userId: string, payload: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/contributions/award/user/${encodeURIComponent(userId)}`, token, {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  adminRecalculateUserPoints: (token: string, userId: string) =>
+    request<Record<string, unknown>>(`/contributions/recalculate/${encodeURIComponent(userId)}`, token, { method: "POST" }),
 
   adminReviewContribution: (token: string, contribId: string, action: "approve" | "reject" | "revoke", reason?: string) =>
     request<Record<string, unknown>>(`/contributions/${encodeURIComponent(contribId)}/review`, token, {

@@ -631,6 +631,23 @@
   cursor: not-allowed;
 }
 
+.memberList { display: flex; flex-direction: column; gap: 8px; }
+.memberRow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px; border: 1px solid #31343a; border-radius: 10px; background: #121214; }
+.memberIdentity { display: flex; flex: 1 1 210px; min-width: 0; flex-direction: column; gap: 3px; color: #fff; font-size: 13px; }
+.memberIdentity span { color: #9e9ea4; font-size: 12px; overflow-wrap: anywhere; }
+.memberToggle { display: inline-flex; align-items: center; gap: 6px; color: #cfcfd4; font-size: 12px; }
+.memberToggle input, .candidateRow input { accent-color: #e5b731; }
+.memberMessage { flex-basis: 100%; color: #e5b731; font-size: 12px; margin: 0; }
+.smallAction { border: 1px solid #5d4d20; border-radius: 8px; background: #2a2518; color: #e5b731; padding: 9px 12px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.smallAction:disabled { opacity: .5; cursor: default; }
+.directoryPager { display: flex; align-items: center; justify-content: flex-end; gap: 8px; color: #9e9ea4; font-size: 12px; }
+.directoryPager span { margin-right: auto; }
+.candidateList { display: flex; flex-direction: column; max-height: 240px; overflow-y: auto; border: 1px solid #31343a; border-radius: 8px; }
+.candidateRow { display: flex; align-items: center; gap: 8px; padding: 8px 10px; color: #eee; font-size: 12px; cursor: pointer; }
+.candidateRow + .candidateRow { border-top: 1px solid #31343a; }
+.candidateRow:hover { background: #242427; }
+.selectedMembers { color: #e5b731; font-size: 12px; }
+
 .secondaryBtn {
   background: #212121;
   color: #d1d1d6;
