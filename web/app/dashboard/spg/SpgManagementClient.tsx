@@ -48,7 +48,10 @@ export default function SpgManagementClient() {
       if (res?.items) {
         const map: Record<string, { full_name: string; avatar_url?: string | null }> = {};
         res.items.forEach((u) => {
-          map[u.id] = { full_name: u.full_name, avatar_url: u.avatar_url };
+          const uid = u.id || u.email;
+          if (uid) {
+            map[uid] = { full_name: u.full_name, avatar_url: u.avatar_url };
+          }
         });
         setMembersMap(map);
       }
