@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMember } from "@/lib/useMember";
 import { api, type EventSummaryItem } from "@/lib/api";
 import { getDashboardEvents, indiaDateKey, indiaDateParts } from "@/lib/dashboardData";
+import { loadAllSpgs, loadAllUpcomingEvents } from "@/lib/memberData";
 import type { SPGRecord } from "@/lib/spgData";
 import type { ContributionRecord } from "@/lib/contributionData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
@@ -33,32 +34,6 @@ const fallbackBanner: FeaturedBanner = {
   ctaLink: "/dashboard/events",
   imageSrc: "/banners/reinforce-placeholder.png",
 };
-
-async function loadAllSpgs(token: string) {
-  const items: SPGRecord[] = [];
-  const cursors = new Set<string>();
-  let cursor: string | undefined;
-  do {
-    const page = await api.listSpgs(token, { limit: 100, cursor });
-    items.push(...page.items);
-    if (!page.next_cursor) break;
-    if (cursors.has(page.next_cursor)) throw new Error("Project group pagination did not advance.");
-    cursor = page.next_cursor;
-    cursors.add(cursor);
-  } while (cursor);
-  return items;
-}
-
-async function loadAllEvents(token: string) {
-  const first = await api.listEvents(token, { timeline: "upcoming", limit: 100, page: 1 });
-  const events = [...first.events];
-  for (let page = 2; events.length < first.total; page += 1) {
-    const next = await api.listEvents(token, { timeline: "upcoming", limit: 100, page });
-    if (next.events.length === 0) break;
-    events.push(...next.events);
-  }
-  return events;
-}
 
 function eventLink(event: EventSummaryItem) {
   return `/dashboard/events/${event.slug || event.id}`;
@@ -104,7 +79,7 @@ export default function DashboardClient() {
       setContributionStatus("loading");
       const results = await Promise.allSettled([
         loadAllSpgs(token),
-        loadAllEvents(token),
+        loadAllUpcomingEvents(token),
         profile.id ? api.getUserContributions(token, profile.id, 100) : Promise.reject(new Error("Missing member ID")),
       ]);
       if (!active) return;

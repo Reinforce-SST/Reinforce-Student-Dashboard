@@ -246,6 +246,10 @@ export default function AdminClient() {
       setSubmitError("This event track is not supported by the backend yet. Choose Research, Product, Kaggle, or General Community.");
       return;
     }
+    if (!["open_to_all", "members_only"].includes(eventAccessScope)) {
+      setSubmitError("Invite-only events are not supported by the backend yet. Choose Open to All Students or Club Members Only.");
+      return;
+    }
 
     setIsSubmitting(true);
     setSubmitSuccess(null);
@@ -802,11 +806,11 @@ export default function AdminClient() {
                   className={styles.formSelect}
                 >
                   <option value="research">Research Track</option>
-                  <option value="ai_ml">AI / ML</option>
+                  <option value="ai_ml" disabled>AI / ML</option>
                   <option value="kaggle">Kaggle Track</option>
                   <option value="product">Product Track</option>
-                  <option value="systems">Systems Track</option>
-                  <option value="web3">Web3 Track</option>
+                  <option value="systems" disabled>Systems Track</option>
+                  <option value="web3" disabled>Web3 Track</option>
                   <option value="misc">General Community</option>
                 </select>
               </div>
@@ -928,7 +932,7 @@ export default function AdminClient() {
                 >
                   <option value="open_to_all">Open to All Students</option>
                   <option value="members_only">Club Members Only</option>
-                  <option value="invite_only">Invite Only</option>
+                  <option value="invite_only" disabled>Invite Only</option>
                 </select>
               </div>
               <div className={styles.formGroup}>
