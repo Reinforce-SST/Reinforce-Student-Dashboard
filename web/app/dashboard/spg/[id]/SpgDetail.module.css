@@ -298,6 +298,8 @@
   gap: 18px;
 }
 
+.reportsSection { scroll-margin-top: 80px; }
+
 .sectionHeaderRow {
   display: flex;
   align-items: center;
