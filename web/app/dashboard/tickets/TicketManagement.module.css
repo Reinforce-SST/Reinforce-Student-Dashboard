@@ -1470,3 +1470,123 @@
   align-items: center;
   gap: 6px;
 }
+
+/* Dynamic List Builder Styles (for Idea Jar prerequisites, roadmap, outcomes) */
+.itemAddRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.itemAddBtn {
+  background: #1f1f26;
+  border: 1px solid #30303c;
+  color: var(--brand, #E5B731);
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.itemAddBtn:hover:not(:disabled) {
+  background: #2a2a34;
+  border-color: var(--brand, #E5B731);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.itemAddBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.itemListTray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px;
+  background: #111114;
+  border: 1px solid #222228;
+  border-radius: 8px;
+  min-height: 38px;
+}
+
+.itemChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #1b1b22;
+  border: 1px solid #2d2d38;
+  color: #e2e2e8;
+  font-size: 0.73rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  animation: fadeIn 0.15s ease;
+}
+
+.itemRemoveBtn {
+  background: none;
+  border: none;
+  color: #8c8c96;
+  cursor: pointer;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  transition: color 0.12s ease;
+}
+
+.itemRemoveBtn:hover {
+  color: #f87171;
+}
+
+.roadmapListStack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #111114;
+  border: 1px solid #222228;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.roadmapStepRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #18181e;
+  border: 1px solid #262630;
+  padding: 6px 10px;
+  border-radius: 6px;
+  animation: fadeIn 0.15s ease;
+}
+
+.roadmapStepNumber {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(229, 183, 49, 0.15);
+  color: var(--brand, #E5B731);
+  font-size: 0.68rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-family: var(--font-mono, monospace);
+}
+
+.roadmapStepText {
+  flex: 1;
+  font-size: 0.74rem;
+  color: #e5e5ea;
+  word-break: break-word;
+}
+

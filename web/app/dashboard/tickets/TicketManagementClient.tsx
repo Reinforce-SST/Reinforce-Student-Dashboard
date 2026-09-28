@@ -253,9 +253,12 @@ export default function TicketManagementClient() {
   const [ideaTrack, setIdeaTrack] = useState<"research" | "product" | "kaggle" | "general">("product");
   const [ideaDifficulty, setIdeaDifficulty] = useState<"beginner" | "intermediate" | "advanced">("intermediate");
   const [ideaOverview, setIdeaOverview] = useState("");
-  const [ideaPrerequisites, setIdeaPrerequisites] = useState("");
-  const [ideaRoadmap, setIdeaRoadmap] = useState("");
-  const [ideaLearningOutcomes, setIdeaLearningOutcomes] = useState("");
+  const [ideaPrerequisites, setIdeaPrerequisites] = useState<string[]>([]);
+  const [newPrereq, setNewPrereq] = useState("");
+  const [ideaRoadmap, setIdeaRoadmap] = useState<string[]>([]);
+  const [newRoadmapStep, setNewRoadmapStep] = useState("");
+  const [ideaLearningOutcomes, setIdeaLearningOutcomes] = useState<string[]>([]);
+  const [newOutcome, setNewOutcome] = useState("");
 
   const [feedbackTopic, setFeedbackTopic] = useState("");
   const [feedbackComments, setFeedbackComments] = useState("");
@@ -420,6 +423,54 @@ export default function TicketManagementClient() {
     }
   };
 
+  const handleAddPrereq = () => {
+    const raw = newPrereq.trim();
+    if (!raw) return;
+    const lines = raw.split(/\r?\n/).map((l) => l.trim().replace(/^[-*•0-9.]+\s*/, "")).filter(Boolean);
+    setIdeaPrerequisites((prev) => {
+      const next = [...prev];
+      for (const line of lines) {
+        if (!next.includes(line)) next.push(line);
+      }
+      return next;
+    });
+    setNewPrereq("");
+  };
+
+  const handleRemovePrereq = (index: number) => {
+    setIdeaPrerequisites((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddRoadmapStep = () => {
+    const raw = newRoadmapStep.trim();
+    if (!raw) return;
+    const lines = raw.split(/\r?\n/).map((l) => l.trim().replace(/^[-*•0-9.]+\s*/, "")).filter(Boolean);
+    setIdeaRoadmap((prev) => [...prev, ...lines]);
+    setNewRoadmapStep("");
+  };
+
+  const handleRemoveRoadmapStep = (index: number) => {
+    setIdeaRoadmap((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddOutcome = () => {
+    const raw = newOutcome.trim();
+    if (!raw) return;
+    const lines = raw.split(/\r?\n/).map((l) => l.trim().replace(/^[-*•0-9.]+\s*/, "")).filter(Boolean);
+    setIdeaLearningOutcomes((prev) => {
+      const next = [...prev];
+      for (const line of lines) {
+        if (!next.includes(line)) next.push(line);
+      }
+      return next;
+    });
+    setNewOutcome("");
+  };
+
+  const handleRemoveOutcome = (index: number) => {
+    setIdeaLearningOutcomes((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const closeModal = () => {
     router.push(pathname, { scroll: false });
   };
@@ -492,9 +543,12 @@ export default function TicketManagementClient() {
         Difficulty: difficultyLabel,
         difficulty: ideaDifficulty,
         Overview: ideaOverview,
-        Prerequisites: ideaPrerequisites.trim() || "None specified",
-        "Rough Roadmap": ideaRoadmap.trim() || "None specified",
-        "Learning Outcomes": ideaLearningOutcomes.trim() || "None specified",
+        Prerequisites: ideaPrerequisites.length > 0 ? ideaPrerequisites.map((p) => `• ${p}`).join("\n") : "None specified",
+        "Rough Roadmap": ideaRoadmap.length > 0 ? ideaRoadmap.map((r, i) => `${i + 1}. ${r}`).join("\n") : "None specified",
+        "Learning Outcomes": ideaLearningOutcomes.length > 0 ? ideaLearningOutcomes.map((o) => `• ${o}`).join("\n") : "None specified",
+        prerequisites: ideaPrerequisites,
+        rough_roadmap: ideaRoadmap,
+        learning_outcomes: ideaLearningOutcomes,
       };
     } else if (selectedCategory === "feedback") {
       fieldsObj = {
@@ -578,9 +632,12 @@ export default function TicketManagementClient() {
       setSpgLeader(profile);
       setIsChangingLeader(false);
       setIdeaOverview("");
-      setIdeaPrerequisites("");
-      setIdeaRoadmap("");
-      setIdeaLearningOutcomes("");
+      setIdeaPrerequisites([]);
+      setNewPrereq("");
+      setIdeaRoadmap([]);
+      setNewRoadmapStep("");
+      setIdeaLearningOutcomes([]);
+      setNewOutcome("");
       setFeedbackTopic("");
       setFeedbackComments("");
       closeModal();
@@ -1611,43 +1668,167 @@ export default function TicketManagementClient() {
                     />
                   </div>
 
+                  {/* Field: Prerequisites List Builder */}
                   <div className={styles.formGroup}>
-                    <label className={styles.inputLabel} htmlFor="modal-idea-prereqs">
-                      Prerequisites
-                    </label>
-                    <textarea
-                      id="modal-idea-prereqs"
-                      className={styles.textareaInput}
-                      placeholder="e.g. PyTorch basics, Linear Algebra, experience with Hugging Face transformers or CUDA"
-                      value={ideaPrerequisites}
-                      onChange={(e) => setIdeaPrerequisites(e.target.value)}
-                    />
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <label className={styles.inputLabel} htmlFor="modal-idea-new-prereq">
+                        Prerequisites (Required skills, tools, or knowledge)
+                      </label>
+                      <span style={{ fontSize: "11px", color: ideaPrerequisites.length > 0 ? "#e5b731" : "#8e8e93" }}>
+                        {ideaPrerequisites.length} added
+                      </span>
+                    </div>
+                    <div className={styles.itemAddRow}>
+                      <input
+                        id="modal-idea-new-prereq"
+                        type="text"
+                        className={styles.textInput}
+                        placeholder="e.g. PyTorch basics, Linear Algebra, Docker (type and click +)"
+                        value={newPrereq}
+                        onChange={(e) => setNewPrereq(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleAddPrereq();
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className={styles.itemAddBtn}
+                        onClick={handleAddPrereq}
+                        disabled={!newPrereq.trim()}
+                        title="Add prerequisite"
+                      >
+                        <MemberIcon name="plus" size={15} />
+                      </button>
+                    </div>
+                    {ideaPrerequisites.length > 0 && (
+                      <div className={styles.itemListTray}>
+                        {ideaPrerequisites.map((p, idx) => (
+                          <div key={idx} className={styles.itemChip}>
+                            <span>{p}</span>
+                            <button
+                              type="button"
+                              className={styles.itemRemoveBtn}
+                              onClick={() => handleRemovePrereq(idx)}
+                              aria-label={`Remove ${p}`}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
+                  {/* Field: Rough Roadmap Step-by-Step List Builder */}
                   <div className={styles.formGroup}>
-                    <label className={styles.inputLabel} htmlFor="modal-idea-roadmap">
-                      Rough Roadmap
-                    </label>
-                    <textarea
-                      id="modal-idea-roadmap"
-                      className={styles.textareaInput}
-                      placeholder="Phase 1: Literature review & baseline. Phase 2: Architecture experiment. Phase 3: Benchmark & writeup."
-                      value={ideaRoadmap}
-                      onChange={(e) => setIdeaRoadmap(e.target.value)}
-                    />
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <label className={styles.inputLabel} htmlFor="modal-idea-new-roadmap">
+                        Rough Roadmap (Key milestones / sequential phases)
+                      </label>
+                      <span style={{ fontSize: "11px", color: ideaRoadmap.length > 0 ? "#e5b731" : "#8e8e93" }}>
+                        {ideaRoadmap.length} steps added
+                      </span>
+                    </div>
+                    <div className={styles.itemAddRow}>
+                      <input
+                        id="modal-idea-new-roadmap"
+                        type="text"
+                        className={styles.textInput}
+                        placeholder="e.g. Phase 1: Literature review & baseline benchmarking (type and click +)"
+                        value={newRoadmapStep}
+                        onChange={(e) => setNewRoadmapStep(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleAddRoadmapStep();
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className={styles.itemAddBtn}
+                        onClick={handleAddRoadmapStep}
+                        disabled={!newRoadmapStep.trim()}
+                        title="Add roadmap step"
+                      >
+                        <MemberIcon name="plus" size={15} />
+                      </button>
+                    </div>
+                    {ideaRoadmap.length > 0 && (
+                      <div className={styles.roadmapListStack}>
+                        {ideaRoadmap.map((step, idx) => (
+                          <div key={idx} className={styles.roadmapStepRow}>
+                            <span className={styles.roadmapStepNumber}>{idx + 1}</span>
+                            <span className={styles.roadmapStepText}>{step}</span>
+                            <button
+                              type="button"
+                              className={styles.itemRemoveBtn}
+                              onClick={() => handleRemoveRoadmapStep(idx)}
+                              aria-label={`Remove step ${idx + 1}`}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
+                  {/* Field: Learning Outcomes List Builder */}
                   <div className={styles.formGroup}>
-                    <label className={styles.inputLabel} htmlFor="modal-idea-outcomes">
-                      Learning Outcomes
-                    </label>
-                    <textarea
-                      id="modal-idea-outcomes"
-                      className={styles.textareaInput}
-                      placeholder="Key technical skills, artifacts, papers, or deliverables members will walk away with"
-                      value={ideaLearningOutcomes}
-                      onChange={(e) => setIdeaLearningOutcomes(e.target.value)}
-                    />
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <label className={styles.inputLabel} htmlFor="modal-idea-new-outcome">
+                        Learning Outcomes (Core takeaways & deliverables)
+                      </label>
+                      <span style={{ fontSize: "11px", color: ideaLearningOutcomes.length > 0 ? "#e5b731" : "#8e8e93" }}>
+                        {ideaLearningOutcomes.length} added
+                      </span>
+                    </div>
+                    <div className={styles.itemAddRow}>
+                      <input
+                        id="modal-idea-new-outcome"
+                        type="text"
+                        className={styles.textInput}
+                        placeholder="e.g. Distributed PyTorch training, ArXiv preprint (type and click +)"
+                        value={newOutcome}
+                        onChange={(e) => setNewOutcome(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleAddOutcome();
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className={styles.itemAddBtn}
+                        onClick={handleAddOutcome}
+                        disabled={!newOutcome.trim()}
+                        title="Add learning outcome"
+                      >
+                        <MemberIcon name="plus" size={15} />
+                      </button>
+                    </div>
+                    {ideaLearningOutcomes.length > 0 && (
+                      <div className={styles.itemListTray}>
+                        {ideaLearningOutcomes.map((o, idx) => (
+                          <div key={idx} className={styles.itemChip}>
+                            <span>{o}</span>
+                            <button
+                              type="button"
+                              className={styles.itemRemoveBtn}
+                              onClick={() => handleRemoveOutcome(idx)}
+                              aria-label={`Remove outcome ${o}`}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </>
               )}
