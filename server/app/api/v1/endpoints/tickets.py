@@ -726,14 +726,6 @@ def update_ticket_status(
         )
 
     data = doc.to_dict() or {}
-    if data.get("category") == TicketCategory.SPG_REGISTRATION.value:
-        if data.get("spg_id"):
-            raise HTTPException(status_code=409, detail="An approved SPG registration cannot be changed through ticket status.")
-        if payload.status == TicketStatus.RESOLVED:
-            raise HTTPException(status_code=409, detail="Approve the SPG registration to resolve it and create the group.")
-        if payload.status == TicketStatus.CLOSED and not payload.close_reason:
-            raise HTTPException(status_code=400, detail="A reason is required when rejecting an SPG registration.")
-
     now = now_iso()
     updates: Dict[str, Any] = {
         "status": payload.status.value,
@@ -746,7 +738,25 @@ def update_ticket_status(
         if payload.close_reason:
             updates["close_reason"] = payload.close_reason
 
-    doc_ref.update(updates)
+    if data.get("category") == TicketCategory.SPG_REGISTRATION.value:
+        def update_registration(transaction):
+            current = doc_ref.get(transaction=transaction)
+            if not current.exists:
+                raise HTTPException(status_code=404, detail="Ticket not found.")
+            current_data = current.to_dict() or {}
+            if current_data.get("spg_id"):
+                raise HTTPException(status_code=409, detail="An approved SPG registration cannot be changed through ticket status.")
+            if current_data.get("status") in (TicketStatus.CLOSED.value, TicketStatus.RESOLVED.value):
+                raise HTTPException(status_code=409, detail="This registration is already closed.")
+            if payload.status == TicketStatus.RESOLVED:
+                raise HTTPException(status_code=409, detail="Approve the SPG registration to resolve it and create the group.")
+            if payload.status == TicketStatus.CLOSED and not payload.close_reason:
+                raise HTTPException(status_code=400, detail="A reason is required when rejecting an SPG registration.")
+            transaction.update(doc_ref, updates)
+
+        spg_service.run_in_transaction(db, update_registration)
+    else:
+        doc_ref.update(updates)
     refreshed = doc_ref.get().to_dict() or {}
     return _to_ticket_detail(ticket_id, refreshed)
 

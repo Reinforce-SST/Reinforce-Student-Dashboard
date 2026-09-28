@@ -61,6 +61,7 @@ class SPGApprovalTests(unittest.TestCase):
         self.assertEqual(second.status_code, 200, second.text)
         self.assertEqual(second.json()["spg_id"], spg_id)
         self.assertEqual(len(self.db.documents("spgs")), 1)
+        self.assertEqual(self.client.patch("/api/v1/tickets/tkt_1/status", json={"status": "open"}).status_code, 409)
 
     def test_wrong_category_track_or_closed_ticket_never_creates_group(self):
         self.assertEqual(self.approve("tkt_2").status_code, 400)
@@ -76,6 +77,7 @@ class SPGApprovalTests(unittest.TestCase):
         rejected = self.client.patch("/api/v1/tickets/tkt_1/status", json={"status": "closed", "close_reason": "Incomplete charter"})
         self.assertEqual(rejected.status_code, 200, rejected.text)
         self.assertEqual(rejected.json()["close_reason"], "Incomplete charter")
+        self.assertEqual(self.client.patch("/api/v1/tickets/tkt_1/status", json={"status": "open"}).status_code, 409)
 
     def test_project_requires_valid_pdf_and_cleans_up_failed_write(self):
         missing = self.approve(spg_type="project")
