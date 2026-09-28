@@ -88,13 +88,23 @@ const ticketTypeOptions: TicketTypeOption[] = [
   },
   {
     id: "idea_jar",
-    title: "Idea Jar & Suggestions",
-    subtitle: "Submit project ideas & feedback",
-    description: "Propose new concepts, features, or workshops for the club",
+    title: "Idea Jar Proposal",
+    subtitle: "Structured project ideas & roadmaps",
+    description: "Submit project proposals with difficulty, prerequisites, roadmap and learning outcomes",
     icon: "ideas",
     iconClass: styles.iconIdea,
     badgeClass: styles.catIdea,
     tabActiveClass: styles.modalCatTabActiveIdea,
+  },
+  {
+    id: "feedback",
+    title: "Suggestions & Feedback",
+    subtitle: "General suggestions & club feedback",
+    description: "Propose club improvements, events, workshop topics, or general feedback",
+    icon: "message",
+    iconClass: styles.iconFeedback,
+    badgeClass: styles.catFeedback,
+    tabActiveClass: styles.modalCatTabActiveFeedback,
   },
   {
     id: "report",
@@ -192,6 +202,7 @@ export default function TicketManagementClient() {
     "resource_request",
     "support",
     "idea_jar",
+    "feedback",
     "report",
   ];
 
@@ -240,7 +251,14 @@ export default function TicketManagementClient() {
   const [discordHandle, setDiscordHandle] = useState("");
 
   const [ideaTrack, setIdeaTrack] = useState<"research" | "product" | "kaggle" | "general">("product");
+  const [ideaDifficulty, setIdeaDifficulty] = useState<"beginner" | "intermediate" | "advanced">("intermediate");
   const [ideaOverview, setIdeaOverview] = useState("");
+  const [ideaPrerequisites, setIdeaPrerequisites] = useState("");
+  const [ideaRoadmap, setIdeaRoadmap] = useState("");
+  const [ideaLearningOutcomes, setIdeaLearningOutcomes] = useState("");
+
+  const [feedbackTopic, setFeedbackTopic] = useState("");
+  const [feedbackComments, setFeedbackComments] = useState("");
 
   const [reportIncident, setReportIncident] = useState("");
   const [reportDetails, setReportDetails] = useState("");
@@ -434,7 +452,7 @@ export default function TicketManagementClient() {
       const leaderName = spgLeader?.full_name || profile.full_name || "Member";
 
       fieldsObj = {
-        "Project Name & Track": `${formTitle.trim() || "Untitled Project"} (${trackLabel})`,
+        "Project Name": formTitle.trim() || "Untitled Project",
         "Track": trackLabel,
         "track": spgTrack,
         "Team Leader UID": leaderUid,
@@ -450,6 +468,7 @@ export default function TicketManagementClient() {
         "Report Frequency (Days)": Number(spgFrequencyDays),
         "frequency_days": Number(spgFrequencyDays),
         "Summary & Goals": spgGoals.trim(),
+        "Project Name & Track": `${formTitle.trim() || "Untitled Project"} (${trackLabel})`,
       };
     } else if (selectedCategory === "resource_request") {
       fieldsObj = {
@@ -465,10 +484,24 @@ export default function TicketManagementClient() {
         "Discord Handle": discordHandle,
       };
     } else if (selectedCategory === "idea_jar") {
+      const difficultyLabel = ideaDifficulty === "beginner" ? "Beginner" : ideaDifficulty === "advanced" ? "Advanced" : "Intermediate";
       fieldsObj = {
         "Idea Title": formTitle || "Untitled Idea",
         Track: `${ideaTrack.toUpperCase()} Track`,
+        track: ideaTrack,
+        Difficulty: difficultyLabel,
+        difficulty: ideaDifficulty,
         Overview: ideaOverview,
+        Prerequisites: ideaPrerequisites.trim() || "None specified",
+        "Rough Roadmap": ideaRoadmap.trim() || "None specified",
+        "Learning Outcomes": ideaLearningOutcomes.trim() || "None specified",
+      };
+    } else if (selectedCategory === "feedback") {
+      fieldsObj = {
+        "Suggestion Topic": feedbackTopic.trim() || formTitle.trim() || "General Feedback",
+        "Feedback Details": feedbackComments.trim() || formDescription.trim(),
+        "Feedback Topic": feedbackTopic.trim() || formTitle.trim() || "General Feedback",
+        Comments: feedbackComments.trim() || formDescription.trim(),
       };
     } else if (selectedCategory === "report") {
       fieldsObj = {
@@ -498,7 +531,7 @@ export default function TicketManagementClient() {
   const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formTitle.trim()) {
-      setSubmitError("Please enter a project title.");
+      setSubmitError("Please enter a ticket title.");
       return;
     }
 
@@ -544,6 +577,12 @@ export default function TicketManagementClient() {
       setSelectedTeamMembers({});
       setSpgLeader(profile);
       setIsChangingLeader(false);
+      setIdeaOverview("");
+      setIdeaPrerequisites("");
+      setIdeaRoadmap("");
+      setIdeaLearningOutcomes("");
+      setFeedbackTopic("");
+      setFeedbackComments("");
       closeModal();
       setSuccessMessage(created.category === "report" ? "Confidential report submitted to the club team." : `Ticket created successfully (${created.id})!`);
       setTimeout(() => setSuccessMessage(""), 4500);
@@ -960,6 +999,8 @@ export default function TicketManagementClient() {
                       ? "e.g., Confidential Code of Conduct Incident Report"
                       : selectedCategory === "idea_jar"
                       ? "e.g., Decentralized GPU pooling platform"
+                      : selectedCategory === "feedback"
+                      ? "e.g., Suggestion for weekly paper reading groups"
                       : "e.g., Summary of request or inquiry"
                   }
                   value={formTitle}
@@ -1514,33 +1555,122 @@ export default function TicketManagementClient() {
 
               {selectedCategory === "idea_jar" && (
                 <>
-                  <div className={styles.formGroup}>
-                    <label className={styles.inputLabel} htmlFor="modal-idea-track">
-                      Domain Track
-                    </label>
-                    <select
-                      id="modal-idea-track"
-                      className={styles.selectInput}
-                      value={ideaTrack}
-                      onChange={(e) => setIdeaTrack(e.target.value as typeof ideaTrack)}
-                    >
-                      <option value="research">Research Track</option>
-                      <option value="product">Product Track</option>
-                      <option value="kaggle">Kaggle Track</option>
-                      <option value="general">General Club Idea</option>
-                    </select>
+                  <div className={styles.fieldsRow}>
+                    <div className={styles.formGroup}>
+                      <label className={styles.inputLabel} htmlFor="modal-idea-track">
+                        Domain Track
+                      </label>
+                      <select
+                        id="modal-idea-track"
+                        className={styles.selectInput}
+                        value={ideaTrack}
+                        onChange={(e) => setIdeaTrack(e.target.value as typeof ideaTrack)}
+                      >
+                        <option value="research">Research Track</option>
+                        <option value="product">Product Track</option>
+                        <option value="kaggle">Kaggle Track</option>
+                        <option value="general">General Club Idea</option>
+                      </select>
+                    </div>
+
+                    <div className={styles.formGroup}>
+                      <label className={styles.inputLabel} htmlFor="modal-idea-difficulty">
+                        Difficulty Level
+                      </label>
+                      <select
+                        id="modal-idea-difficulty"
+                        className={styles.selectInput}
+                        value={ideaDifficulty}
+                        onChange={(e) => setIdeaDifficulty(e.target.value as typeof ideaDifficulty)}
+                      >
+                        <option value="beginner">Beginner (Introductory / Foundational)</option>
+                        <option value="intermediate">Intermediate (Standard SPG / Club)</option>
+                        <option value="advanced">Advanced (Cutting-Edge / Specialized)</option>
+                      </select>
+                    </div>
                   </div>
 
                   <div className={styles.formGroup}>
                     <label className={styles.inputLabel} htmlFor="modal-idea-overview">
-                      Project / Idea Overview
+                      Problem Statement / Concept Overview
                     </label>
                     <textarea
                       id="modal-idea-overview"
                       className={styles.textareaInput}
-                      placeholder="Describe your proposal, architecture concept, or community initiative"
+                      placeholder="Describe the problem, proposed solution or concept, and why it matters"
                       value={ideaOverview}
                       onChange={(e) => setIdeaOverview(e.target.value)}
+                    />
+                  </div>
+
+                  <div className={styles.formGroup}>
+                    <label className={styles.inputLabel} htmlFor="modal-idea-prereqs">
+                      Prerequisites
+                    </label>
+                    <textarea
+                      id="modal-idea-prereqs"
+                      className={styles.textareaInput}
+                      placeholder="e.g. PyTorch basics, Linear Algebra, experience with Hugging Face transformers or CUDA"
+                      value={ideaPrerequisites}
+                      onChange={(e) => setIdeaPrerequisites(e.target.value)}
+                    />
+                  </div>
+
+                  <div className={styles.formGroup}>
+                    <label className={styles.inputLabel} htmlFor="modal-idea-roadmap">
+                      Rough Roadmap
+                    </label>
+                    <textarea
+                      id="modal-idea-roadmap"
+                      className={styles.textareaInput}
+                      placeholder="Phase 1: Literature review & baseline. Phase 2: Architecture experiment. Phase 3: Benchmark & writeup."
+                      value={ideaRoadmap}
+                      onChange={(e) => setIdeaRoadmap(e.target.value)}
+                    />
+                  </div>
+
+                  <div className={styles.formGroup}>
+                    <label className={styles.inputLabel} htmlFor="modal-idea-outcomes">
+                      Learning Outcomes
+                    </label>
+                    <textarea
+                      id="modal-idea-outcomes"
+                      className={styles.textareaInput}
+                      placeholder="Key technical skills, artifacts, papers, or deliverables members will walk away with"
+                      value={ideaLearningOutcomes}
+                      onChange={(e) => setIdeaLearningOutcomes(e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
+
+              {selectedCategory === "feedback" && (
+                <>
+                  <div className={styles.formGroup}>
+                    <label className={styles.inputLabel} htmlFor="modal-feedback-topic">
+                      Suggestion / Feedback Topic
+                    </label>
+                    <input
+                      id="modal-feedback-topic"
+                      type="text"
+                      className={styles.textInput}
+                      placeholder="e.g. Hackathon timeline, Discord channel structure, Workshop suggestions"
+                      value={feedbackTopic}
+                      onChange={(e) => setFeedbackTopic(e.target.value)}
+                    />
+                  </div>
+
+                  <div className={styles.formGroup}>
+                    <label className={styles.inputLabel} htmlFor="modal-feedback-comments">
+                      Details & Constructive Suggestions
+                    </label>
+                    <textarea
+                      id="modal-feedback-comments"
+                      className={styles.textareaInput}
+                      placeholder="Share your thoughts, suggestions for improvement, or recommendations for the club leadership"
+                      value={feedbackComments}
+                      onChange={(e) => setFeedbackComments(e.target.value)}
+                      rows={5}
                     />
                   </div>
                 </>

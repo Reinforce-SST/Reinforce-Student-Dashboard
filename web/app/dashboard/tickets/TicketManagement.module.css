@@ -87,7 +87,7 @@
 
 .categoryGrid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
 }
 
@@ -372,6 +372,12 @@
   background: rgba(168, 85, 247, 0.12);
   color: #c084fc;
   border: 1px solid rgba(168, 85, 247, 0.25);
+}
+
+.catFeedback {
+  background: rgba(52, 211, 153, 0.12);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.25);
 }
 
 .catReport {
@@ -674,7 +680,7 @@
 /* Modal Category Switcher Pills */
 .modalCatSwitcher {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 6px;
   background: #0e0e11;
   padding: 4px;
@@ -728,6 +734,11 @@
 .modalCatTabActiveIdea {
   border-bottom: 2px solid #c084fc !important;
   color: #c084fc !important;
+}
+
+.modalCatTabActiveFeedback {
+  border-bottom: 2px solid #34d399 !important;
+  color: #34d399 !important;
 }
 
 .modalCatTabActiveReport {
@@ -931,6 +942,11 @@
 .iconIdea {
   background: rgba(168, 85, 247, 0.15);
   color: #c084fc;
+}
+
+.iconFeedback {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
 }
 
 .iconReport {

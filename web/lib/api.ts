@@ -269,7 +269,7 @@ type ApiTicketMessage = {
 
 const FIELD_ORDER: Partial<Record<TicketCategory, string[]>> = {
   spg_registration: [
-    "Project Name & Track",
+    "Project Name",
     "Track",
     "Team Leader",
     "Team Members",
@@ -277,13 +277,24 @@ const FIELD_ORDER: Partial<Record<TicketCategory, string[]>> = {
     "Report Frequency (Days)",
     "Summary & Goals",
     "Duration & Frequency",
+    "Project Name & Track",
   ],
   compute_resource_request: ["SPG Name", "Resources Requested", "Progress Proof", "Justification"],
   learning_resource_request: ["Topic / Subject Area", "Resource Format", "Target Audience / Track", "Description & Suggested Links"],
   resource_request: ["SPG Name", "Resources Requested", "Progress Proof", "Justification"],
-  idea_jar: ["Idea Title", "Track", "Overview"],
+  idea_jar: [
+    "Idea Title",
+    "Track",
+    "Difficulty",
+    "Overview",
+    "Prerequisites",
+    "Rough Roadmap",
+    "Learning Outcomes",
+    "Track & Difficulty",
+    "Roadmap & Outcomes",
+  ],
   support: ["Subject", "Details"],
-  feedback: ["Feedback Topic", "Comments"],
+  feedback: ["Suggestion Topic", "Feedback Details", "Feedback Topic", "Comments", "Topic"],
   misc: ["Subject", "Details"],
   report: ["Incident Summary", "Report Details"],
 };
@@ -750,8 +761,8 @@ export const CATEGORY_LABEL: Record<TicketCategory, string> = {
   learning_resource_request: "Learning resource request",
   resource_request: "Resource request",
   support: "Support",
-  idea_jar: "Idea Jar",
-  feedback: "Feedback",
+  idea_jar: "Idea Jar Proposal",
+  feedback: "Suggestions & Feedback",
   report: "Confidential report",
   misc: "General",
 };
