@@ -679,30 +679,54 @@
 
 /* Modal Category Switcher Pills */
 .modalCatSwitcher {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  display: flex;
+  align-items: center;
   gap: 6px;
   background: #0e0e11;
   padding: 4px;
   border-radius: 10px;
   border: 1px solid #202026;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  scrollbar-width: thin;
+  scrollbar-color: #282832 transparent;
+  -webkit-overflow-scrolling: touch;
+}
+
+.modalCatSwitcher::-webkit-scrollbar {
+  height: 4px;
+}
+
+.modalCatSwitcher::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modalCatSwitcher::-webkit-scrollbar-thumb {
+  background: #282832;
+  border-radius: 999px;
+}
+
+.modalCatSwitcher::-webkit-scrollbar-thumb:hover {
+  background: var(--brand, #E5B731);
 }
 
 .modalCatTab {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 8px 6px;
+  padding: 8px 12px;
   border-radius: 7px;
   background: transparent;
   border: none;
   color: #7e7e88;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   font-weight: 750;
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .modalCatTab:hover {
