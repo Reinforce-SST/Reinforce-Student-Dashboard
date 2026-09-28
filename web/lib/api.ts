@@ -47,7 +47,7 @@ async function request<T>(path: string, token?: string | null, init?: RequestIni
     res = await fetch(`${BASE}${path}`, {
       ...init,
       headers: {
-        "Content-Type": "application/json",
+        ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...init?.headers,
       },
@@ -769,11 +769,19 @@ export const api = {
     if (category) query.set("category", category);
     return request<{ total: number; items: TicketSummary[] }>(`/tickets?${query}`, token);
   },
-  adminUpdateTicketStatus: (token: string, ticketId: string, nextStatus: TicketStatus) =>
+  adminUpdateTicketStatus: (token: string, ticketId: string, nextStatus: TicketStatus, closeReason?: string) =>
     request<TicketSummary>(`/tickets/${encodeURIComponent(ticketId)}/status`, token, {
       method: "PATCH",
-      body: JSON.stringify({ status: nextStatus }),
+      body: JSON.stringify({ status: nextStatus, ...(closeReason ? { close_reason: closeReason } : {}) }),
     }),
+  adminApproveSpgTicket: (token: string, ticketId: string, approval: { type: string; track: string; visibility: string; proposition?: File | null }) => {
+    const body = new FormData();
+    body.set("spg_type", approval.type);
+    body.set("track", approval.track);
+    body.set("visibility", approval.visibility);
+    if (approval.proposition) body.set("proposition", approval.proposition);
+    return request<ApiTicketDetail>(`/tickets/${encodeURIComponent(ticketId)}/approve-spg`, token, { method: "POST", body });
+  },
 };
 
 /**

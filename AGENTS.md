@@ -93,6 +93,10 @@ drive-by edit inside an unrelated change.
   deployment; check its current commit and bridge endpoint before claiming a
   dashboard ticket reached Discord. PR #13 repairs the bridge after a queue merge.
 
+The admin dashboard can approve an SPG registration through the ticket API;
+that endpoint is the only HTTP creation path. Generic ticket status changes
+cannot approve one. Live deployment still needs an end-to-end check.
+
 ## Conventions
 
 - **Never invent content.** No placeholder events, no sample students, no lorem

@@ -38,8 +38,11 @@ Tests use Firestore doubles and do not write to the live database.
 
 The [Firestore contract](../docs/DATA_CONTRACT.md) defines cross-repository
 fields. The [SPG workflow](../docs/SPG_WORKFLOW.md) distinguishes registration
-tickets from actual project-group creation. An admin changing a ticket status
-does not run `create_spg()`.
+tickets from actual project-group creation. `POST /api/v1/tickets/{id}/approve-spg`
+is the admin-only creation path. It reads the stored registration, validates its
+UIDs and optional proposition PDF, then resolves the ticket and creates the
+group in one Firestore transaction. A generic ticket status change cannot
+approve a registration.
 
 ## Deployment notes
 

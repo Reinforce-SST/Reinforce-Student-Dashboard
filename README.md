@@ -30,8 +30,10 @@ ideas, and publish articles.
 These checks establish availability, not a complete signed-in workflow. The
 dashboard ticket bridge and Discord role grant still require an end-to-end test
 with a real linked member. See [verification and rollout](docs/verification.md).
-An SPG registration creates a review ticket; changing its status alone does not
-create a project group.
+In the pending dashboard changes, an admin can approve an SPG registration in
+the Admin Console. Approval creates one group and resolves its ticket together;
+ordinary status changes cannot approve a registration. This still needs a live
+signed-in review after deployment.
 
 ## How it fits together
 

@@ -12,8 +12,9 @@ import urllib.error
 import urllib.request
 import uuid
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile, status
 from google.cloud import firestore
+from pydantic import ValidationError
 
 
 from app.api.security import (
@@ -25,6 +26,8 @@ from app.utils import is_admin_user, iso_str, now_iso
 from app.services.firebase import db
 from app.services.discord_link import linked_discord_id
 from app.services.config import get_settings
+from app.services import spgs as spg_service, uploads
+from app.schemas.spgs import SPGCreate, SPGTrack, SPGType, SPGVisibility
 from app.schemas.tickets import (
     AdminAssignTicket,
     AdminUpdateTicketPriority,
@@ -722,6 +725,15 @@ def update_ticket_status(
             status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found."
         )
 
+    data = doc.to_dict() or {}
+    if data.get("category") == TicketCategory.SPG_REGISTRATION.value:
+        if data.get("spg_id"):
+            raise HTTPException(status_code=409, detail="An approved SPG registration cannot be changed through ticket status.")
+        if payload.status == TicketStatus.RESOLVED:
+            raise HTTPException(status_code=409, detail="Approve the SPG registration to resolve it and create the group.")
+        if payload.status == TicketStatus.CLOSED and not payload.close_reason:
+            raise HTTPException(status_code=400, detail="A reason is required when rejecting an SPG registration.")
+
     now = now_iso()
     updates: Dict[str, Any] = {
         "status": payload.status.value,
@@ -737,6 +749,119 @@ def update_ticket_status(
     doc_ref.update(updates)
     refreshed = doc_ref.get().to_dict() or {}
     return _to_ticket_detail(ticket_id, refreshed)
+
+
+@router.post(
+    "/{ticket_id}/approve-spg",
+    response_model=TicketDetail,
+    summary="Approve a registration and create its SPG (Admin only)",
+)
+def approve_spg_ticket(
+    ticket_id: str,
+    spg_type: SPGType = Form(...),
+    track: SPGTrack = Form(...),
+    visibility: SPGVisibility = Form(...),
+    proposition: Optional[UploadFile] = File(None),
+    admin: dict = Depends(get_admin_user),
+) -> TicketDetail:
+    ticket_ref = db.collection(TICKETS_COLLECTION).document(ticket_id)
+    snapshot = ticket_ref.get()
+    if not snapshot.exists:
+        raise HTTPException(status_code=404, detail="Ticket not found.")
+    data = snapshot.to_dict() or {}
+    if data.get("category") != TicketCategory.SPG_REGISTRATION.value:
+        raise HTTPException(status_code=400, detail="Only SPG registration tickets can be approved here.")
+    if data.get("spg_id"):
+        return _to_ticket_detail(ticket_id, data)
+    if data.get("status") in (TicketStatus.CLOSED.value, TicketStatus.RESOLVED.value):
+        raise HTTPException(status_code=409, detail="This registration is already closed.")
+
+    fields = data.get("fields") or {}
+    raw_name = fields.get("Project Name") or fields.get("project_name") or fields.get("name")
+    if not isinstance(raw_name, str) or not raw_name.strip():
+        raise HTTPException(status_code=400, detail="The registration has no project name.")
+    lead = fields.get("leader_uid") or fields.get("Team Leader UID")
+    raw_members = fields.get("member_uids") or fields.get("Team Member UIDs") or []
+    if not isinstance(lead, str) or not lead.strip() or not isinstance(raw_members, list):
+        raise HTTPException(status_code=400, detail="The registration needs canonical leader and member UIDs.")
+    members = [lead.strip()] + [str(uid).strip() for uid in raw_members if str(uid).strip() != lead.strip()]
+    if len(members) != len(set(members)) or len(members) > 7:
+        raise HTTPException(status_code=400, detail="The registration has duplicate or too many members.")
+    stored_track = fields.get("track")
+    if stored_track and stored_track != track.value:
+        raise HTTPException(status_code=400, detail="The selected track differs from the submitted registration.")
+    leader_snapshot = db.collection(USERS_COLLECTION).document(lead.strip()).get()
+    if not leader_snapshot.exists or not (leader_snapshot.to_dict() or {}).get("is_member"):
+        raise HTTPException(status_code=400, detail="The team leader must still be an active club member.")
+
+    destination = None
+    proposition_url = None
+    if spg_type is SPGType.PROJECT:
+        if proposition is None:
+            raise HTTPException(status_code=400, detail="A project SPG needs a proposition PDF.")
+        try:
+            payload = uploads.read_pdf(proposition.file, proposition.content_type)
+        except uploads.UploadRejected as error:
+            raise HTTPException(status_code=400, detail=error.detail) from None
+        upload_id = hashlib.sha256(f"{ticket_id}:{uuid.uuid4().hex}".encode("utf-8")).hexdigest()[:32]
+        destination = uploads.proposition_path(upload_id)
+        proposition_url = uploads.store_pdf(payload, destination)
+    elif proposition is not None:
+        raise HTTPException(status_code=400, detail="Only project SPGs use a proposition PDF.")
+
+    try:
+        create = SPGCreate(
+            name=raw_name.strip(),
+            description=fields.get("Summary & Goals") or data.get("description"),
+            type=spg_type,
+            track=track,
+            visibility=visibility,
+            lead_id=lead.strip(),
+            member_ids=members,
+            source_ticket_id=ticket_id,
+            proposition_document_url=proposition_url,
+        )
+
+        def approve_in_one_transaction(_db, create_spg_work):
+            def work(transaction):
+                current = ticket_ref.get(transaction=transaction)
+                current_data = current.to_dict() or {}
+                if current_data.get("category") != TicketCategory.SPG_REGISTRATION.value or current_data.get("fields") != fields:
+                    raise HTTPException(status_code=409, detail="Registration changed while approving.")
+                if current_data.get("status") in (TicketStatus.CLOSED.value, TicketStatus.RESOLVED.value) and not current_data.get("spg_id"):
+                    raise HTTPException(status_code=409, detail="Registration was closed while approving.")
+                record, created = create_spg_work(transaction)
+                if current_data.get("spg_id") and current_data["spg_id"] != record.id:
+                    raise HTTPException(status_code=409, detail="Registration already links to another SPG.")
+                if not current_data.get("spg_id"):
+                    now = now_iso()
+                    transaction.update(ticket_ref, {
+                        "spg_id": record.id,
+                        "status": TicketStatus.RESOLVED.value,
+                        "closed_by_uid": admin["uid"],
+                        "closed_at": now,
+                        "updated_at": now,
+                    })
+                return record, created
+            return spg_service.run_in_transaction(_db, work)
+
+        _, created = spg_service.create_spg(db, create=create, admin_id=admin["uid"], runner=approve_in_one_transaction)
+        if destination and not created:
+            uploads.delete_file(destination)
+    except ValidationError as error:
+        if destination:
+            uploads.delete_file(destination)
+        raise HTTPException(status_code=400, detail=str(error)) from None
+    except spg_service.SPGError as error:
+        if destination:
+            uploads.delete_file(destination)
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from None
+    except Exception:
+        if destination:
+            uploads.delete_file(destination)
+        raise
+
+    return _to_ticket_detail(ticket_id, ticket_ref.get().to_dict() or {})
 
 
 @router.patch(

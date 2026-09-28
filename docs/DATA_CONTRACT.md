@@ -106,6 +106,7 @@ omitted from the member list and detail responses.
   "title":        "string",
   "description":  "string",
   "fields":       { "...": "..." },     // category-specific, see below
+  "spg_id":       "string | null",       // filled by admin approval for SPG registrations
   "status":       "open",               // enum, see below
   "priority":     "medium",             // low | medium | high | urgent
   "created_by":   { /* TicketUser */ },
@@ -250,6 +251,13 @@ An SPG registration ticket enforces strict validation on submission (`POST /api/
 5. **Track (`track` / `Track`)**:
    - One of: `Research Track`, `Product Track`, `Kaggle Track`, or `General Track`. Colors (Red, Green, Blue) are omitted.
 
+Admin approval reads the stored name and UID fields, then writes `spg_id`,
+`status: resolved`, `closed_by_uid`, `closed_at`, and `updated_at` on the ticket
+in the same transaction that creates `spgs/{spg_id}`. YUVI-created tickets use
+`project_name` and may omit `track`; an admin selects a track during review.
+`spg_type` and visibility are reviewer choices, not fields inferred from a
+Discord title. A project type also requires a validated proposition PDF.
+
 > ### ⚠️ Firestore does not preserve map key order
 >
 > The bot builds `fields` as an ordered Python dict, but Firestore stores maps with
@@ -380,7 +388,7 @@ Timestamps here are ISO-8601 strings, matching `users` rather than `tickets`.
 
 ```
 spgs/{spg_id}/reports/{report_id}.pdf
-spgs/registrations/{request_id}/proposition.pdf
+spgs/registrations/{server_generated_upload_id}/proposition.pdf
 ```
 
 Server-generated from IDs the server created. A client filename never reaches
@@ -392,9 +400,10 @@ SPG registration is meant to raise an `spg_registration` ticket (see the
 `tickets` category table above) that a reviewer approves, and the approval
 creates the `spgs` document, recording the ticket in `source_ticket_id`.
 
-The dashboard ticket write path now exists. There is still no HTTP route that
-approves an SPG registration ticket into an SPG; `create_spg()` remains the
-internal service that approval will call once that workflow is implemented.
+The admin-only `POST /api/v1/tickets/{ticket_id}/approve-spg` route implements
+approval. Generic ticket status changes cannot resolve an SPG registration.
+The Discord bot may close a ticket directly; closing it is not approval and
+creates no SPG.
 
 ---
 

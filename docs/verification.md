@@ -37,6 +37,15 @@ was removed before the final build. See the [Idea Jar](screenshots/audit-2026-09
 [profile](screenshots/audit-2026-09-29/profile-mobile.png) screenshots. These
 show layout and empty states, not production data or successful mutations.
 
+Three home-page mobile directions were also rendered with a temporary browser
+fixture at 320px and 390px: [Command Home](screenshots/audit-2026-09-29/mobile-design-a.png),
+[Editorial Feed](screenshots/audit-2026-09-29/mobile-design-b.png), and
+[Workspace Grid](screenshots/audit-2026-09-29/mobile-design-c.png). The
+[admin SPG review form](screenshots/audit-2026-09-29/admin-spg-review-390.png)
+was checked at 390px after fixing a horizontal overflow. These screenshots
+verify layout only; authenticated browser and production mutations remain live
+acceptance checks.
+
 ## Live topology checked 29 September 2026
 
 | Check | Result |
@@ -70,8 +79,11 @@ also remains open at this check. Branch code and production code may differ.
    its visible retry path.
 5. Confirm the admin claim using a fresh token. Review tickets, publish one
    test event or article, approve a test idea, and check member pages reflect
-   the actual data. A registration ticket is only a request; creating an SPG
-   remains a separate admin operation.
+   the actual data. Submit an SPG registration, approve it in Admin → SPG
+   Requests, and confirm the new group appears exactly once with the ticket
+   marked resolved. For a project group, upload a real proposition PDF. Test
+   that a generic status change cannot approve the ticket and rejection saves
+   a reason.
 6. Check a 2–5 MB event image through the public API. The Storage bucket and
    Nginx `client_max_body_size` must both permit it. A 413 at Nginx is not an
    application validation error.
