@@ -11,10 +11,12 @@ import {
 } from './firebase';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
-
-const getInitialDiscordId = () => (
-  new URLSearchParams(window.location.search).get('discord_id')?.trim() || ''
-);
+const MAIN_SITE_URL = import.meta.env.VITE_MAIN_SITE_URL || 'https://www.reinforce-sst.com';
+const legacyDiscordLink = new URLSearchParams(window.location.search).has('discord_id');
+const isCollegeEmail = (email) => {
+  const normalized = (email || '').toLowerCase().trim();
+  return normalized.endsWith('@sst.scaler.com') || normalized.endsWith('@scaler.com');
+};
 
 export default function App() {
   // Auth state
@@ -23,36 +25,27 @@ export default function App() {
   const [userProfile, setUserProfile] = useState(null);
   const [isAuthLoading, setIsAuthLoading] = useState(Boolean(isFirebaseConfigured && auth));
 
-  // Verification & Linking state
-  const [discordId] = useState(getInitialDiscordId);
-  const [status, setStatus] = useState('idle'); // 'idle' | 'signing-in' | 'verifying' | 'success' | 'error'
+  // Authentication status
+  const [status, setStatus] = useState('idle'); // 'idle' | 'signing-in' | 'error'
   const [errorMessage, setErrorMessage] = useState('');
-  const [successData, setSuccessData] = useState(null);
 
   // Active dashboard tab
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'events' | 'projects' | 'profile'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'profile'
   
-  // Link Discord modal / input inside dashboard
-  const [showLinkModal, setShowLinkModal] = useState(false);
-  const [manualDiscordInput, setManualDiscordInput] = useState(getInitialDiscordId);
-
   // Edit Profile Form state
   const [skillInput, setSkillInput] = useState('');
   const [profileForm, setProfileForm] = useState({
-    skills: ['Python', 'FastAPI', 'React'],
+    skills: [],
     github: '',
     linkedin: '',
     kaggle: ''
   });
   const [profileSaveStatus, setProfileSaveStatus] = useState('');
 
-  // Fallback Dev test modal
-  const [showConfigModal, setShowConfigModal] = useState(false);
-  const [testEmail, setTestEmail] = useState('student@sst.scaler.com');
-  const [testName, setTestName] = useState('Arya Sharma');
-
   // 1. Fetch or Sync User Profile with Backend API
-  const syncUserProfile = useCallback(async (token, fallbackUser = null) => {
+  const syncUserProfile = useCallback(async (token) => {
+    setUserProfile(null);
+    setProfileForm({ skills: [], github: '', linkedin: '', kaggle: '' });
     try {
       const response = await fetch(`${API_BASE_URL}/users/sync`, {
         method: 'POST',
@@ -66,98 +59,20 @@ export default function App() {
         const data = await response.json();
         if (data.id) {
           setUserProfile(data);
-          if (data.skills) {
-            setProfileForm(prev => ({
-              ...prev,
-              skills: data.skills || [],
-              github: data.social_links?.github || '',
-              linkedin: data.social_links?.linkedin || '',
-              kaggle: data.social_links?.kaggle || ''
-            }));
-          }
+          setProfileForm(prev => ({
+            ...prev,
+            skills: data.skills || [],
+            github: data.social_links?.github || '',
+            linkedin: data.social_links?.linkedin || '',
+            kaggle: data.social_links?.kaggle || ''
+          }));
           return data;
         }
       }
     } catch (err) {
-      console.warn('Backend sync failed, using client session:', err);
-    }
-
-    // Fallback if backend is offline
-    if (fallbackUser) {
-      const localProfile = {
-        email: fallbackUser.email,
-        full_name: fallbackUser.displayName || 'SST Student',
-        avatar_url: fallbackUser.photoURL,
-        discord_id: null,
-        is_verified: false,
-        skills: ['Python', 'FastAPI', 'React'],
-        social_links: {}
-      };
-      setUserProfile(localProfile);
-      return localProfile;
+      console.warn('Backend sync failed:', err);
     }
     return null;
-  }, []);
-
-  // 2. Link Discord Account through the authenticated dashboard backend.
-  const linkDiscordAccount = useCallback(async (targetId, token, user, fallbackEmail = '') => {
-    const idToLink = targetId.trim();
-    if (!idToLink || !/^\d+$/.test(idToLink)) {
-      setStatus('error');
-      setErrorMessage('Please enter a valid numeric Discord User ID (snowflake).');
-      return;
-    }
-
-    setStatus('verifying');
-    setErrorMessage('');
-
-    const email = user?.email || fallbackEmail;
-
-    if (!token) {
-      setStatus('error');
-      setErrorMessage('Sign in before linking your Discord account.');
-      return;
-    }
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/users/verify-discord`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ discord_id: idToLink })
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.detail || `Backend server returned status ${response.status}`);
-      }
-
-      setSuccessData({
-        ...data,
-        email,
-        discord_id: idToLink,
-        role_granted: data.role_granted || 'Verified Member'
-      });
-
-      if (data.user) {
-        setUserProfile(data.user);
-      } else {
-        setUserProfile(prev => ({
-          ...prev,
-          discord_id: idToLink,
-          is_verified: true
-        }));
-      }
-
-      setStatus('success');
-      setShowLinkModal(false);
-    } catch (backendErr) {
-      console.warn(`[Verification] Backend (${API_BASE_URL}) attempt:`, backendErr.message);
-      setStatus('error');
-      setErrorMessage(backendErr.message);
-    }
   }, []);
 
   // 3. Persistent Firebase Auth Listener & Redirect Result Handler
@@ -171,8 +86,7 @@ export default function App() {
       if (result?.user) {
         const user = result.user;
         const email = (user.email || '').toLowerCase().trim();
-        const isSstDomain = email.endsWith('@sst.scaler.com') || email.endsWith('@scaler.com');
-        if (!isSstDomain) {
+        if (!isCollegeEmail(email)) {
           await signOut(auth);
           setStatus('error');
           setErrorMessage(`Access Restricted: (${email}) is not an SST college email.`);
@@ -183,13 +97,7 @@ export default function App() {
         setAuthToken(token);
         setAuthUser(user);
 
-        const savedDiscordId = sessionStorage.getItem('pending_discord_id') || discordId;
-        if (savedDiscordId) {
-          sessionStorage.removeItem('pending_discord_id');
-          await linkDiscordAccount(savedDiscordId, token, user);
-        } else {
-          await syncUserProfile(token, user);
-        }
+        await syncUserProfile(token);
       }
     }).catch((err) => {
       console.warn('Redirect auth check notice:', err.message);
@@ -197,11 +105,18 @@ export default function App() {
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
+        if (!isCollegeEmail(user.email)) {
+          await signOut(auth);
+          setStatus('error');
+          setErrorMessage('Please use your SST college Google account.');
+          setIsAuthLoading(false);
+          return;
+        }
         setAuthUser(user);
         try {
           const token = await user.getIdToken();
           setAuthToken(token);
-          await syncUserProfile(token, user);
+          await syncUserProfile(token);
         } catch (err) {
           console.error('Error fetching token:', err);
         }
@@ -214,19 +129,16 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, [syncUserProfile, discordId, linkDiscordAccount]);
+  }, [syncUserProfile]);
 
   // 4. Handle Direct Google Sign In (with Popup + Automatic Redirect Fallback for Zen/Opera)
   const handleGoogleSignIn = async () => {
     setErrorMessage('');
     
     if (!isFirebaseConfigured || !auth) {
-      setShowConfigModal(true);
+      setStatus('error');
+      setErrorMessage('Sign-in is unavailable. Please use the main Reinforce website or contact a club admin.');
       return;
-    }
-
-    if (discordId) {
-      sessionStorage.setItem('pending_discord_id', discordId);
     }
 
     setStatus('signing-in');
@@ -235,8 +147,7 @@ export default function App() {
       const user = result.user;
       const email = (user.email || '').toLowerCase().trim();
 
-      const isSstDomain = email.endsWith('@sst.scaler.com') || email.endsWith('@scaler.com');
-      if (!isSstDomain) {
+      if (!isCollegeEmail(email)) {
         await signOut(auth);
         setStatus('error');
         setErrorMessage(
@@ -249,13 +160,8 @@ export default function App() {
       setAuthToken(token);
       setAuthUser(user);
 
-      // If a discord_id is present in URL/state, link it immediately!
-      if (discordId) {
-        await linkDiscordAccount(discordId, token, user);
-      } else {
-        await syncUserProfile(token, user);
-        setStatus('idle');
-      }
+      await syncUserProfile(token);
+      setStatus('idle');
     } catch (err) {
       console.warn('Google Popup failed, attempting Redirect mode:', err.code, err.message);
       
@@ -288,11 +194,12 @@ export default function App() {
   // 5. Unlink Discord Account
   const handleUnlinkDiscord = async () => {
     if (!authToken) {
-      setUserProfile(prev => ({ ...prev, discord_id: null, is_verified: false }));
+      setErrorMessage('Sign in again before unlinking Discord.');
       return;
     }
 
     try {
+      setErrorMessage('');
       const res = await fetch(`${API_BASE_URL}/users/unlink-discord`, {
         method: 'POST',
         headers: {
@@ -300,12 +207,12 @@ export default function App() {
           'Content-Type': 'application/json'
         }
       });
-      if (res.ok) {
-        const data = await res.json();
-        setUserProfile(data.user);
-      }
+      if (!res.ok) throw new Error(`Could not unlink Discord (${res.status}).`);
+      const data = await res.json();
+      setUserProfile(data.user);
     } catch (err) {
       console.error('Error unlinking:', err);
+      setErrorMessage('Could not unlink Discord. Please retry.');
     }
   };
 
@@ -315,41 +222,25 @@ export default function App() {
     setProfileSaveStatus('saving');
 
     try {
-      if (authToken) {
-        const res = await fetch(`${API_BASE_URL}/users/me`, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            skills: profileForm.skills,
-            social_links: {
-              github: profileForm.github,
-              linkedin: profileForm.linkedin,
-              kaggle: profileForm.kaggle
-            }
-          })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setUserProfile(data);
-          setProfileSaveStatus('saved');
-          setTimeout(() => setProfileSaveStatus(''), 3000);
-          return;
-        }
-      }
-
-      // Local state fallback
-      setUserProfile(prev => ({
-        ...prev,
-        skills: profileForm.skills,
-        social_links: {
-          github: profileForm.github,
-          linkedin: profileForm.linkedin,
-          kaggle: profileForm.kaggle
-        }
-      }));
+      if (!authToken) throw new Error('Sign in again to save your profile.');
+      const res = await fetch(`${API_BASE_URL}/users/me`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          skills: profileForm.skills,
+          social_links: {
+            github: profileForm.github,
+            linkedin: profileForm.linkedin,
+            kaggle: profileForm.kaggle
+          }
+        })
+      });
+      if (!res.ok) throw new Error(`Profile update failed (${res.status}). Please retry.`);
+      const data = await res.json();
+      setUserProfile(data);
       setProfileSaveStatus('saved');
       setTimeout(() => setProfileSaveStatus(''), 3000);
     } catch (err) {
@@ -383,45 +274,9 @@ export default function App() {
     setAuthUser(null);
     setAuthToken(null);
     setUserProfile(null);
+    setProfileForm({ skills: [], github: '', linkedin: '', kaggle: '' });
     setStatus('idle');
     setErrorMessage('');
-    setSuccessData(null);
-  };
-
-  // Simulated login for offline / dev mode
-  const handleSimulatedDevLogin = async (e) => {
-    e.preventDefault();
-    const email = testEmail.trim().toLowerCase();
-    if (!email.endsWith('@sst.scaler.com') && !email.endsWith('@scaler.com')) {
-      setErrorMessage('Test email must end with @sst.scaler.com or @scaler.com');
-      return;
-    }
-
-    const simUser = {
-      email: email,
-      displayName: testName.trim() || 'SST Student',
-      photoURL: null,
-      getIdToken: async () => 'simulated_dev_token'
-    };
-
-    setAuthUser(simUser);
-    setAuthToken('simulated_dev_token');
-    
-    if (discordId) {
-      await linkDiscordAccount(discordId, 'simulated_dev_token', simUser);
-    } else {
-      setUserProfile({
-        email: email,
-        full_name: simUser.displayName,
-        avatar_url: null,
-        discord_id: null,
-        is_verified: false,
-        skills: ['Python', 'FastAPI', 'Machine Learning'],
-        social_links: {}
-      });
-      setShowConfigModal(false);
-      setStatus('idle');
-    }
   };
 
   // ----------------------------------------------------
@@ -455,197 +310,7 @@ export default function App() {
   }
 
   // ----------------------------------------------------
-  // FLOW 2: Discord Bot Verification Success Screen
-  // ----------------------------------------------------
-  if (status === 'success' && successData) {
-    return (
-      <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: '100vh',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '24px 16px'
-      }}>
-        <div className="glass-panel animate-fade-in" style={{
-          width: '100%',
-          maxWidth: '480px',
-          padding: '36px 32px',
-          textAlign: 'center'
-        }}>
-          <div style={{
-            width: '64px',
-            height: '64px',
-            borderRadius: '50%',
-            background: 'rgba(35, 165, 90, 0.15)',
-            border: '1px solid rgba(35, 165, 90, 0.4)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 20px auto',
-            color: '#57f287'
-          }}>
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10"/>
-              <path d="m9 12 2 2 4-4"/>
-            </svg>
-          </div>
-
-          <h2 style={{ fontSize: '24px', fontWeight: 800, marginBottom: '8px' }}>
-            Verification Complete!
-          </h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '14px', lineHeight: 1.5, marginBottom: '24px' }}>
-            Your SST Google account has been linked. YUVI Bot has granted your member role on Discord.
-          </p>
-
-          <div style={{
-            background: 'rgba(13, 17, 28, 0.8)',
-            border: '1px solid rgba(255, 255, 255, 0.06)',
-            borderRadius: 'var(--radius-md)',
-            padding: '16px',
-            textAlign: 'left',
-            marginBottom: '24px',
-            fontSize: '13px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '10px'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--text-muted)' }}>SST Account:</span>
-              <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{successData.email}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Discord ID:</span>
-              <span style={{ color: '#8fa3ff', fontFamily: 'monospace', fontWeight: 600 }}>{successData.discord_id}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Role Granted:</span>
-              <span style={{ color: '#57f287', fontWeight: 700 }}>{successData.role_granted || 'Verified Member'}</span>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <button 
-              onClick={() => {
-                setStatus('idle');
-                setSuccessData(null);
-                // Clear url query param to cleanly enter dashboard
-                window.history.replaceState({}, document.title, window.location.pathname);
-                setDiscordId('');
-              }}
-              className="btn-primary"
-              style={{ width: '100%', padding: '12px' }}
-            >
-              🚀 Continue to Student Dashboard
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ----------------------------------------------------
-  // FLOW 2A: Logged In User with Discord ID in URL -> Prompt Link Confirmation
-  // ----------------------------------------------------
-  if (authUser && discordId && (!userProfile?.discord_id || userProfile.discord_id !== discordId)) {
-    return (
-      <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: '100vh',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '24px 16px'
-      }}>
-        <div className="glass-panel animate-fade-in" style={{
-          width: '100%',
-          maxWidth: '460px',
-          padding: '36px 32px',
-          textAlign: 'center'
-        }}>
-          <div style={{
-            width: '56px',
-            height: '56px',
-            borderRadius: '16px',
-            background: 'rgba(88, 101, 242, 0.15)',
-            border: '1px solid rgba(88, 101, 242, 0.3)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 16px auto',
-            color: '#5865f2',
-            fontSize: '24px'
-          }}>
-            🔗
-          </div>
-
-          <h2 style={{ fontSize: '22px', fontWeight: 800, marginBottom: '8px' }}>
-            Connect Discord Account
-          </h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '14px', lineHeight: 1.5, marginBottom: '20px' }}>
-            You are signed in as <strong style={{ color: '#ffffff' }}>{authUser.email}</strong>. Would you like to link your Discord account?
-          </p>
-
-          <div style={{
-            background: 'rgba(13, 17, 28, 0.8)',
-            border: '1px solid rgba(88, 101, 242, 0.2)',
-            borderRadius: 'var(--radius-md)',
-            padding: '14px',
-            marginBottom: '24px',
-            textAlign: 'left',
-            fontSize: '13px'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Target Discord ID:</span>
-              <span style={{ color: '#8fa3ff', fontFamily: 'monospace', fontWeight: 600 }}>{discordId}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Logged-in Student:</span>
-              <span style={{ color: '#57f287', fontWeight: 600 }}>{authUser.displayName || 'SST Student'}</span>
-            </div>
-          </div>
-
-          {status === 'error' && errorMessage && (
-            <div style={{
-              background: 'rgba(242, 63, 67, 0.12)',
-              border: '1px solid rgba(242, 63, 67, 0.3)',
-              borderRadius: 'var(--radius-md)',
-              padding: '10px 14px',
-              marginBottom: '16px',
-              fontSize: '13px',
-              color: '#ff7b72'
-            }}>
-              {errorMessage}
-            </div>
-          )}
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <button
-              onClick={() => linkDiscordAccount(discordId, authToken, authUser, testEmail)}
-              disabled={status === 'verifying'}
-              className="btn-primary"
-              style={{ width: '100%', padding: '12px' }}
-            >
-              {status === 'verifying' ? 'Linking with Discord Bot...' : 'Confirm & Link Discord'}
-            </button>
-
-            <button
-              onClick={() => {
-                setDiscordId('');
-                window.history.replaceState({}, document.title, window.location.pathname);
-              }}
-              className="btn-ghost"
-            >
-              Skip for now
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ----------------------------------------------------
-  // FLOW 1 & 2B: Logged Out View (Landing / Sign-in Card)
+  // Logged-out sign-in card
   // ----------------------------------------------------
   if (!authUser) {
     return (
@@ -691,7 +356,7 @@ export default function App() {
           </span>
         </header>
 
-        {/* Login / Verification Card */}
+        {/* Login card */}
         <main className="glass-panel" style={{
           width: '100%',
           maxWidth: '460px',
@@ -719,58 +384,23 @@ export default function App() {
               gap: '8px',
               marginBottom: '14px'
             }}>
-              <span className={`pulse-badge ${discordId ? 'active' : 'active'}`}>
+              <span className="pulse-badge active">
                 <span className="pulse-dot" />
-                {discordId ? 'Discord Verification Request' : 'SST Student Portal'}
+                SST Student Portal
               </span>
             </div>
 
             <h1 style={{ fontSize: '26px', fontWeight: 800, marginBottom: '8px' }}>
-              {discordId ? (
-                <>Member <span className="gradient-text">Verification</span></>
-              ) : (
-                <>Student <span className="gradient-text">Dashboard</span></>
-              )}
+              Student <span className="gradient-text">Dashboard</span>
             </h1>
             <p style={{ color: 'var(--text-secondary)', fontSize: '14px', lineHeight: 1.5 }}>
-              {discordId ? (
-                <>Sign in with your official <strong style={{ color: '#e2e8f0' }}>@sst.scaler.com</strong> account to verify your Discord membership.</>
-              ) : (
-                <>Sign in with your official college Google account (<strong style={{ color: '#e2e8f0' }}>@sst.scaler.com</strong>) to access club activities, projects, and events.</>
-              )}
+              Sign in with your official <strong style={{ color: '#e2e8f0' }}>@sst.scaler.com</strong> account to access your profile.
             </p>
           </div>
 
-          {/* If Discord ID is detected */}
-          {discordId && (
-            <div style={{
-              background: 'rgba(13, 17, 28, 0.7)',
-              border: '1px solid rgba(88, 101, 242, 0.25)',
-              borderRadius: 'var(--radius-md)',
-              padding: '12px 16px',
-              marginBottom: '20px'
-            }}>
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'space-between',
-                fontSize: '12px',
-                color: 'var(--text-muted)',
-                marginBottom: '4px'
-              }}>
-                <span>Target Discord ID</span>
-                <span style={{ color: '#57f287', fontWeight: 600 }}>Detected</span>
-              </div>
-              <div style={{ 
-                fontFamily: 'monospace', 
-                fontSize: '14px', 
-                color: '#8fa3ff', 
-                fontWeight: 600 
-              }}>
-                {discordId}
-              </div>
-            </div>
-          )}
+          {legacyDiscordLink && <p role="alert" style={{ color: '#f0c95b', fontSize: '13px', lineHeight: 1.5, marginBottom: '16px' }}>
+            This Discord link is outdated. Run /auth in the club server and open YUVI&apos;s new private link. <a href={MAIN_SITE_URL}>Open the main site</a>.
+          </p>}
 
           {/* Error Message */}
           {status === 'error' && errorMessage && (
@@ -799,12 +429,12 @@ export default function App() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <button
               onClick={handleGoogleSignIn}
-              disabled={status === 'signing-in' || status === 'verifying'}
+              disabled={status === 'signing-in'}
               className="btn-google"
               id="google-signin-btn"
               type="button"
             >
-              {status === 'signing-in' || status === 'verifying' ? (
+              {status === 'signing-in' ? (
                 <>
                   <div style={{
                     width: '18px',
@@ -824,20 +454,11 @@ export default function App() {
                     <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
                     <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
                   </svg>
-                  <span>{discordId ? 'Sign in with Google to Verify' : 'Sign in with Google'}</span>
+                  <span>Sign in with Google</span>
                 </>
               )}
             </button>
 
-            {/* Offline / Developer Mode Toggle */}
-            <button
-              type="button"
-              onClick={() => setShowConfigModal(true)}
-              className="btn-ghost"
-              style={{ fontSize: '12px', marginTop: '6px' }}
-            >
-              🧪 Developer Test Mode / Simulate Sign-In
-            </button>
           </div>
 
           {/* Footer */}
@@ -857,85 +478,6 @@ export default function App() {
           </div>
         </main>
 
-        {/* Developer Modal */}
-        {showConfigModal && (
-          <div style={{
-            position: 'fixed',
-            top: 0, left: 0, right: 0, bottom: 0,
-            background: 'rgba(0, 0, 0, 0.8)',
-            backdropFilter: 'blur(8px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '16px',
-            zIndex: 100
-          }}>
-            <div className="glass-panel animate-fade-in" style={{
-              width: '100%',
-              maxWidth: '440px',
-              padding: '28px 24px'
-            }}>
-              <h3 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '10px' }}>
-                🧪 Dev Mode: Simulate Student Login
-              </h3>
-              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-                Test the frontend dashboard and Discord verification without needing live OAuth tokens.
-              </p>
-
-              <form onSubmit={handleSimulatedDevLogin} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div>
-                  <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
-                    Student College Email:
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={testEmail}
-                    onChange={(e) => setTestEmail(e.target.value)}
-                    className="input-custom"
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
-                    Student Full Name:
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={testName}
-                    onChange={(e) => setTestName(e.target.value)}
-                    className="input-custom"
-                  />
-                </div>
-
-                {discordId && (
-                  <div>
-                    <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
-                      Target Discord ID:
-                    </label>
-                    <input
-                      type="text"
-                      readOnly
-                      value={discordId}
-                      className="input-custom"
-                      style={{ color: '#8fa3ff', fontFamily: 'monospace' }}
-                    />
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                  <button type="submit" className="btn-primary" style={{ flex: 1 }}>
-                    {discordId ? 'Simulate Link & Verify' : 'Enter Dashboard'}
-                  </button>
-                  <button type="button" onClick={() => setShowConfigModal(false)} className="btn-ghost">
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
@@ -983,8 +525,8 @@ export default function App() {
         </div>
 
         {/* User Badge & Actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div className="dashboard-account" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div className="dashboard-identity" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             {student.avatar_url ? (
               <img 
                 src={student.avatar_url} 
@@ -1035,24 +577,17 @@ export default function App() {
             📊 Overview
           </button>
           <button 
-            onClick={() => setActiveTab('events')} 
-            className={`tab-btn ${activeTab === 'events' ? 'active' : ''}`}
-          >
-            🎟️ Workshops & Events
-          </button>
-          <button 
-            onClick={() => setActiveTab('projects')} 
-            className={`tab-btn ${activeTab === 'projects' ? 'active' : ''}`}
-          >
-            💡 Projects & Radar
-          </button>
-          <button 
             onClick={() => setActiveTab('profile')} 
             className={`tab-btn ${activeTab === 'profile' ? 'active' : ''}`}
           >
             ⚙️ Profile & Skills
           </button>
         </div>
+
+        {!userProfile && <p role="alert" style={{ color: '#f0c95b', fontSize: '13px' }}>
+          Your profile could not be loaded. Refresh the page or use the <a href={MAIN_SITE_URL}>main club site</a>.
+        </p>}
+        {errorMessage && <p role="alert" style={{ color: '#ff7b72', fontSize: '13px' }}>{errorMessage}</p>}
 
         {/* ----------------- TAB: OVERVIEW ----------------- */}
         {activeTab === 'overview' && (
@@ -1088,14 +623,14 @@ export default function App() {
                     </h3>
                     <span className={`pulse-badge ${student.discord_id ? 'active' : 'warning'}`}>
                       <span className="pulse-dot" />
-                      {student.discord_id ? 'Verified Member' : 'Not Connected'}
+                      {student.discord_id ? 'Linked' : 'Not linked'}
                     </span>
                   </div>
                   <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
                     {student.discord_id ? (
-                      <>Linked Snowflake ID: <span style={{ color: '#8fa3ff', fontFamily: 'monospace' }}>{student.discord_id}</span> • Server roles assigned.</>
+                      <>Discord account linked: <span style={{ color: '#8fa3ff', fontFamily: 'monospace' }}>{student.discord_id}</span>.</>
                     ) : (
-                      <>Connect your Discord account to unlock club channels, discussions, and role privileges on YUVI.</>
+                      <>Run /auth in the club Discord to link your account through YUVI.</>
                     )}
                   </p>
                 </div>
@@ -1107,9 +642,9 @@ export default function App() {
                     Unlink Discord
                   </button>
                 ) : (
-                  <button onClick={() => setShowLinkModal(true)} className="btn-primary">
-                    ⚡ Connect Discord Account
-                  </button>
+                  <a href={MAIN_SITE_URL} className="btn-primary">
+                    Open main site
+                  </a>
                 )}
               </div>
             </div>
@@ -1132,7 +667,7 @@ export default function App() {
                 </div>
                 <div>
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Club Status</div>
-                  <div style={{ fontSize: '16px', fontWeight: 700, color: '#57f287' }}>Active Member</div>
+                  <div style={{ fontSize: '16px', fontWeight: 700, color: '#57f287' }}>{student.is_member ? 'Member' : 'Student'}</div>
                 </div>
               </div>
 
@@ -1143,134 +678,26 @@ export default function App() {
                 <div>
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Registered Skills</div>
                   <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                    {profileForm.skills.length} Skills
+                    {student.skills?.length || 0} Skills
                   </div>
                 </div>
               </div>
-            </div>
-
-            {/* Quick Club Highlights */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
-              <div className="glass-panel" style={{ padding: '24px' }}>
-                <h3 style={{ fontSize: '17px', fontWeight: 700, marginBottom: '14px' }}>
-                  📌 Next Club Milestone
-                </h3>
-                <div style={{
-                  background: 'rgba(13, 17, 28, 0.6)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '16px',
-                  border: '1px solid rgba(255, 255, 255, 0.05)'
-                }}>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#00d4ff', marginBottom: '6px' }}>
-                    Reinforce AI Hackathon 2026
-                  </div>
-                  <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                    Build multimodal AI agents with the Reinforce Club dev team. Top submissions get showcased on SST tech review!
-                  </p>
-                </div>
-              </div>
-
-              <div className="glass-panel" style={{ padding: '24px' }}>
-                <h3 style={{ fontSize: '17px', fontWeight: 700, marginBottom: '14px' }}>
-                  🛠️ Developer Quick Links
-                </h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <a 
-                    href="https://discord.com" 
-                    target="_blank" 
-                    rel="noreferrer" 
-                    className="btn-ghost" 
-                    style={{ justifyContent: 'flex-start', textAlign: 'left' }}
-                  >
-                    💬 Open Reinforce SST Discord Server
-                  </a>
-                  <button 
-                    onClick={() => setActiveTab('profile')} 
-                    className="btn-ghost" 
-                    style={{ justifyContent: 'flex-start', textAlign: 'left' }}
-                  >
-                    📝 Update Skills & Social Links
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ----------------- TAB: EVENTS & WORKSHOPS ----------------- */}
-        {activeTab === 'events' && (
-          <div className="animate-fade-in" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
-            <div className="glass-panel" style={{ padding: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                <span className="tag-chip" style={{ color: '#00d4ff', borderColor: 'rgba(0, 212, 255, 0.3)' }}>Hands-on Workshop</span>
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>This Friday, 6 PM</span>
-              </div>
-              <h3 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '8px' }}>
-                Mastering LangChain & Autonomous Agents
-              </h3>
-              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '16px' }}>
-                Learn how to build multi-tool agentic workflows with memory, structured outputs, and real-time execution.
-              </p>
-              <button className="btn-primary" style={{ width: '100%' }}>
-                Register for Workshop
-              </button>
             </div>
 
             <div className="glass-panel" style={{ padding: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                <span className="tag-chip" style={{ color: '#57f287', borderColor: 'rgba(35, 165, 90, 0.3)' }}>Tech Talk</span>
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Next Week</span>
-              </div>
-              <h3 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '8px' }}>
-                Scalable Backend Architecture with FastAPI
+              <h3 style={{ fontSize: '17px', fontWeight: 700, marginBottom: '14px' }}>
+                Continue on the main club website
               </h3>
-              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '16px' }}>
-                Deep-dive into async event loops, connection pooling, and Firestore real-time security models.
-              </p>
-              <button className="btn-ghost" style={{ width: '100%' }}>
-                Add to Calendar
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ----------------- TAB: PROJECTS & RADAR ----------------- */}
-        {activeTab === 'projects' && (
-          <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div className="glass-panel" style={{ padding: '24px' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '12px' }}>
-                🚀 Active Club Initiatives
-              </h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div style={{
-                  padding: '16px',
-                  background: 'rgba(13, 17, 28, 0.6)',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid rgba(255, 255, 255, 0.05)'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                    <span style={{ fontWeight: 600, color: '#ffffff' }}>YUVI Discord Bot 2.0</span>
-                    <span className="tag-chip" style={{ color: '#5865f2' }}>Python • Discord.py</span>
-                  </div>
-                  <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                    Automated SST member verification, ticket resolution, and community role dispatching.
-                  </p>
-                </div>
-
-                <div style={{
-                  padding: '16px',
-                  background: 'rgba(13, 17, 28, 0.6)',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid rgba(255, 255, 255, 0.05)'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                    <span style={{ fontWeight: 600, color: '#ffffff' }}>Reinforce Student Portal</span>
-                    <span className="tag-chip" style={{ color: '#00d4ff' }}>React • Vite • FastAPI</span>
-                  </div>
-                  <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                    Unified student identity, portfolio showcasing, and workshop access platform.
-                  </p>
-                </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                <a href={`${MAIN_SITE_URL}/dashboard/events`} className="btn-ghost">
+                  View club events
+                </a>
+                <a href={`${MAIN_SITE_URL}/dashboard/spg`} className="btn-ghost">
+                  Explore project groups
+                </a>
+                <button onClick={() => setActiveTab('profile')} className="btn-ghost">
+                  Update profile
+                </button>
               </div>
             </div>
           </div>
@@ -1391,90 +818,14 @@ export default function App() {
                 {profileSaveStatus === 'saved' && (
                   <span style={{ color: '#57f287', fontSize: '13px' }}>✓ Saved successfully!</span>
                 )}
+                {profileSaveStatus === 'error' && (
+                  <span role="alert" style={{ color: '#ff7b72', fontSize: '13px' }}>Could not save your profile. Please retry.</span>
+                )}
               </div>
             </form>
           </div>
         )}
       </div>
-
-      {/* Manual Connect Discord Modal */}
-      {showLinkModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0, 0, 0, 0.8)',
-          backdropFilter: 'blur(8px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '16px',
-          zIndex: 100
-        }}>
-          <div className="glass-panel animate-fade-in" style={{
-            width: '100%',
-            maxWidth: '440px',
-            padding: '28px 24px'
-          }}>
-            <h3 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '10px' }}>
-              💬 Connect Discord Account
-            </h3>
-            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-              Enter your Discord Snowflake User ID. You can find this by enabling Developer Mode on Discord and right-clicking your profile.
-            </p>
-
-            {status === 'error' && errorMessage && (
-              <div style={{
-                background: 'rgba(242, 63, 67, 0.12)',
-                border: '1px solid rgba(242, 63, 67, 0.3)',
-                borderRadius: 'var(--radius-md)',
-                padding: '10px',
-                marginBottom: '12px',
-                fontSize: '13px',
-                color: '#ff7b72'
-              }}>
-                {errorMessage}
-              </div>
-            )}
-
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
-                Discord User ID:
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. 1549547403819090011"
-                value={manualDiscordInput}
-                onChange={(e) => setManualDiscordInput(e.target.value.trim())}
-                className="input-custom"
-                style={{ fontFamily: 'monospace' }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button
-                type="button"
-                disabled={status === 'verifying'}
-                onClick={() => linkDiscordAccount(manualDiscordInput, authToken, authUser, testEmail)}
-                className="btn-primary"
-                style={{ flex: 1 }}
-              >
-                {status === 'verifying' ? 'Linking...' : 'Verify & Grant Role'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowLinkModal(false);
-                  setErrorMessage('');
-                  setStatus('idle');
-                }}
-                className="btn-ghost"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Inline Keyframe Animations */}
       <style>{`

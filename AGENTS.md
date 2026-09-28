@@ -80,11 +80,6 @@ is not ownership proof. See docs/DATA_CONTRACT.md.
 These are real and logged. Fixing one is a scoped PR with a description, not a
 drive-by edit inside an unrelated change.
 
-- **Developer Test Mode is live in production** (`client/src/App.jsx`). It renders a
-  fake authenticated dashboard to any visitor. Contained — the backend rejects the
-  simulated token — but it must be gated behind an environment check.
-- **Events and Projects tabs render hardcoded fake content.** Invented workshops with
-  invented dates, shipped to real users. They have no data source behind them.
 - **Legacy Discord records need reverification.** Raw-ID links no longer grant
   access; members must open a fresh private YUVI token link. See docs/verification.md.
 - **The older Vercel URL still selects the Vite client.** The custom domain

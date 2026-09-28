@@ -23,38 +23,11 @@ type AdminTab =
   | "articles"
   | "ideas";
 
-function formatScheduleDisplay(startStr: string, endStr?: string): string {
-  if (!startStr) return "UPCOMING";
-  try {
-    const start = new Date(startStr);
-    if (isNaN(start.getTime())) return startStr;
-    const startMonth = start.toLocaleString("en-US", { month: "short" }).toUpperCase();
-    const startDay = start.getDate();
-    const startYear = start.getFullYear();
-    const startTime = start.toLocaleString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-
-    if (!endStr) {
-      return `${startMonth} ${startDay}, ${startYear} · ${startTime}`;
-    }
-
-    const end = new Date(endStr);
-    if (isNaN(end.getTime())) {
-      return `${startMonth} ${startDay}, ${startYear} · ${startTime}`;
-    }
-
-    const endMonth = end.toLocaleString("en-US", { month: "short" }).toUpperCase();
-    const endDay = end.getDate();
-    const endYear = end.getFullYear();
-    const endTime = end.toLocaleString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-
-    if (startDay === endDay && startMonth === endMonth && startYear === endYear) {
-      return `${startMonth} ${startDay}, ${startYear} · ${startTime} – ${endTime}`;
-    } else {
-      return `${startMonth} ${startDay} – ${endMonth} ${endDay}, ${endYear}`;
-    }
-  } catch {
-    return startStr;
-  }
+function formatBannerDate(startStr: string): string {
+  const start = new Date(startStr);
+  return startStr && Number.isFinite(start.getTime())
+    ? start.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" })
+    : "Date not set";
 }
 
 export default function AdminClient() {
@@ -89,14 +62,11 @@ export default function AdminClient() {
   };
 
   // --- TAB 1: Dashboard Hero Banner State ---
-  const [bannerBadge, setBannerBadge] = useState("");
   const [bannerStartDateTime, setBannerStartDateTime] = useState("");
   const [bannerEndDateTime, setBannerEndDateTime] = useState("");
-  const bannerDateDisplay = formatScheduleDisplay(bannerStartDateTime, bannerEndDateTime);
+  const bannerDateDisplay = formatBannerDate(bannerStartDateTime);
   const [bannerTitle, setBannerTitle] = useState("");
   const [bannerDescription, setBannerDescription] = useState("");
-  const [bannerCtaText, setBannerCtaText] = useState("");
-  const [bannerCtaLink, setBannerCtaLink] = useState("");
   const bannerTrack = "all";
   const bannerFormat = "offline";
   const [bannerUrl, setBannerUrl] = useState("");
@@ -334,11 +304,6 @@ export default function AdminClient() {
       setSubmitError("Title and description are required.");
       return;
     }
-    if (bannerBadge.trim() || bannerCtaText.trim() || bannerCtaLink.trim()) {
-      setSubmitError("Custom badge and CTA fields are preview-only until the backend supports them. Clear these fields to publish with the standard event link.");
-      return;
-    }
-
     setIsSubmitting(true);
     setSubmitSuccess(null);
     setSubmitError(null);
@@ -818,16 +783,6 @@ export default function AdminClient() {
 
               <div className={styles.formRow}>
                 <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>Badge Tag</label>
-                  <input
-                    type="text"
-                    value={bannerBadge}
-                    onChange={(e) => setBannerBadge(e.target.value)}
-                    placeholder="e.g. NEW EVENT, HACKATHON"
-                    className={styles.formInput}
-                  />
-                </div>
-                <div className={styles.formGroup}>
                   <label className={styles.formLabel}>Start Date & Time</label>
                   <input
                     type="datetime-local"
@@ -837,9 +792,6 @@ export default function AdminClient() {
                     required
                   />
                 </div>
-              </div>
-
-              <div className={styles.formRow}>
                 <div className={styles.formGroup}>
                   <label className={styles.formLabel}>End Date & Time (Optional)</label>
                   <input
@@ -849,12 +801,12 @@ export default function AdminClient() {
                     className={styles.formInput}
                   />
                 </div>
-                <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>Calculated Display Date</label>
-                  <div className={styles.datetimeHelper}>
-                    <MemberIcon name="calendar" size={15} />
-                    <span>{bannerDateDisplay}</span>
-                  </div>
+              </div>
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Displayed Date</label>
+                <div className={styles.datetimeHelper}>
+                  <MemberIcon name="calendar" size={15} />
+                  <span>{bannerDateDisplay}</span>
                 </div>
               </div>
 
@@ -879,29 +831,6 @@ export default function AdminClient() {
                   className={styles.formTextarea}
                   required
                 />
-              </div>
-
-              <div className={styles.formRow}>
-                <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>CTA Button Text</label>
-                  <input
-                    type="text"
-                    value={bannerCtaText}
-                    onChange={(e) => setBannerCtaText(e.target.value)}
-                    placeholder="Join Session →"
-                    className={styles.formInput}
-                  />
-                </div>
-                <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>CTA Destination Link</label>
-                  <input
-                    type="text"
-                    value={bannerCtaLink}
-                    onChange={(e) => setBannerCtaLink(e.target.value)}
-                    placeholder="/dashboard/events"
-                    className={styles.formInput}
-                  />
-                </div>
               </div>
 
               <button type="submit" disabled={isSubmitting} className={styles.publishBtn}>
@@ -930,13 +859,13 @@ export default function AdminClient() {
                 <div className={styles.livePreviewContent}>
                   <div>
                     <div className={styles.livePreviewTop}>
-                      <span className={styles.livePreviewBadge}>{bannerBadge || "ANNOUNCEMENT"}</span>
+                      <span className={styles.livePreviewBadge}>FEATURED BANNER</span>
                       <span className={styles.livePreviewDate}>{bannerDateDisplay}</span>
                     </div>
                     <h4 className={styles.livePreviewTitle}>{bannerTitle || "Untitled Announcement"}</h4>
                     <p className={styles.livePreviewDesc}>{bannerDescription || "Description preview..."}</p>
                   </div>
-                  <span className={styles.livePreviewCta}>{bannerCtaText || "Join →"}</span>
+                  <span className={styles.livePreviewCta}>Explore Event →</span>
                 </div>
 
                 <div className={styles.livePreviewImageSide}>

@@ -6,6 +6,7 @@ Maintains pure UID references with zero user denormalization.
 
 import hashlib
 import json
+import logging
 import secrets
 from typing import Any, Dict, List, Optional
 import urllib.error
@@ -51,6 +52,7 @@ from app.schemas.tickets import (
 
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 TICKETS_COLLECTION = "tickets"
 MESSAGES_SUBCOLLECTION = "messages"
@@ -471,9 +473,9 @@ def create_ticket(
                 if res_data.get("discord_meta"):
                     ticket_doc["discord_meta"] = res_data["discord_meta"]
                     ticket_ref.update({"discord_meta": res_data["discord_meta"]})
-        except Exception:
-            # Ticket creation continues even if Discord bot is temporarily unreachable
-            pass
+        except Exception as exc:
+            # Keep the dashboard ticket, but make Discord delivery failures visible.
+            logger.warning("Discord thread creation failed for ticket %s: %s", ticket_id, type(exc).__name__)
 
     return _to_ticket_detail(ticket_id, ticket_doc)
 
@@ -581,8 +583,8 @@ def post_ticket_message(
             )
             with urllib.request.urlopen(req, timeout=3.0):
                 pass
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Discord message relay failed for ticket %s: %s", ticket_id, type(exc).__name__)
 
     return _to_ticket_message(msg_id, msg_doc)
 

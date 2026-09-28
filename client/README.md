@@ -7,9 +7,10 @@ app in [`web/`](../web/). The older
 client as of 29 September 2026.
 
 Keep it until the team has checked redirects, auth links, and any remaining
-traffic. New member and admin features belong in `web/`, not here. The known
-developer test mode and hardcoded Events/Projects content in this client are
-legacy defects; do not use it to verify production member workflows.
+traffic. New member and admin features belong in `web/`, not here. The legacy
+client provides sign-in and basic profile editing; events and SPGs link to the
+main site. Discord verification requires YUVI's private `/auth` link on the
+main site. Raw Discord IDs cannot verify an account.
 
 ```bash
 npm ci

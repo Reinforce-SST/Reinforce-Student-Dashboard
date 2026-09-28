@@ -285,6 +285,28 @@ h1, h2, h3, h4 {
   z-index: 50;
 }
 
+.dashboard-identity,
+.dashboard-identity > div:last-child {
+  min-width: 0;
+}
+
+.dashboard-identity span {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+  .dashboard-header {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px 16px;
+  }
+
+  .dashboard-account {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
 .dashboard-container {
   max-width: 1200px;
   width: 100%;

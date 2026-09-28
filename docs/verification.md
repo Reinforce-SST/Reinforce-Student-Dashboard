@@ -22,6 +22,7 @@ npm run build
 
 cd ../client
 npm ci
+npm run lint
 npm run build
 ```
 
@@ -45,6 +46,15 @@ was checked at 320px, 390px, and 900px after its request summary and decision
 controls were reorganized. These screenshots
 verify layout only; authenticated browser and production mutations remain live
 acceptance checks.
+
+The no-event overview now hides the hero instead of showing an invented
+announcement; compare its [phone](screenshots/audit-2026-09-29/dashboard-no-events-390.png)
+and [desktop](screenshots/audit-2026-09-29/dashboard-no-events-desktop.png)
+fixtures. The [admin banner form](screenshots/audit-2026-09-29/admin-banner-cleanup-390.png)
+shows only publishable fields. The legacy client's [sign-in](screenshots/audit-2026-09-29/legacy-signin-cleanup-390.png)
+and [member overview](screenshots/audit-2026-09-29/legacy-overview-cleanup-390.png)
+were checked at 390px. The member overview screenshot uses a temporary local
+fixture that was removed before the final build.
 
 ## Live topology checked 29 September 2026
 
