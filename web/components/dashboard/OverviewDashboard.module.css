@@ -1,5 +1,5 @@
 .dashboard { max-width: 1360px; margin: 0 auto; color: #f5f4f1; }
-.mobileDesignPicker,.mobileQuickLinks { display:none; }
+.mobileQuickLinks { display:none; }
 .intro { display:flex; align-items:end; justify-content:space-between; gap:16px; min-height:61px; margin-bottom:17px; }
 .intro h2 { font-size:1.55rem; line-height:1.15; letter-spacing:-.04em; margin:0 0 5px; font-weight:800; }
 .intro p { color:#a2a2a8; font-size:.75rem; margin:0; }
@@ -121,11 +121,7 @@
 @media (max-width:440px) { .intro .textLink { display:none; } .projectEmpty { padding:17px; gap:13px; } .emptyIcon { width:38px; height:38px; } .reportAction { flex-wrap:wrap; justify-content:end; } }
 @media (max-width:768px) {
   .dashboard { min-width:0; }
-  .mobileDesignPicker { display:flex; align-items:center; gap:5px; margin:0 0 18px; }
-  .mobileDesignPicker span { margin-right:auto; color:#b9b9bd; font-size:.72rem; font-weight:700; }
-  .mobileDesignPicker button { min-width:44px; min-height:44px; border:1px solid #38383b; border-radius:9px; background:#18181a; color:#dedee0; font-weight:800; cursor:pointer; }
-  .mobileDesignPicker button[aria-pressed="true"] { background:var(--brand,#e5b731); border-color:var(--brand,#e5b731); color:#111; }
-  .mobileDesignPicker button:focus-visible,.mobileQuickLinks a:focus-visible { outline:2px solid #fff; outline-offset:2px; }
+  .mobileQuickLinks a:focus-visible { outline:2px solid #fff; outline-offset:2px; }
   .intro { margin-bottom:16px; }
   .intro p { line-height:1.5; }
   .overviewContainer { display:flex; flex-direction:column; gap:12px; }
@@ -139,7 +135,7 @@
   .mobileQuickLinks strong { font-size:.82rem; }
   .mobileQuickLinks small { margin-top:2px; font-size:.68rem; color:#aaaab0; }
   .mobileQuickLinks a > span:last-child { color:var(--brand,#e5b731); }
-  .heroBanner { height:178px; border-radius:12px; }
+  .heroBanner { height:154px; border-radius:12px; }
   .heroContent { padding:17px; justify-content:space-between; }
   .heroTopRow { gap:7px; }
   .eventBadge { padding:4px 6px; font-size:.52rem; }
@@ -164,25 +160,6 @@
   .widgetCard { order:5; }
   .calendarCard { order:6; }
   .contributionCard { order:7; }
-  .dashboard[data-mobile-design="a"] .mobileQuickLinks a:nth-child(n+3) { display:none; }
-  .dashboard[data-mobile-design="a"] .heroBanner { height:154px; }
-  .dashboard[data-mobile-design="b"] .heroBanner { order:1; height:236px; }
-  .dashboard[data-mobile-design="b"] .metrics { order:2; }
-  .dashboard[data-mobile-design="b"] .mobileQuickLinks { order:3; grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .dashboard[data-mobile-design="b"] .mobileQuickLinks a { min-height:78px; align-items:flex-start; flex-direction:column; gap:4px; }
-  .dashboard[data-mobile-design="b"] .mobileQuickLinks a > span:last-child { display:none; }
-  .dashboard[data-mobile-design="b"] .heroCoverRight { width:100%; height:65%; top:auto; bottom:0; -webkit-mask-image:linear-gradient(to bottom,transparent,#000 65%); mask-image:linear-gradient(to bottom,transparent,#000 65%); opacity:.8; }
-  .dashboard[data-mobile-design="b"] .heroContent { justify-content:flex-start; }
-  .dashboard[data-mobile-design="b"] .heroCtaBtn { margin-top:10px; }
-  .dashboard[data-mobile-design="c"] .mobileQuickLinks { order:1; grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .dashboard[data-mobile-design="c"] .mobileQuickLinks a { min-height:108px; flex-direction:column; align-items:flex-start; justify-content:space-between; }
-  .dashboard[data-mobile-design="c"] .mobileQuickLinks a > span:last-child { display:none; }
-  .dashboard[data-mobile-design="c"] .metrics { order:2; }
-  .dashboard[data-mobile-design="c"] .heroBanner { order:6; height:150px; }
-  .dashboard[data-mobile-design="c"] .projectSection { order:3; }
-  .dashboard[data-mobile-design="c"] .widgetCard { order:4; }
-  .dashboard[data-mobile-design="c"] .contributionCard { order:5; }
-  .dashboard[data-mobile-design="c"] .calendarCard { order:7; }
 }
 @media (max-width:340px) { .mobileQuickLinks small { font-size:.62rem; } .sectionHeader,.widgetHeader { align-items:flex-start; } .sectionHeader .textLink,.widgetHeader .textLink { white-space:normal; text-align:right; } }
 @media (prefers-reduced-motion:reduce) { .heroNavArrows button,.eventItem { transition:none; } }
