@@ -979,7 +979,7 @@ function ProfileClientContent() {
       </section>
 
       {/* 5. Contribution History Area Below (Ledger Feed) */}
-      <section className={styles.historySection} aria-label="Contribution Ledger History">
+      <section id="contribution-history" className={styles.historySection} aria-label="Contribution Ledger History">
         <div className={styles.historyHeaderRow}>
           <div>
             <h2 className={styles.heatmapTitle}>Auditable Contribution Ledger</h2>

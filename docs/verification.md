@@ -56,6 +56,13 @@ and [member overview](screenshots/audit-2026-09-29/legacy-overview-cleanup-390.p
 were checked at 390px. The member overview screenshot uses a temporary local
 fixture that was removed before the final build.
 
+The notification bell was restored with a data-backed panel. Local fixtures
+checked its desktop, 390px, and 320px layouts; unit tests cover the source
+filters and destinations. On a signed-in deployment, change a member ticket
+status or review a contribution, then refresh the dashboard and confirm the
+new item opens the relevant ticket or ledger page. The viewed count is browser-local, not shared
+between devices.
+
 ## Live topology checked 29 September 2026
 
 | Check | Result |
@@ -69,8 +76,8 @@ YUVI [PR #10](https://github.com/Reinforce-SST/YUVI/pull/10) is merged, but
 the later queue merge broke its ticket endpoint on `main`; the repair is
 [YUVI PR #13](https://github.com/Reinforce-SST/YUVI/pull/13). Do not treat the
 dashboard-to-Discord bridge as live until that repair is deployed and tested.
-Dashboard [PR #35](https://github.com/Reinforce-SST/Reinforce-Student-Dashboard/pull/35)
-also remains open at this check. Branch code and production code may differ.
+Dashboard [PR #37](https://github.com/Reinforce-SST/Reinforce-Student-Dashboard/pull/37)
+remains open at this check. Branch code and production code may differ.
 
 ## Live acceptance after coordinated deployment
 

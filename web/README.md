@@ -40,7 +40,10 @@ The admin SPG tab reviews registration details, accepts a proposition PDF for
 project groups, and approves the request through the ticket API. Approval
 creates a group and resolves its ticket in one transaction. On phones, the
 member home uses the compact Command Home layout with labelled bottom
-navigation. The current feature boundaries are in
+navigation. The header notification panel reads the member's ticket activity,
+contribution reviews, and public events scheduled within a week from existing
+API endpoints. Its viewed state is kept per account in this browser; there is
+no push delivery or cross-device read sync. The current feature boundaries are in
 [verification.md](../docs/verification.md).
 
 **Keep `/auth` stable.** YUVI sends `#link_token=` on its private verification

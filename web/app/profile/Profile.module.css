@@ -918,6 +918,7 @@
    4. Contribution History Area Below (Ledger Feed)
    ========================================================================== */
 .historySection {
+  scroll-margin-top: 80px;
   background: #141416;
   border: 1px solid #232328;
   border-radius: 16px;

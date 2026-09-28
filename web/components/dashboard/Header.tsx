@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useMember } from "@/lib/useMember";
 import MemberIcon from "./MemberIcon";
+import MemberNotifications from "./MemberNotifications";
 import styles from "./Header.module.css";
 
 const titles: Record<string, string> = {
@@ -96,6 +97,8 @@ export default function Header({
             className={styles.searchInput}
           />
         </form>
+
+        <MemberNotifications />
 
         {/* User Profile Pill */}
         <Link
