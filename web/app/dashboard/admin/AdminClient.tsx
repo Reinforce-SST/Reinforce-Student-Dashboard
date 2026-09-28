@@ -8,6 +8,8 @@ import { useAdminMode } from "@/lib/useAdminMode";
 import { api, type StudentProfile } from "@/lib/api";
 import { getEventGraduationBatches } from "@/lib/eventsData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
+import AdminTicketsPanel from "./AdminTicketsPanel";
+import AdminContentPanel from "./AdminContentPanel";
 import MemberRoleRow from "./MemberRoleRow";
 import styles from "./Admin.module.css";
 
@@ -63,12 +65,20 @@ export default function AdminClient() {
 
   const tabParam = (searchParams.get("tab") as AdminTab) || "banners";
   const [activeTab, setActiveTab] = useState<AdminTab>(tabParam);
+  const tabsNavRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (searchParams.get("tab")) {
       setActiveTab(searchParams.get("tab") as AdminTab);
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    tabsNavRef.current?.querySelector(`[data-tab="${activeTab}"]`)?.scrollIntoView({
+      block: "nearest",
+      inline: "center",
+    });
+  }, [activeTab]);
 
   const handleTabChange = (tab: AdminTab) => {
     setActiveTab(tab);
@@ -607,8 +617,11 @@ export default function AdminClient() {
       </div>
 
       {/* Tabs Navigation */}
-      <div className={styles.tabsNav} role="tablist">
+      <div className={styles.tabsNav} role="tablist" aria-label="Administration sections" ref={tabsNavRef}>
         <button
+          data-tab="banners"
+          role="tab"
+          aria-selected={activeTab === "banners"}
           onClick={() => {
             setSubmitSuccess(null);
             setSubmitError(null);
@@ -622,6 +635,9 @@ export default function AdminClient() {
         </button>
 
         <button
+          data-tab="events"
+          role="tab"
+          aria-selected={activeTab === "events"}
           onClick={() => {
             setSubmitSuccess(null);
             setSubmitError(null);
@@ -634,14 +650,20 @@ export default function AdminClient() {
         </button>
 
         <button
+          data-tab="spg"
+          role="tab"
+          aria-selected={activeTab === "spg"}
           onClick={() => handleTabChange("spg")}
           className={`${styles.tabButton} ${activeTab === "spg" ? styles.tabButtonActive : ""}`}
         >
           <MemberIcon name="spg" size={16} />
-          SPG Approvals
+          SPG Requests
         </button>
 
         <button
+          data-tab="tickets"
+          role="tab"
+          aria-selected={activeTab === "tickets"}
           onClick={() => handleTabChange("tickets")}
           className={`${styles.tabButton} ${activeTab === "tickets" ? styles.tabButtonActive : ""}`}
         >
@@ -650,6 +672,9 @@ export default function AdminClient() {
         </button>
 
         <button
+          data-tab="contributions"
+          role="tab"
+          aria-selected={activeTab === "contributions"}
           onClick={() => handleTabChange("contributions")}
           className={`${styles.tabButton} ${activeTab === "contributions" ? styles.tabButtonActive : ""}`}
         >
@@ -658,6 +683,9 @@ export default function AdminClient() {
         </button>
 
         <button
+          data-tab="members"
+          role="tab"
+          aria-selected={activeTab === "members"}
           onClick={() => handleTabChange("members")}
           className={`${styles.tabButton} ${activeTab === "members" ? styles.tabButtonActive : ""}`}
         >
@@ -666,6 +694,9 @@ export default function AdminClient() {
         </button>
 
         <button
+          data-tab="articles"
+          role="tab"
+          aria-selected={activeTab === "articles"}
           onClick={() => handleTabChange("articles")}
           className={`${styles.tabButton} ${activeTab === "articles" ? styles.tabButtonActive : ""}`}
         >
@@ -674,6 +705,9 @@ export default function AdminClient() {
         </button>
 
         <button
+          data-tab="ideas"
+          role="tab"
+          aria-selected={activeTab === "ideas"}
           onClick={() => handleTabChange("ideas")}
           className={`${styles.tabButton} ${activeTab === "ideas" ? styles.tabButtonActive : ""}`}
         >
@@ -1322,59 +1356,9 @@ export default function AdminClient() {
         </div>
       )}
 
-      {/* TAB 3: SPG Approvals */}
-      {activeTab === "spg" && (
-        <div className={styles.card}>
-          <div className={styles.cardHeader}>
-            <div>
-              <h3 className={styles.cardTitle}>
-                <MemberIcon name="spg" size={18} />
-                Student Project Group (SPG) Proposal Approvals
-              </h3>
-              <div className={styles.cardSubtitle}>
-                Review incoming research and project proposals from students.
-              </div>
-            </div>
-          </div>
+      {activeTab === "spg" && <AdminTicketsPanel token={token} spgOnly />}
 
-          <div style={{ textAlign: "center", padding: "40px 20px", color: "#8e8e93" }}>
-            <MemberIcon name="spg" size={36} />
-            <p style={{ marginTop: "12px", fontSize: "14px", color: "#ffffff" }}>
-              No pending SPG proposals awaiting approval.
-            </p>
-            <p style={{ fontSize: "12.5px", maxWidth: "440px", margin: "0 auto" }}>
-              New student research proposals submitted via the SPG module will automatically appear here for review and compute allocation.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 4: Ticket Console */}
-      {activeTab === "tickets" && (
-        <div className={styles.card}>
-          <div className={styles.cardHeader}>
-            <div>
-              <h3 className={styles.cardTitle}>
-                <MemberIcon name="tickets" size={18} />
-                Ticket Support & Resolution Console
-              </h3>
-              <div className={styles.cardSubtitle}>
-                Track and resolve student tickets for compute access, club questions, and verification.
-              </div>
-            </div>
-          </div>
-
-          <div style={{ textAlign: "center", padding: "40px 20px", color: "#8e8e93" }}>
-            <MemberIcon name="tickets" size={36} />
-            <p style={{ marginTop: "12px", fontSize: "14px", color: "#ffffff" }}>
-              No open student support tickets.
-            </p>
-            <p style={{ fontSize: "12.5px", maxWidth: "440px", margin: "0 auto" }}>
-              Student queries and compute access requests submitted to the ticket console will appear here in real-time.
-            </p>
-          </div>
-        </div>
-      )}
+      {activeTab === "tickets" && <AdminTicketsPanel token={token} />}
 
       {/* TAB 5: Merit Auditing */}
       {activeTab === "contributions" && (
@@ -1698,34 +1682,7 @@ export default function AdminClient() {
         </div>
       )}
 
-      {/* TAB 7 & 8: Articles and Ideas */}
-      {(activeTab === "articles" || activeTab === "ideas") && (
-        <div className={styles.card}>
-          <div className={styles.cardHeader}>
-            <div>
-              <h3 className={styles.cardTitle}>
-                <MemberIcon name={activeTab} size={18} />
-                {activeTab === "articles" ? "Article Hub Editorial Pipeline" : "Idea Jar Moderation"}
-              </h3>
-              <div className={styles.cardSubtitle}>
-                Manage peer-reviewed articles, tutorials, and community ideas.
-              </div>
-            </div>
-          </div>
-
-          <div style={{ textAlign: "center", padding: "40px 20px", color: "#8e8e93" }}>
-            <MemberIcon name={activeTab} size={36} />
-            <p style={{ marginTop: "12px", fontSize: "14px", color: "#ffffff" }}>
-              {activeTab === "articles"
-                ? "Article editorial pipeline is ready."
-                : "Idea moderation pipeline is ready."}
-            </p>
-            <p style={{ fontSize: "12.5px", maxWidth: "480px", margin: "0 auto" }}>
-              Connect with authors, assign peer reviewers, and feature top pieces on the landing page.
-            </p>
-          </div>
-        </div>
-      )}
+      {(activeTab === "articles" || activeTab === "ideas") && <AdminContentPanel token={token} kind={activeTab} />}
     </div>
   );
 }

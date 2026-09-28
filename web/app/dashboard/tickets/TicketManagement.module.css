@@ -93,6 +93,7 @@
 
 .categoryCardBtn {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 12px;
   background: #141416;
@@ -990,7 +991,7 @@
   }
 
   .categoryGrid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .statsGrid {
@@ -1589,4 +1590,3 @@
   color: #e5e5ea;
   word-break: break-word;
 }
-

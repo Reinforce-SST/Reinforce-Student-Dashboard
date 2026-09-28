@@ -216,18 +216,20 @@
 /* Banner Manager Grid */
 .managerGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 24px;
+  min-width: 0;
 }
 .meritGrid { grid-template-columns: minmax(0, 760px); justify-content: center; }
 
 @media (max-width: 1024px) {
   .managerGrid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
 .card {
+  min-width: 0;
   background: #18181b;
   border: 1px solid #282830;
   border-radius: 14px;
@@ -324,6 +326,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
 }
 
 .formLabel {
@@ -333,6 +336,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .formLabelHint {
@@ -367,6 +372,8 @@
 .formInput,
 .formTextarea,
 .formSelect {
+  width: 100%;
+  min-width: 0;
   background: #121214;
   border: 1px solid #2e2e36;
   color: #ffffff;
@@ -400,8 +407,14 @@
 
 .formRow {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+
+@media (max-width: 600px) {
+  .formRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .formTextarea {
@@ -501,6 +514,7 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
 }
 
 .livePreviewCard {
@@ -1074,10 +1088,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .manualAddInput {
   flex: 1;
+  min-width: 0;
   background: #141416;
   border: 1px solid #282830;
   border-radius: 6px;

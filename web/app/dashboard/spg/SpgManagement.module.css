@@ -134,6 +134,8 @@
 
 .filterTabs {
   display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   align-items: center;
   background: #141416;
   border: 1px solid #232328;
@@ -143,6 +145,7 @@
 }
 
 .tabBtn {
+  flex: 1 1 auto;
   font-size: 0.72rem;
   font-weight: 750;
   letter-spacing: 0.05em;

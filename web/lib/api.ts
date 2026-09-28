@@ -1,8 +1,8 @@
 /**
  * Client for the Reinforce API.
  *
- * Every call is authenticated with the caller's Firebase ID token. The browser
- * never talks to Firestore directly — the Admin SDK is server-side only.
+ * Member and admin calls use the caller's Firebase ID token. Public reads do
+ * not require one. The browser never talks to Firestore directly.
  */
 
 import type { SPGRecord, SPGReportRecord } from "./spgData";
@@ -17,6 +17,23 @@ export class ApiError extends Error {
     this.name = "ApiError";
   }
 }
+
+export type ArticleSummary = {
+  id: string; slug: string; title: string; summary: string;
+  cover_image_url?: string | null; tags: string[];
+  reading_time_minutes: number; published_at?: string | null;
+  stats: { upvote_count: number; comment_count: number; view_count: number };
+};
+export type ArticleDetail = ArticleSummary & { content: string };
+export type IdeaSummary = {
+  id: string; title: string; description: string;
+  track: string; difficulty?: string | null; is_verified: boolean;
+  stats: { upvote_count: number; views_count: number; claims_count: number };
+  created_at?: string | null;
+};
+export type IdeaDetail = IdeaSummary & {
+  prerequisites: string[]; rough_roadmap: string[]; learning_outcomes: string[];
+};
 
 /** Nothing should hang the UI forever. Render cold starts are slow but finite. */
 const TIMEOUT_MS = 20_000;
@@ -318,6 +335,28 @@ function ticketFields(category: TicketCategory, fields: Record<string, unknown>)
 /* --------------------------------------------------------------- requests */
 
 export const api = {
+  listArticles: (search = "", page = 1) => {
+    const query = new URLSearchParams({ page: String(page), page_size: "20" });
+    if (search.trim()) query.set("search", search.trim());
+    return request<{ items: ArticleSummary[]; has_more: boolean; total: number }>(`/blogs?${query}`);
+  },
+  getArticle: (slug: string) => request<ArticleDetail>(`/blogs/${encodeURIComponent(slug)}`),
+  publishArticle: (token: string, body: { title: string; summary: string; content: string; tags: string[] }) =>
+    request<ArticleDetail>("/blogs", token, { method: "POST", body: JSON.stringify({ ...body, status: "published" }) }),
+  listIdeas: (search = "", page = 1) => {
+    const query = new URLSearchParams({ page: String(page), page_size: "20" });
+    if (search.trim()) query.set("search", search.trim());
+    return request<{ items: IdeaSummary[]; has_more: boolean; total: number }>(`/ideas?${query}`);
+  },
+  getIdea: (id: string, token?: string) => request<IdeaDetail>(`/ideas/${encodeURIComponent(id)}`, token),
+  myIdeas: (token: string) => request<{ items: IdeaSummary[] }>("/ideas/my", token),
+  createIdea: (token: string, body: { title: string; description: string; track: string }) =>
+    request<IdeaDetail>("/ideas", token, { method: "POST", body: JSON.stringify(body) }),
+  upvoteIdea: (token: string, id: string) =>
+    request<{ upvoted: boolean; upvote_count: number }>(`/ideas/${encodeURIComponent(id)}/upvote`, token, { method: "POST" }),
+  pendingIdeas: (token: string) => request<{ items: IdeaSummary[] }>("/ideas/pending", token),
+  approveIdea: (token: string, id: string) =>
+    request<IdeaDetail>(`/ideas/${encodeURIComponent(id)}/approve`, token, { method: "POST" }),
   syncUser: (token: string) =>
     request<StudentProfile>("/users/sync", token, {
       method: "POST",
@@ -725,19 +764,15 @@ export const api = {
       body: JSON.stringify({ action, reason }),
     }),
 
-  adminGetAllTickets: (token: string) =>
-    request<TicketSummary[]>("/tickets", token),
-
-  adminUpdateTicket: (token: string, ticketId: string, payload: Record<string, unknown>) =>
-    request<TicketSummary>(`/tickets/${encodeURIComponent(ticketId)}`, token, {
+  adminGetAllTickets: (token: string, page = 1, category?: TicketCategory) => {
+    const query = new URLSearchParams({ page: String(page), page_size: "20" });
+    if (category) query.set("category", category);
+    return request<{ total: number; items: TicketSummary[] }>(`/tickets?${query}`, token);
+  },
+  adminUpdateTicketStatus: (token: string, ticketId: string, nextStatus: TicketStatus) =>
+    request<TicketSummary>(`/tickets/${encodeURIComponent(ticketId)}/status`, token, {
       method: "PATCH",
-      body: JSON.stringify(payload),
-    }),
-
-  adminReviewSpgProposal: (token: string, requestId: string, decision: "approved" | "rejected", notes?: string) =>
-    request<Record<string, unknown>>(`/spg/registrations/${encodeURIComponent(requestId)}/review`, token, {
-      method: "POST",
-      body: JSON.stringify({ decision, notes }),
+      body: JSON.stringify({ status: nextStatus }),
     }),
 };
 

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
-import { getFirebaseAuth, googleProvider, SST_DOMAIN } from "@/lib/firebase";
+import { getFirebaseAuth, googleProvider } from "@/lib/firebase";
 import { googleSignIn, readLink } from "@/lib/auth-flow";
 import { useAuth } from "@/lib/useAuth";
 import styles from "./auth.module.css";

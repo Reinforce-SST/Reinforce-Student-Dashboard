@@ -37,7 +37,7 @@
 .metric small { display:block; color:#77777e; font-size:.62rem; line-height:1.3; }
 
 .projectSection,.widgetCard,.calendarCard,.contributionCard { border:1px solid #2d2d31; border-radius:13px; background:#151518; }
-.projectSection { min-height:255px; padding:18px 21px; }
+.projectSection { padding:18px 21px; }
 .sectionHeader,.widgetHeader { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .sectionHeader h2 { display:flex; align-items:center; gap:10px; margin:0; font-size:.92rem; letter-spacing:-.02em; }
 .sectionHeader h2::before { content:""; height:17px; width:3px; border-radius:2px; background:var(--brand,#e5b731); flex:none; }

@@ -1,0 +1,34 @@
+.page { max-width: 1360px; margin: 0 auto; display: grid; gap: 22px; min-width: 0; }
+.heading { display: flex; justify-content: space-between; align-items: end; gap: 16px; }
+.heading h1 { font-size: clamp(1.4rem, 3vw, 2rem); line-height: 1.2; }
+.heading p, .muted { color: #aaa; font-size: .9rem; }
+.primary { color: #111; background: var(--brand, #e5b731); border-radius: 8px; padding: 10px 15px; font-weight: 750; }
+.searchLabel, .form label { display: grid; gap: 7px; font-size: .78rem; font-weight: 700; color: #c9c9c9; }
+.searchLabel { max-width: 480px; }
+.searchLabel input, .form input, .form textarea, .form select { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid #393939; border-radius: 8px; background: #171717; color: #fff; }
+.form { display: grid; gap: 16px; padding: 20px; border: 1px solid #333; border-radius: 12px; background: #141414; }
+.form textarea { min-height: 110px; resize: vertical; }
+.form .primary { justify-self: start; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 16px; }
+.card, .pending, .empty { border: 1px solid #303030; border-radius: 12px; background: #151515; overflow: hidden; }
+.cardBody { padding: 20px; display: grid; align-content: start; gap: 10px; }
+.card h2 { font-size: 1.1rem; line-height: 1.3; overflow-wrap: anywhere; }
+.card p { color: #b5b5b5; font-size: .85rem; line-height: 1.5; overflow-wrap: anywhere; }
+.meta { color: var(--brand, #e5b731); font-size: .73rem; font-weight: 750; text-transform: capitalize; }
+.cover { width: 100%; height: 180px; object-fit: cover; }
+.actions, .pager { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.card button, .card a, .pager button, .error button, .back { justify-self: start; color: var(--brand, #e5b731); font-weight: 750; font-size: .8rem; }
+.actions { justify-content: space-between; }
+.pager { justify-content: center; }
+.pager button:disabled { opacity: .45; cursor: default; }
+.error { color: #ffaaa2; }
+.notice { color: #e5b731; }
+.pending, .empty { padding: 20px; }
+.pending h2 { font-size: 1rem; margin-bottom: 10px; }
+.pending p { color: #bbb; font-size: .8rem; }
+.detail { max-width: 780px; display: grid; gap: 20px; padding: clamp(20px, 4vw, 40px); border: 1px solid #333; border-radius: 12px; background: #151515; overflow-wrap: anywhere; }
+.detail h1 { font-size: clamp(1.5rem, 4vw, 2.4rem); line-height: 1.2; }
+.detail h2 { font-size: 1.1rem; }
+.detail ul { list-style: disc; padding-left: 20px; }
+.articleText { white-space: pre-wrap; line-height: 1.7; color: #ddd; }
+@media (max-width: 600px) { .heading { align-items: start; flex-direction: column; } .heading .primary { width: 100%; } }
