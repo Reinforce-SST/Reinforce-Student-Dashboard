@@ -33,7 +33,6 @@ if (isFirebaseConfigured) {
     auth = getAuth(app);
     googleProvider = new GoogleAuthProvider();
     googleProvider.setCustomParameters({
-      hd: "sst.scaler.com", // Prompt SST domain in Google OAuth
       prompt: "select_account"
     });
   } catch (err) {

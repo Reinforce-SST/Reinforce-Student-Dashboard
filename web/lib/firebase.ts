@@ -33,10 +33,10 @@ export function getFirebaseAuth(): Auth {
 export function googleProvider(): GoogleAuthProvider {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({
-    // Pre-selects the school domain in the Google chooser. This is a hint to
-    // the user, NOT a security control — the domain is enforced server-side in
-    // app/api/security.py, which is the only check that counts.
-    hd: SST_DOMAIN,
+    // We do NOT set hd to "sst.scaler.com" because Google OAuth restricts sign-in
+    // to only that domain, blocking @scaler.com users.
+    // Domain restriction is enforced server-side in app/api/security.py which
+    // allows both @sst.scaler.com and @scaler.com.
     prompt: "select_account",
   });
   return provider;

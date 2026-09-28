@@ -33,7 +33,7 @@ export default function Home() {
             <LandingButton href="/auth" large>Join the club</LandingButton>
             <LandingButton href="#ledger" variant="ghost" large>See the ledger</LandingButton>
           </div>
-          <p className={`${styles.hfine} ${styles.rise}`} data-animate="rise" style={stagger(5)}>Google sign-in · @sst.scaler.com only</p>
+          <p className={`${styles.hfine} ${styles.rise}`} data-animate="rise" style={stagger(5)}>Google sign-in · @sst.scaler.com & @scaler.com</p>
         </div>
         <div className={`${styles.page} ${styles.layer}`}><HeroCollage /></div>
       </section>

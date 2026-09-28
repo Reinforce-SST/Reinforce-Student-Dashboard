@@ -111,7 +111,7 @@ export default function AuthClient() {
   return <section className={styles.card}>
     <p className={styles.kick}>{link.token ? "Discord verification" : "Member access"}</p>
     <h1 className={styles.title}>{phase === "linked" ? link.token ? "Your account is connected." : "Opening your dashboard…" : link.token ? "Connect your Discord." : "Sign in to Reinforce."}</h1>
-    <p className={styles.body}>{user ? user.email : <>Use your college Google account (<strong>@{SST_DOMAIN}</strong>).</>}</p>
+    <p className={styles.body}>{user ? user.email : <>Use your official Google account (<strong>@sst.scaler.com</strong> or <strong>@scaler.com</strong>).</>}</p>
     {link.invalid && <p className={styles.warn}>This Discord link is no longer valid. Run <code>/auth</code> in Discord for a new private link. You can still sign in to your dashboard.</p>}
     {degraded && <p className={styles.warn}>We couldn&rsquo;t reach Google sign-in. Check your connection and try again.</p>}
     {phase === "linked" && link.token && <p className={styles.body}>Discord linked{roleGranted ? ` · ${roleGranted}` : ""}.</p>}
