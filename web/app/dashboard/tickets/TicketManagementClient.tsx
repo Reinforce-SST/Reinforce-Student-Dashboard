@@ -587,7 +587,7 @@ export default function TicketManagementClient() {
             onClick={() => openModalWithCategory("spg_registration")}
           >
             <MemberIcon name="plus" size={16} />
-            + New Ticket
+            New Ticket
           </button>
         </div>
       </div>
