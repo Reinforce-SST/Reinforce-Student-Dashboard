@@ -262,6 +262,24 @@ def get_ticket(
     return _to_ticket_detail(doc.id, data)
 
 
+def _positive_days(value: Any, label: str) -> int:
+    if isinstance(value, bool) or not (
+        isinstance(value, int)
+        or (isinstance(value, str) and value.strip().isdigit())
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{label} must be a positive integer in days.",
+        )
+    days = int(value)
+    if days <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{label} must be a positive integer in days.",
+        )
+    return days
+
+
 def _validate_spg_registration_fields(fields: Dict[str, Any], creator_uid: str) -> Dict[str, Any]:
     """Validate SPG registration fields with strict checks:
     - Leader must be mandatory, single UID, and an active club member (is_member == True)
@@ -288,12 +306,12 @@ def _validate_spg_registration_fields(fields: Dict[str, Any], creator_uid: str) 
         )
 
     leader_doc = db.collection(USERS_COLLECTION).document(leader_uid).get()
-    if not leader_doc.exists:
+    leader_data = leader_doc.to_dict() or {} if leader_doc.exists else {}
+    if leader_data.get("id") != leader_uid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Team leader UID '{leader_uid}' does not exist in the user directory.",
+            detail=f"Team leader '{leader_uid}' must be a canonical member UID.",
         )
-    leader_data = leader_doc.to_dict() or {}
     if not leader_data.get("is_member", False):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -334,12 +352,12 @@ def _validate_spg_registration_fields(fields: Dict[str, Any], creator_uid: str) 
     member_names: List[str] = []
     for m_uid in deduped_members:
         m_doc = db.collection(USERS_COLLECTION).document(m_uid).get()
-        if not m_doc.exists:
+        m_data = m_doc.to_dict() or {} if m_doc.exists else {}
+        if m_data.get("id") != m_uid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Team member UID '{m_uid}' does not exist in the user directory.",
+                detail=f"Team member '{m_uid}' must be a canonical member UID.",
             )
-        m_data = m_doc.to_dict() or {}
         m_name = m_data.get("full_name") or m_uid
         member_names.append(f"{m_name} ({m_uid})")
 
@@ -354,15 +372,7 @@ def _validate_spg_registration_fields(fields: Dict[str, Any], creator_uid: str) 
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Estimated duration in days is required.",
         )
-    try:
-        duration_days = int(raw_duration)
-        if duration_days <= 0:
-            raise ValueError()
-    except (TypeError, ValueError):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Estimated duration must be a positive integer in days.",
-        )
+    duration_days = _positive_days(raw_duration, "Estimated duration")
 
     raw_frequency = (
         fields_copy.get("frequency_days")
@@ -374,15 +384,7 @@ def _validate_spg_registration_fields(fields: Dict[str, Any], creator_uid: str) 
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Report frequency in days is required.",
         )
-    try:
-        frequency_days = int(raw_frequency)
-        if frequency_days <= 0:
-            raise ValueError()
-    except (TypeError, ValueError):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Report frequency must be a positive integer in days.",
-        )
+    frequency_days = _positive_days(raw_frequency, "Report frequency")
 
     # 4. Standardize fields
     fields_copy["leader_uid"] = leader_uid
@@ -449,7 +451,7 @@ def create_ticket(
             "category": ticket_in.category.value,
             "title": ticket_in.title,
             "creator_uid": uid,
-            "fields": ticket_in.fields,
+            "fields": validated_fields,
         }
         try:
             req = urllib.request.Request(

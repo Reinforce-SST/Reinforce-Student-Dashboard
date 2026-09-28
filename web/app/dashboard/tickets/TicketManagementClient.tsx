@@ -215,11 +215,13 @@ export default function TicketManagementClient() {
   const [leaderSearch, setLeaderSearch] = useState("");
   const [leaderCandidates, setLeaderCandidates] = useState<StudentProfile[]>([]);
   const [leaderLoading, setLeaderLoading] = useState(false);
+  const [leaderSearchError, setLeaderSearchError] = useState("");
 
   const [selectedTeamMembers, setSelectedTeamMembers] = useState<Record<string, StudentProfile>>({});
   const [memberSearch, setMemberSearch] = useState("");
   const [memberCandidates, setMemberCandidates] = useState<StudentProfile[]>([]);
   const [memberCandidatesLoading, setMemberCandidatesLoading] = useState(false);
+  const [memberSearchError, setMemberSearchError] = useState("");
   const [manualMemberInput, setManualMemberInput] = useState("");
   const [manualMemberLoading, setManualMemberLoading] = useState(false);
   const [manualMemberError, setManualMemberError] = useState("");
@@ -282,6 +284,7 @@ export default function TicketManagementClient() {
     if (!isModalOpen || selectedCategory !== "spg_registration" || !isChangingLeader || !token) return;
     let active = true;
     setLeaderLoading(true);
+    setLeaderSearchError("");
     const timer = setTimeout(() => {
       api.browseUsers(token, {
         search: leaderSearch.trim() || undefined,
@@ -294,9 +297,10 @@ export default function TicketManagementClient() {
             setLeaderLoading(false);
           }
         })
-        .catch(() => {
+        .catch((error) => {
           if (active) {
             setLeaderCandidates([]);
+            setLeaderSearchError(error instanceof Error ? error.message : "Could not search club members.");
             setLeaderLoading(false);
           }
         });
@@ -309,6 +313,7 @@ export default function TicketManagementClient() {
     if (!isModalOpen || selectedCategory !== "spg_registration" || !token) return;
     let active = true;
     setMemberCandidatesLoading(true);
+    setMemberSearchError("");
     const timer = setTimeout(() => {
       api.browseUsers(token, {
         search: memberSearch.trim() || undefined,
@@ -320,15 +325,28 @@ export default function TicketManagementClient() {
             setMemberCandidatesLoading(false);
           }
         })
-        .catch(() => {
+        .catch((error) => {
           if (active) {
             setMemberCandidates([]);
+            setMemberSearchError(error instanceof Error ? error.message : "Could not search members.");
             setMemberCandidatesLoading(false);
           }
         });
     }, 250);
     return () => { active = false; clearTimeout(timer); };
   }, [isModalOpen, selectedCategory, memberSearch, token]);
+
+  const selectSpgLeader = (member: StudentProfile) => {
+    setSpgLeader(member);
+    setSelectedTeamMembers((current) => {
+      const next = { ...current };
+      delete next[member.id];
+      return next;
+    });
+    setIsChangingLeader(false);
+    setLeaderSearch("");
+    setSubmitError("");
+  };
 
   const handleToggleMember = (m: StudentProfile) => {
     const uid = m.id;
@@ -337,16 +355,16 @@ export default function TicketManagementClient() {
       setSubmitError("The designated team leader cannot also be added as a team member.");
       return;
     }
+    if (!selectedTeamMembers[uid] && Object.keys(selectedTeamMembers).length >= 6) {
+      setSubmitError("An SPG can have at most 6 team members.");
+      return;
+    }
     setSubmitError("");
     setSelectedTeamMembers((prev) => {
       const next = { ...prev };
       if (next[uid]) {
         delete next[uid];
       } else {
-        if (Object.keys(next).length >= 6) {
-          setSubmitError("An SPG can have at most 6 team members.");
-          return prev;
-        }
         next[uid] = m;
       }
       return next;
@@ -368,7 +386,7 @@ export default function TicketManagementClient() {
     try {
       const res = await api.getUserProfile(token, manualMemberInput.trim());
       const uid = res.id;
-      if (!uid) throw new Error("Could not resolve member ID.");
+      if (!uid || uid.includes("@")) throw new Error("Could not resolve a canonical member UID.");
       if (spgLeader?.id === uid) {
         throw new Error("This user is already designated as the team leader.");
       }
@@ -493,11 +511,11 @@ export default function TicketManagementClient() {
         setSubmitError(`The team leader (${spgLeader.full_name || spgLeader.id}) must be an active club member (is_member: true).`);
         return;
       }
-      if (spgDurationDays === "" || Number(spgDurationDays) <= 0) {
+      if (spgDurationDays === "" || !Number.isInteger(spgDurationDays) || spgDurationDays <= 0 || spgDurationDays > 730) {
         setSubmitError("Please enter a valid estimated duration in days (e.g. 60).");
         return;
       }
-      if (spgFrequencyDays === "" || Number(spgFrequencyDays) <= 0) {
+      if (spgFrequencyDays === "" || !Number.isInteger(spgFrequencyDays) || spgFrequencyDays <= 0 || spgFrequencyDays > 180) {
         setSubmitError("Please enter a valid reporting frequency in days (e.g. 14).");
         return;
       }
@@ -1042,7 +1060,7 @@ export default function TicketManagementClient() {
                           {spgLeader.id !== profile.id && (
                             <button
                               type="button"
-                              onClick={() => { setSpgLeader(profile); setIsChangingLeader(false); }}
+                              onClick={() => selectSpgLeader(profile)}
                               className={styles.leaderResetBtn}
                               title="Reset to myself"
                             >
@@ -1089,6 +1107,7 @@ export default function TicketManagementClient() {
                           </span>
                           <input
                             type="search"
+                            aria-label="Search for a team leader"
                             value={leaderSearch}
                             onChange={(e) => setLeaderSearch(e.target.value)}
                             placeholder="Search club members by name or email..."
@@ -1100,6 +1119,7 @@ export default function TicketManagementClient() {
                               type="button"
                               onClick={() => setLeaderSearch("")}
                               className={styles.clearSearchBtn}
+                              aria-label="Clear leader search"
                             >
                               ×
                             </button>
@@ -1109,6 +1129,8 @@ export default function TicketManagementClient() {
                         <div className={styles.candidateListContainer}>
                           {leaderLoading ? (
                             <div className={styles.emptyCandidatesText}>Searching club members…</div>
+                          ) : leaderSearchError ? (
+                            <div className={styles.emptyCandidatesText} role="alert">{leaderSearchError}</div>
                           ) : leaderCandidates.length === 0 ? (
                             <div className={styles.emptyCandidatesText}>
                               {leaderSearch ? `No members found matching "${leaderSearch}".` : "No members found."}
@@ -1119,9 +1141,10 @@ export default function TicketManagementClient() {
                                 ? m.full_name.split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase()
                                 : "MB";
                               return (
-                                <div
+                                <button
                                   key={m.id}
-                                  onClick={() => { setSpgLeader(m); setIsChangingLeader(false); setLeaderSearch(""); }}
+                                  type="button"
+                                  onClick={() => selectSpgLeader(m)}
                                   className={styles.candidateRow}
                                 >
                                   <div className={styles.candidateAvatar}>
@@ -1143,7 +1166,7 @@ export default function TicketManagementClient() {
                                     </div>
                                     <span className={styles.candidateEmail}>{m.email || m.id}</span>
                                   </div>
-                                </div>
+                                </button>
                               );
                             })
                           )}
@@ -1203,6 +1226,7 @@ export default function TicketManagementClient() {
                         </span>
                         <input
                           type="search"
+                          aria-label="Search for team members"
                           value={memberSearch}
                           onChange={(e) => setMemberSearch(e.target.value)}
                           placeholder="Search collaborators by name or email..."
@@ -1213,6 +1237,7 @@ export default function TicketManagementClient() {
                             type="button"
                             onClick={() => setMemberSearch("")}
                             className={styles.clearSearchBtn}
+                            aria-label="Clear member search"
                           >
                             ×
                           </button>
@@ -1223,6 +1248,8 @@ export default function TicketManagementClient() {
                       <div className={styles.candidateListContainer}>
                         {memberCandidatesLoading ? (
                           <div className={styles.emptyCandidatesText}>Searching members…</div>
+                        ) : memberSearchError ? (
+                          <div className={styles.emptyCandidatesText} role="alert">{memberSearchError}</div>
                         ) : memberCandidates.length === 0 ? (
                           <div className={styles.emptyCandidatesText}>
                             {memberSearch ? `No members found matching "${memberSearch}".` : "No members found."}
@@ -1236,17 +1263,16 @@ export default function TicketManagementClient() {
                                 ? m.full_name.split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase()
                                 : "MB";
                               return (
-                                <div
+                                <button
                                   key={m.id}
+                                  type="button"
+                                  role="checkbox"
+                                  aria-checked={isSelected}
+                                  aria-label={`Select ${m.full_name}`}
                                   onClick={() => handleToggleMember(m)}
                                   className={`${styles.candidateRow} ${isSelected ? styles.candidateRowSelected : ""}`}
                                 >
-                                  <input
-                                    type="checkbox"
-                                    checked={isSelected}
-                                    onChange={() => {}}
-                                    className={styles.candidateCheckbox}
-                                  />
+                                  <span className={styles.candidateCheckboxVisual} aria-hidden="true" />
                                   <div className={styles.candidateAvatar}>
                                     {m.avatar_url ? (
                                       // eslint-disable-next-line @next/next/no-img-element
@@ -1266,7 +1292,7 @@ export default function TicketManagementClient() {
                                     </div>
                                     <span className={styles.candidateEmail}>{m.email || m.id}</span>
                                   </div>
-                                </div>
+                                </button>
                               );
                             })
                         )}
@@ -1314,7 +1340,7 @@ export default function TicketManagementClient() {
                         step={1}
                         className={styles.textInput}
                         value={spgDurationDays}
-                        onChange={(e) => setSpgDurationDays(e.target.value === "" ? "" : parseInt(e.target.value, 10))}
+                        onChange={(e) => setSpgDurationDays(e.target.value === "" ? "" : Number(e.target.value))}
                         placeholder="e.g. 60"
                         required
                       />
@@ -1333,7 +1359,7 @@ export default function TicketManagementClient() {
                         step={1}
                         className={styles.textInput}
                         value={spgFrequencyDays}
-                        onChange={(e) => setSpgFrequencyDays(e.target.value === "" ? "" : parseInt(e.target.value, 10))}
+                        onChange={(e) => setSpgFrequencyDays(e.target.value === "" ? "" : Number(e.target.value))}
                         placeholder="e.g. 14"
                         required
                       />

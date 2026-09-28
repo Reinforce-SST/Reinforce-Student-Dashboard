@@ -100,6 +100,13 @@ class IdentityTests(unittest.TestCase):
         self.assertFalse(service.user_exists(db, "one@sst.scaler.com"))
         self.assertFalse(service.user_exists(db, "  One@SST.scaler.com "))
 
+    def test_existing_email_alias_is_not_an_award_recipient(self):
+        db = database(users={
+            **USERS,
+            "one@sst.scaler.com": {"firebase_uid": "uid_one", "email": "one@sst.scaler.com"},
+        })
+        self.assertFalse(service.user_exists(db, "one@sst.scaler.com"))
+
 
 class DeduplicationKeyTests(unittest.TestCase):
     def key(self, **overrides):

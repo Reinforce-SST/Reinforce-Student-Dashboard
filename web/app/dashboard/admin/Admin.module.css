@@ -949,7 +949,13 @@
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
+  width: 100%;
+  border: 1px solid transparent;
   border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   transition: background 0.12s ease;
   user-select: none;
@@ -958,11 +964,15 @@
 .candidateRow:hover {
   background: #1c1c22;
 }
+.candidateRow:focus-visible { outline: 2px solid #e5b731; outline-offset: -2px; }
 
 .candidateRowSelected {
   background: rgba(229, 183, 49, 0.08);
   border: 1px solid rgba(229, 183, 49, 0.22);
 }
+.candidateCheckboxVisual { display: inline-grid; place-items: center; width: 16px; height: 16px; border: 1px solid #77777e; border-radius: 3px; flex-shrink: 0; }
+.candidateRowSelected .candidateCheckboxVisual { border-color: #e5b731; background: #e5b731; color: #121214; }
+.candidateRowSelected .candidateCheckboxVisual::after { content: "✓"; font-size: 12px; font-weight: 800; }
 
 .candidateCheckbox {
   accent-color: #e5b731;
@@ -1106,4 +1116,3 @@
   font-size: 12.5px;
   padding: 24px 10px;
 }
-

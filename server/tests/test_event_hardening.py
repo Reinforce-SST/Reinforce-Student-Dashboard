@@ -74,9 +74,9 @@ class EventHardeningTests(unittest.TestCase):
         self.db = NestedFirestore(
             {
                 "events/event-one": event_doc(),
-                "users/uid-one": user(),
-                "users/uid-two": user(),
-                "users/uid-admin": user(),
+                "users/uid-one": user(id="uid-one"),
+                "users/uid-two": user(id="uid-two"),
+                "users/uid-admin": user(id="uid-admin"),
             }
         )
         self.real_db = events.db

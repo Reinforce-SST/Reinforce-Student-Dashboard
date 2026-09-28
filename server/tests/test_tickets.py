@@ -61,3 +61,29 @@ class TicketTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as error:
             tickets.get_ticket("own", USER)
         self.assertEqual(error.exception.status_code, 404)
+
+    def test_spg_registration_requires_canonical_uids(self):
+        self.db.store["users/uid-1"].update({"id": "uid-1", "is_member": True, "full_name": "Leader"})
+        self.db.store["users/uid-2"] = {"id": "uid-2", "full_name": "Member"}
+        self.db.store["users/member@sst.scaler.com"] = {
+            "firebase_uid": "uid-2", "full_name": "Member", "is_member": True,
+        }
+        fields = {"leader_uid": "uid-1", "member_uids": ["uid-2"], "duration_days": 60, "frequency_days": 14}
+        result = tickets._validate_spg_registration_fields(fields, "uid-1")
+        self.assertEqual(result["member_uids"], ["uid-2"])
+
+        for changed in (
+            {**fields, "leader_uid": "member@sst.scaler.com"},
+            {**fields, "member_uids": ["member@sst.scaler.com"]},
+        ):
+            with self.subTest(changed=changed), self.assertRaises(HTTPException) as error:
+                tickets._validate_spg_registration_fields(changed, "uid-1")
+            self.assertEqual(error.exception.status_code, 400)
+
+    def test_spg_registration_rejects_fractional_and_boolean_days(self):
+        self.db.store["users/uid-1"].update({"id": "uid-1", "is_member": True})
+        fields = {"leader_uid": "uid-1", "member_uids": [], "duration_days": 60, "frequency_days": 14}
+        for bad in (1.5, True, "2.5"):
+            with self.subTest(value=bad), self.assertRaises(HTTPException) as error:
+                tickets._validate_spg_registration_fields({**fields, "duration_days": bad}, "uid-1")
+            self.assertEqual(error.exception.status_code, 400)

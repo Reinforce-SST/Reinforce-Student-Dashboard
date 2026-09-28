@@ -61,16 +61,16 @@ def utcnow() -> datetime:
 
 
 def user_exists(db: Any, user_id: str) -> bool:
-    """Is there a `users/{uid}` document for this Firebase UID?
+    """Is there a canonical `users/{uid}` document for this Firebase UID?
 
     Identity is the Firebase UID throughout: the path parameter, `user_id` on a
-    record, and every SPG member id. Nothing is resolved from an email.
+    record, and every SPG member id. Email and Discord alias documents are not recipients.
     """
     candidate = (user_id or "").strip()
     if not candidate:
         return False
     snapshot = db.collection(USERS_COLLECTION).document(candidate).get()
-    return bool(getattr(snapshot, "exists", False))
+    return bool(getattr(snapshot, "exists", False) and (snapshot.to_dict() or {}).get("id") == candidate)
 
 
 def deduplication_key(

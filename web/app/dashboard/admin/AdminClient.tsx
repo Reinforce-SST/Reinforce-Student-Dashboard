@@ -130,7 +130,6 @@ export default function AdminClient() {
   const eventFileInputRef = useRef<HTMLInputElement>(null);
 
   // Merit Award State
-  const [awardEmail, setAwardEmail] = useState("");
   const [awardPoints, setAwardPoints] = useState<number | "">(25);
   const [awardReason, setAwardReason] = useState("");
   const [awardType, setAwardType] = useState("project_milestone");
@@ -138,7 +137,6 @@ export default function AdminClient() {
   const [awardLoading, setAwardLoading] = useState(false);
   const [awardSearch, setAwardSearch] = useState("");
   const [awardCandidates, setAwardCandidates] = useState<StudentProfile[]>([]);
-  const [awardSearchLoading, setAwardSearchLoading] = useState(false);
   const [awardSearchError, setAwardSearchError] = useState("");
   const [awardCandidateTotal, setAwardCandidateTotal] = useState(0);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
@@ -172,17 +170,21 @@ export default function AdminClient() {
     }
     let active = true;
     setCandidatesLoading(true);
+    setAwardSearchError("");
     const timer = setTimeout(() => {
       api.adminDirectory(token, { search: awardSearch.trim() || undefined, page_size: 50 })
         .then((result) => {
           if (active) {
             setAwardCandidates(result.items || []);
+            setAwardCandidateTotal(result.total);
             setCandidatesLoading(false);
           }
         })
-        .catch(() => {
+        .catch((error) => {
           if (active) {
             setAwardCandidates([]);
+            setAwardCandidateTotal(0);
+            setAwardSearchError(error instanceof Error ? error.message : "Could not load members.");
             setCandidatesLoading(false);
           }
         });
@@ -194,7 +196,7 @@ export default function AdminClient() {
     setSelectedRecipients((prev) => {
       const next = { ...prev };
       for (const m of awardCandidates) {
-        const uid = m.id || m.email;
+        const uid = m.id;
         if (uid) next[uid] = m;
       }
       return next;
@@ -205,7 +207,7 @@ export default function AdminClient() {
     setSelectedRecipients((prev) => {
       const next = { ...prev };
       for (const m of awardCandidates) {
-        const uid = m.id || m.email;
+        const uid = m.id;
         if (uid) delete next[uid];
       }
       return next;
@@ -217,7 +219,7 @@ export default function AdminClient() {
   };
 
   const handleToggleRecipient = (m: StudentProfile) => {
-    const uid = m.id || m.email;
+    const uid = m.id;
     if (!uid) return;
     setSelectedRecipients((prev) => {
       const next = { ...prev };
@@ -244,8 +246,8 @@ export default function AdminClient() {
     setManualAddError("");
     try {
       const resolved = await api.getUserProfile(token, manualAddInput.trim());
-      const uid = resolved.id || resolved.email;
-      if (!uid) throw new Error("Could not resolve member ID.");
+      const uid = resolved.id;
+      if (!uid || uid.includes("@")) throw new Error("Could not resolve a canonical member UID.");
       setSelectedRecipients((prev) => ({ ...prev, [uid]: resolved }));
       setManualAddInput("");
     } catch (err) {
@@ -488,8 +490,8 @@ export default function AdminClient() {
   // Submit Merit Award
   const handleAwardMerit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!awardEmail.trim() && Object.keys(selectedRecipients).length === 0) {
-      setSubmitError("Select at least one member or enter a student email / user ID.");
+    if (Object.keys(selectedRecipients).length === 0) {
+      setSubmitError("Select at least one member.");
       return;
     }
     if (awardType === "other" && !awardCustomType.trim()) {
@@ -501,13 +503,6 @@ export default function AdminClient() {
     setSubmitError(null);
     try {
       const recipients = { ...selectedRecipients };
-      let directUid: string | null = null;
-      if (awardEmail.trim()) {
-        const direct = await api.getUserProfile(token, awardEmail.trim());
-        if (!direct.id) throw new Error("The member could not be resolved to a user ID.");
-        recipients[direct.id] = direct;
-        directUid = direct.id;
-      }
       const category = {
         project_milestone: "project_work",
         open_source_pr: "project_work",
@@ -544,7 +539,6 @@ export default function AdminClient() {
       const failed = entries.filter((_, index) => results[index].status === "rejected").map(([uid]) => uid);
       const stale = results.filter((result) => result.status === "fulfilled" && !result.value).length;
       setSelectedRecipients((current) => Object.fromEntries(Object.entries(current).filter(([uid]) => !succeeded.includes(uid))));
-      if (directUid && succeeded.includes(directUid)) setAwardEmail("");
       if (succeeded.length) setSubmitSuccess(`Awarded ${awardPoints} points to ${succeeded.length} member${succeeded.length === 1 ? "" : "s"}.${stale ? ` ${stale} leaderboard total${stale === 1 ? "" : "s"} could not refresh yet.` : ""}`);
       if (failed.length) setSubmitError(`${failed.length} award${failed.length === 1 ? "" : "s"} failed. The failed recipients remain in the form for retry.`);
       if (!failed.length) {
@@ -1421,7 +1415,7 @@ export default function AdminClient() {
                 {Object.keys(selectedRecipients).length > 0 && (
                   <div className={styles.selectedChipsTray}>
                     {Object.values(selectedRecipients).map((m) => {
-                      const uid = m.id || m.email || "";
+                      const uid = m.id;
                       const initials = m.full_name
                         ? m.full_name.split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase()
                         : "MB";
@@ -1457,6 +1451,7 @@ export default function AdminClient() {
                   </span>
                   <input
                     type="search"
+                    aria-label="Search members to award"
                     value={awardSearch}
                     onChange={(e) => setAwardSearch(e.target.value)}
                     placeholder="Search by student name or college email..."
@@ -1480,18 +1475,18 @@ export default function AdminClient() {
                     <button
                       type="button"
                       onClick={handleSelectAllVisible}
-                      disabled={awardCandidates.length === 0}
+                      disabled={candidatesLoading || awardCandidates.length === 0}
                       className={styles.bulkActionBtn}
                     >
-                      Select All Filtered ({awardCandidates.length})
+                      Select Visible ({awardCandidates.length})
                     </button>
                     <button
                       type="button"
                       onClick={handleDeselectAllVisible}
-                      disabled={awardCandidates.length === 0 || !awardCandidates.some(m => Boolean(selectedRecipients[m.id || m.email || ""]))}
+                      disabled={candidatesLoading || awardCandidates.length === 0 || !awardCandidates.some(m => Boolean(selectedRecipients[m.id]))}
                       className={styles.bulkActionBtn}
                     >
-                      Deselect Filtered
+                      Deselect Visible
                     </button>
                   </div>
                   <span className={styles.selectedCountBadge}>
@@ -1503,29 +1498,30 @@ export default function AdminClient() {
                 <div className={styles.candidateListContainer}>
                   {candidatesLoading ? (
                     <div className={styles.emptyCandidatesText}>Loading members…</div>
+                  ) : awardSearchError ? (
+                    <div className={styles.emptyCandidatesText} role="alert">{awardSearchError}</div>
                   ) : awardCandidates.length === 0 ? (
                     <div className={styles.emptyCandidatesText}>
                       {awardSearch ? `No members found matching "${awardSearch}".` : "No members found in directory."}
                     </div>
                   ) : (
                     awardCandidates.map((member) => {
-                      const uid = member.id || member.email || "";
+                      const uid = member.id;
                       const isSelected = Boolean(selectedRecipients[uid]);
                       const initials = member.full_name
                         ? member.full_name.split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase()
                         : "MB";
                       return (
-                        <div
+                        <button
                           key={uid}
+                          type="button"
+                          role="checkbox"
+                          aria-checked={isSelected}
+                          aria-label={`Select ${member.full_name}`}
                           onClick={() => handleToggleRecipient(member)}
                           className={`${styles.candidateRow} ${isSelected ? styles.candidateRowSelected : ""}`}
                         >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => {}} // Row click handles toggle
-                            className={styles.candidateCheckbox}
-                          />
+                          <span className={styles.candidateCheckboxVisual} aria-hidden="true" />
                           <div className={styles.candidateAvatar}>
                             {member.avatar_url ? (
                               // eslint-disable-next-line @next/next/no-img-element
@@ -1545,11 +1541,14 @@ export default function AdminClient() {
                             </div>
                             <span className={styles.candidateEmail}>{member.email}</span>
                           </div>
-                        </div>
+                        </button>
                       );
                     })
                   )}
                 </div>
+                {!candidatesLoading && !awardSearchError && awardCandidateTotal > awardCandidates.length && (
+                  <span className={styles.selectedMembers}>Showing {awardCandidates.length} of {awardCandidateTotal} members. Search to find others.</span>
+                )}
 
                 {/* Optional Manual Add Input */}
                 <div className={styles.manualAddBox}>
@@ -1574,7 +1573,7 @@ export default function AdminClient() {
                       {manualAddLoading ? "Searching..." : "+ Add to Selection"}
                     </button>
                   </div>
-                  {manualAddError && <span style={{ color: "#ef4444", fontSize: "11px" }}>{manualAddError}</span>}
+                  {manualAddError && <span role="alert" style={{ color: "#ef4444", fontSize: "11px" }}>{manualAddError}</span>}
                 </div>
               </div>
 
