@@ -1,16 +1,21 @@
-# React + Vite
+# Legacy Vite client
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+This is the older React/Vite frontend. The
+[main Reinforce site](https://www.reinforce-sst.com/) now serves the Next.js
+app in [`web/`](../web/). The older
+[Vercel URL](https://reinforce-student-dashboard.vercel.app/) still serves this
+client as of 29 September 2026.
 
-Currently, two official plugins are available:
+Keep it until the team has checked redirects, auth links, and any remaining
+traffic. New member and admin features belong in `web/`, not here. The known
+developer test mode and hardcoded Events/Projects content in this client are
+legacy defects; do not use it to verify production member workflows.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+npm ci
+npm run dev
+npm run build
+```
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+See the [repository overview](../README.md) and
+[rollout checklist](../docs/verification.md).
