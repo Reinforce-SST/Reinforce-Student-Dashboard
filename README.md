@@ -12,6 +12,12 @@
 
 ---
 
+## Rollout status (28 September 2026)
+
+- The integrated platform baseline is on `main` via [PR #33](https://github.com/Reinforce-SST/Reinforce-Student-Dashboard/pull/33). [Follow-up PR #35](https://github.com/Reinforce-SST/Reinforce-Student-Dashboard/pull/35) remains open. The live Vercel site still serves the legacy Vite `client/` app, so the Next.js `web/` experience is not yet the production frontend.
+- The companion [YUVI ticket bridge PR #10](https://github.com/Reinforce-SST/YUVI/pull/10) is open. Its [hosted health endpoint](https://yuvi-182k.onrender.com/health) currently returns a 503 owner-suspended page. The [dashboard API health endpoint](https://api.reinforce-sst.com/health) returns 200.
+- Production sign-in and the Discord ticket bridge still need a coordinated deployment and a real end-to-end check. Follow the [verification and rollout checklist](docs/verification.md) before announcing the integrated platform as live.
+
 ## What this is
 
 One platform, three surfaces:
@@ -21,15 +27,13 @@ One platform, three surfaces:
   project groups, your tickets, club resources
 - **Admin console** — for core members: content review, events, points, user management
 
-It shares a Firestore database with [**YUVI**](https://github.com/Reinforce-SST/YUVI),
-the club's Discord bot. Anything a member files in Discord — an SPG registration, a
-resource request, an idea — appears on the website. One source of truth, two front
-doors.
+The integrated design shares a Firestore database with
+[**YUVI**](https://github.com/Reinforce-SST/YUVI), the club's Discord bot. Once
+the coordinated rollout is complete, an SPG registration, resource request, or
+idea filed in Discord will also appear on the website.
 
-> **Deployment note:** `web/` contains the Next.js landing page and member
-> dashboard, while the existing Vercel project has served the legacy `client/`
-> app. Deploy the integrated API and select `web/` as the Vercel root before
-> treating the new sign-in flow as live. See [`docs/verification.md`](docs/verification.md).
+> **Deployment note:** Select `web/` as the Vercel root and deploy the integrated
+> API with YUVI before treating the new sign-in flow as live.
 
 ## Architecture
 
