@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { api, type ApiTicketDetail, type TicketStatus, type TicketSummary } from "@/lib/api";
+import MemberIcon from "@/components/dashboard/MemberIcon";
 import styles from "./AdminWorkflows.module.css";
 
 export default function AdminTicketsPanel({ token, spgOnly = false }: { token: string; spgOnly?: boolean }) {
@@ -38,11 +39,11 @@ export default function AdminTicketsPanel({ token, spgOnly = false }: { token: s
   }
 
   return (
-    <section className={styles.panel}>
+    <section className={`${styles.panel} ${spgOnly ? styles.spgPanel : ""}`}>
       <h2>{spgOnly ? "SPG registration requests" : "Member tickets"}</h2>
       <p>
         {spgOnly
-          ? "Review the submitted team, choose the group type and approve to create its SPG. Project groups need a proposition PDF."
+          ? "Check each request, then create the group or return it with a reason."
           : "Review and update requests sent from the dashboard or Discord."}
       </p>
       {error && (
@@ -56,13 +57,12 @@ export default function AdminTicketsPanel({ token, spgOnly = false }: { token: s
       )}
       {!loading && !error && (
         <div className={styles.list}>
-          {items.map((item) => (
+          {items.map((item) => item.category === "spg_registration" ? (
+            <AdminSpgReview key={item.id} item={item} token={token} onUpdated={() => setRevision((value) => value + 1)} />
+          ) : (
             <article key={item.id} className={styles.row}>
-              <div>
-                <Link href={`/dashboard/tickets/${encodeURIComponent(item.id)}`}>{item.title}</Link>
-                <small>{item.category.replaceAll("_", " ")} · {item.status.replaceAll("_", " ")}</small>
-              </div>
-              {!spgOnly && item.category !== "spg_registration" && (
+              <div><Link href={`/dashboard/tickets/${encodeURIComponent(item.id)}`}>{item.title}</Link><small>{item.category.replaceAll("_", " ")} · {item.status.replaceAll("_", " ")}</small></div>
+              {!spgOnly && (
                 <label>
                   Status
                   <select
@@ -78,7 +78,6 @@ export default function AdminTicketsPanel({ token, spgOnly = false }: { token: s
                   </select>
                 </label>
               )}
-              {item.category === "spg_registration" && <AdminSpgReview item={item} token={token} onUpdated={() => setRevision((value) => value + 1)} />}
             </article>
           ))}
         </div>
@@ -94,6 +93,14 @@ export default function AdminTicketsPanel({ token, spgOnly = false }: { token: s
   );
 }
 
+function fieldText(value: unknown): string {
+  return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+}
+
+function memberNames(value: unknown): string {
+  return fieldText(value).replace(/\s+\([^()]+\)/g, "");
+}
+
 function AdminSpgReview({ item, token, onUpdated }: { item: TicketSummary; token: string; onUpdated: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState<ApiTicketDetail | null>(null);
@@ -105,6 +112,7 @@ function AdminSpgReview({ item, token, onUpdated }: { item: TicketSummary; token
   const [visibility, setVisibility] = useState("private");
   const [proposition, setProposition] = useState<File | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [showReject, setShowReject] = useState(false);
 
   async function toggle() {
     if (expanded) { setExpanded(false); return; }
@@ -153,26 +161,63 @@ function AdminSpgReview({ item, token, onUpdated }: { item: TicketSummary; token
     }
   }
 
-  return <div className={styles.review}>
-    {item.spg_id ? <Link href={`/dashboard/spg/${encodeURIComponent(item.spg_id)}`}>Open SPG →</Link> : <button type="button" onClick={() => void toggle()} aria-expanded={expanded}>{expanded ? "Hide review" : "Review request"}</button>}
-    {expanded && <div className={styles.reviewDetails}>
-      {loading && <p>Loading registration…</p>}
+  const fields = detail?.fields ?? {};
+  const submittedTrack = fieldText(fields.track);
+  const trackLabel = fieldText(fields.Track) || (submittedTrack ? `${submittedTrack[0].toUpperCase()}${submittedTrack.slice(1)} track` : "Not specified");
+  const leader = memberNames(fields["Team Leader"]) || fieldText(fields.leader_uid) || "Not specified";
+  const namedMembers = memberNames(fields["Team Members"]);
+  const memberCount = Array.isArray(fields.member_uids) ? fields.member_uids.length : 0;
+  const members = namedMembers && namedMembers.toLowerCase() !== "none" ? namedMembers : memberCount ? `${memberCount} additional member${memberCount === 1 ? "" : "s"}` : "No additional members";
+  const duration = fieldText(fields.duration_days || fields["Duration (Days)"]);
+  const frequency = fieldText(fields.frequency_days || fields["Report Frequency (Days)"]);
+  const goals = fieldText(fields["Summary & Goals"]);
+  const note = fieldText(detail?.description);
+  const hasSubmittedTrack = ["kaggle", "product", "research", "general"].includes(submittedTrack);
+
+  return <article className={styles.spgCard} data-status={item.status}>
+    <header className={styles.spgCardHeader}>
+      <div className={styles.spgCardHeading}>
+        <div className={styles.spgCardMeta}><span>SPG registration</span><span className={styles.statusPill}>{item.status.replaceAll("_", " ")}</span></div>
+        <h3>{item.title.replace(/^SPG:\s*/i, "")}</h3>
+      </div>
+      <button type="button" className={styles.reviewToggle} onClick={() => void toggle()} aria-expanded={expanded} aria-controls={`spg-review-${item.id}`}>
+        {expanded ? "Hide details" : item.status === "open" || item.status === "in_progress" ? "Review request" : "View details"}
+        <MemberIcon name="chevron-right" size={16} />
+      </button>
+    </header>
+    {expanded && <div className={styles.spgCardBody} id={`spg-review-${item.id}`}>
+      {loading && <p className={styles.loadingText}>Loading registration…</p>}
       {error && <p role="alert" className={styles.error}>{error}</p>}
       {detail && <>
-        {detail.description && <p>{detail.description}</p>}
-        <dl>{Object.entries(detail.fields || {}).filter(([key]) => !["Team Leader", "Team Members", "Team Leader UID", "Team Member UIDs", "Duration (Days)", "Report Frequency (Days)", "Project Name & Track"].includes(key)).map(([key, value]) => <div key={key}><dt>{key.replaceAll("_", " ")}</dt><dd>{Array.isArray(value) ? value.join(", ") || "None" : String(value ?? "—")}</dd></div>)}</dl>
-        {item.status !== "closed" && item.status !== "resolved" && <>
-          <form className={styles.reviewForm} onSubmit={(event) => void approve(event)}>
-            <label>Group type<select required value={type} onChange={(event) => setType(event.target.value)}><option value="">Choose type</option><option value="learning">Learning</option><option value="project">Project</option><option value="event">Club event</option><option value="external_event">External event or competition</option><option value="miscellaneous">Other group</option></select></label>
-            <label>Track<select required value={track} onChange={(event) => setTrack(event.target.value)}><option value="">Choose track</option><option value="kaggle">Kaggle</option><option value="product">Product</option><option value="research">Research</option><option value="general">General</option></select></label>
-            <label>Visibility<select value={type === "event" ? "public" : visibility} disabled={type === "event"} onChange={(event) => setVisibility(event.target.value)}><option value="private">Private</option><option value="public">Public</option></select></label>
-            {type === "project" && <label>Proposition PDF (max 10 MB)<input type="file" accept="application/pdf,.pdf" required onChange={(event) => setProposition(event.target.files?.[0] || null)} /></label>}
-            <button type="submit" disabled={busy || !type || !track || (type === "project" && !proposition)}>{busy ? "Saving…" : "Approve and create SPG"}</button>
-          </form>
-          <div className={styles.reject}><label>Reason for rejection<input value={rejectReason} onChange={(event) => setRejectReason(event.target.value)} placeholder="Tell the member what needs changing" /></label><button type="button" disabled={busy || !rejectReason.trim()} onClick={() => void reject()}>Reject request</button></div>
-        </>}
-        {item.status === "closed" && <p>Closed: {detail.close_reason || "No reason recorded."}</p>}
+        <div className={styles.reviewSectionHeading}><h4>Request details</h4><Link href={`/dashboard/tickets/${encodeURIComponent(item.id)}`}>View full ticket ↗</Link></div>
+        {note && !/^Project group:/i.test(note) && <p className={styles.requestNote}>{note}</p>}
+        <div className={styles.requestFacts}>
+          <div><span>Submitted track</span><strong>{trackLabel}</strong></div>
+          <div><span>Team leader</span><strong>{leader}</strong></div>
+          <div className={styles.wideFact}><span>Other members</span><strong>{members}</strong></div>
+          {(duration || frequency) && <div className={styles.wideFact}><span>Plan</span><strong>{[duration && `${duration} days`, frequency && `report every ${frequency} days`].filter(Boolean).join(" · ")}</strong></div>}
+        </div>
+        {goals && <div className={styles.goals}><span>Summary &amp; goals</span><p>{goals}</p></div>}
+        {item.spg_id && <Link href={`/dashboard/spg/${encodeURIComponent(item.spg_id)}`} className={styles.createdGroupLink}>Open created SPG →</Link>}
+        {!item.spg_id && item.status !== "closed" && item.status !== "resolved" && <section className={styles.decisionSection} aria-label="Registration decision">
+          <h4>{showReject ? "Return this request" : "Create the group"}</h4>
+          <p>{showReject ? "Give the member a clear reason so they can correct the request." : "Approval creates an active SPG and resolves this ticket."}</p>
+          {!showReject ? <>
+            <form className={styles.reviewForm} onSubmit={(event) => void approve(event)}>
+              <label>Group type<select required value={type} onChange={(event) => { setType(event.target.value); setProposition(null); }}><option value="">Choose group type</option><option value="learning">Learning</option><option value="project">Project</option><option value="event">Club event</option><option value="external_event">External event or competition</option><option value="miscellaneous">Other group</option></select></label>
+              {!hasSubmittedTrack && <label>Track<select required value={track} onChange={(event) => setTrack(event.target.value)}><option value="">Choose track</option><option value="kaggle">Kaggle</option><option value="product">Product</option><option value="research">Research</option><option value="general">General</option></select></label>}
+              <label>Visibility<select value={type === "event" ? "public" : visibility} disabled={type === "event"} onChange={(event) => setVisibility(event.target.value)}><option value="private">Private</option><option value="public">Public</option></select></label>
+              {type === "project" && <label className={styles.fileField}>Proposition PDF <span>Required for project groups · max 10 MB</span><input type="file" accept="application/pdf,.pdf" required onChange={(event) => setProposition(event.target.files?.[0] || null)} /></label>}
+              <button className={styles.approveButton} type="submit" disabled={busy || !type || !track || (type === "project" && !proposition)}>{busy ? "Creating group…" : "Approve and create SPG"}</button>
+            </form>
+            <button type="button" className={styles.rejectToggle} onClick={() => { setProposition(null); setShowReject(true); }}>Reject request instead</button>
+          </> : <div className={styles.rejectForm}>
+            <label>Reason for rejection<textarea value={rejectReason} onChange={(event) => setRejectReason(event.target.value)} placeholder="Explain what the member needs to change" rows={3} /></label>
+            <div className={styles.rejectActions}><button type="button" onClick={() => setShowReject(false)} disabled={busy}>Back to approval</button><button type="button" disabled={busy || !rejectReason.trim()} onClick={() => void reject()}>{busy ? "Rejecting…" : "Reject request"}</button></div>
+          </div>}
+        </section>}
+        {item.status === "closed" && <div className={styles.closedReason}><strong>Request closed</strong><p>{detail.close_reason || "No reason recorded."}</p></div>}
       </>}
     </div>}
-  </div>;
+  </article>;
 }

@@ -41,7 +41,8 @@ The selected Command Home layout was rendered with a temporary browser fixture
 at [320px](screenshots/audit-2026-09-29/mobile-command-home-320.png) and
 [390px](screenshots/audit-2026-09-29/mobile-command-home-390.png). The
 [admin SPG review form](screenshots/audit-2026-09-29/admin-spg-review-390.png)
-was checked at 390px after fixing a horizontal overflow. These screenshots
+was checked at 320px, 390px, and 900px after its request summary and decision
+controls were reorganized. These screenshots
 verify layout only; authenticated browser and production mutations remain live
 acceptance checks.
 
