@@ -681,21 +681,24 @@
 .modalCatSwitcher {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   background: #0e0e11;
-  padding: 4px;
+  padding: 6px;
   border-radius: 10px;
   border: 1px solid #202026;
   overflow-x: auto;
   overflow-y: hidden;
-  max-width: 100%;
+  width: 100%;
+  min-height: 50px;
+  flex-shrink: 0;
+  box-sizing: border-box;
   scrollbar-width: thin;
-  scrollbar-color: #282832 transparent;
+  scrollbar-color: #353542 transparent;
   -webkit-overflow-scrolling: touch;
 }
 
 .modalCatSwitcher::-webkit-scrollbar {
-  height: 4px;
+  height: 5px;
 }
 
 .modalCatSwitcher::-webkit-scrollbar-track {
@@ -703,7 +706,7 @@
 }
 
 .modalCatSwitcher::-webkit-scrollbar-thumb {
-  background: #282832;
+  background: #2b2b36;
   border-radius: 999px;
 }
 
@@ -715,18 +718,20 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 8px 12px;
+  gap: 7px;
+  padding: 8px 14px;
+  height: 36px;
   border-radius: 7px;
   background: transparent;
   border: none;
-  color: #7e7e88;
-  font-size: 0.72rem;
+  color: #8c8c96;
+  font-size: 0.74rem;
   font-weight: 750;
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
   flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .modalCatTab:hover {

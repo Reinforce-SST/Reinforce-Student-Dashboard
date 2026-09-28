@@ -947,7 +947,15 @@ export default function TicketManagementClient() {
             </div>
 
             {/* Category Switcher Tabs inside Modal */}
-            <div className={styles.modalCatSwitcher} role="tablist">
+            <div
+              className={styles.modalCatSwitcher}
+              role="tablist"
+              onWheel={(e) => {
+                if (e.deltaY !== 0) {
+                  e.currentTarget.scrollLeft += e.deltaY;
+                }
+              }}
+            >
               {ticketTypeOptions.map((opt) => (
                 <button
                   key={opt.id}
