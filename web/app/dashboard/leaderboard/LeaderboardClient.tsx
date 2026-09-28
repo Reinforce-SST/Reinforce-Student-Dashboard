@@ -151,11 +151,6 @@ export default function LeaderboardClient() {
     if (found) setSelectedMember(found);
   };
 
-  // Top 3 Podium
-  const top1 = sortedLeaderboard[0];
-  const top2 = sortedLeaderboard[1];
-  const top3 = sortedLeaderboard[2];
-
   if (loading && members.length === 0) {
     return <MemberLoading message="Loading student leaderboard & rankings…" />;
   }
@@ -267,113 +262,6 @@ export default function LeaderboardClient() {
       {/* VIEW MODE 1: LEADERBOARD RANKINGS */}
       {viewMode === "LEADERBOARD" && (
         <>
-          {/* Top 3 Podium Cards */}
-          {sortedLeaderboard.length >= 3 && !searchQuery.trim() && (
-            <section className={styles.podiumSection} aria-label="Top 3 Contributors Podium">
-              {/* Rank 2 (Silver) */}
-              {top2 && (
-                <article
-                  className={`${styles.podiumCard} ${styles.podiumSecond}`}
-                  onClick={() => openProfileModal(top2.id)}
-                >
-                  <span className={`${styles.podiumRankBadge} ${styles.rankSecondBadge}`}>#2</span>
-                  <UserAvatar
-                    src={top2.avatar_url}
-                    name={top2.full_name}
-                    className={styles.podiumAvatar}
-                  />
-                  <h2 className={styles.podiumName}>
-                    {top2.full_name}
-                    <MemberIcon name="check" size={14} />
-                  </h2>
-                  <span className={styles.podiumScore}>
-                    {top2.points[selectedTrack] ?? top2.points.total} PTS
-                  </span>
-                  <div className={styles.podiumPointsMeta}>
-                    <span style={{ color: "#f87171" }}>R: {top2.points.research}</span>
-                    <span style={{ color: "#4ade80" }}>P: {top2.points.product}</span>
-                    <span style={{ color: "#38c8ff" }}>K: {top2.points.kaggle}</span>
-                  </div>
-                  <Link
-                    href={`/dashboard/profile?id=${encodeURIComponent(top2.id)}`}
-                    className={styles.podiumViewProfileBtn}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    View Profile →
-                  </Link>
-                </article>
-              )}
-
-              {/* Rank 1 (Gold - Center) */}
-              {top1 && (
-                <article
-                  className={`${styles.podiumCard} ${styles.podiumFirst}`}
-                  onClick={() => openProfileModal(top1.id)}
-                >
-                  <span className={`${styles.podiumRankBadge} ${styles.rankFirstBadge}`}>👑 #1</span>
-                  <UserAvatar
-                    src={top1.avatar_url}
-                    name={top1.full_name}
-                    className={styles.podiumAvatar}
-                  />
-                  <h2 className={styles.podiumName}>
-                    {top1.full_name}
-                    <MemberIcon name="check" size={14} />
-                  </h2>
-                  <span className={styles.podiumScore}>
-                    {top1.points[selectedTrack] ?? top1.points.total} PTS
-                  </span>
-                  <div className={styles.podiumPointsMeta}>
-                    <span style={{ color: "#f87171" }}>R: {top1.points.research}</span>
-                    <span style={{ color: "#4ade80" }}>P: {top1.points.product}</span>
-                    <span style={{ color: "#38c8ff" }}>K: {top1.points.kaggle}</span>
-                  </div>
-                  <Link
-                    href={`/dashboard/profile?id=${encodeURIComponent(top1.id)}`}
-                    className={styles.podiumViewProfileBtn}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    View Profile →
-                  </Link>
-                </article>
-              )}
-
-              {/* Rank 3 (Bronze) */}
-              {top3 && (
-                <article
-                  className={`${styles.podiumCard} ${styles.podiumThird}`}
-                  onClick={() => openProfileModal(top3.id)}
-                >
-                  <span className={`${styles.podiumRankBadge} ${styles.rankThirdBadge}`}>#3</span>
-                  <UserAvatar
-                    src={top3.avatar_url}
-                    name={top3.full_name}
-                    className={styles.podiumAvatar}
-                  />
-                  <h2 className={styles.podiumName}>
-                    {top3.full_name}
-                    <MemberIcon name="check" size={14} />
-                  </h2>
-                  <span className={styles.podiumScore}>
-                    {top3.points[selectedTrack] ?? top3.points.total} PTS
-                  </span>
-                  <div className={styles.podiumPointsMeta}>
-                    <span style={{ color: "#f87171" }}>R: {top3.points.research}</span>
-                    <span style={{ color: "#4ade80" }}>P: {top3.points.product}</span>
-                    <span style={{ color: "#38c8ff" }}>K: {top3.points.kaggle}</span>
-                  </div>
-                  <Link
-                    href={`/dashboard/profile?id=${encodeURIComponent(top3.id)}`}
-                    className={styles.podiumViewProfileBtn}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    View Profile →
-                  </Link>
-                </article>
-              )}
-            </section>
-          )}
-
           {/* Full Rankings Table */}
           <section className={styles.tableCard} aria-label="Ecosystem Rankings List">
             <div className={styles.tableHeader}>
