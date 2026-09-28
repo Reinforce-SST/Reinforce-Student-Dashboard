@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
+import Link from "next/link";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
 import { MemberProvider } from "@/lib/useMember";
@@ -46,6 +47,19 @@ function DashboardChrome({ children }: { children: ReactNode }) {
     <dialog ref={dialog} id="member-drawer" aria-label="Navigation" className={styles.drawer} onClose={() => setOpen(false)} onClick={event => { if (event.target === event.currentTarget) dialog.current?.close(); }}>
       <div className={styles.drawerContent}><button className={styles.close} onClick={() => dialog.current?.close()} aria-label="Close navigation"><MemberIcon name="close" /></button><Sidebar onNavigate={() => dialog.current?.close()} /></div>
     </dialog>
-    <div className={styles.mainWrapper}><Header menuOpen={open} onMenu={() => { dialog.current?.showModal(); setOpen(true); }} /><main id="member-content" tabIndex={-1} className={styles.contentArea}>{children}</main></div>
+    <div className={styles.mainWrapper}><Header menuOpen={open} onMenu={() => { dialog.current?.showModal(); setOpen(true); }} /><main id="member-content" tabIndex={-1} className={styles.contentArea}>{children}</main>
+      <nav className={styles.mobileTabs} aria-label="Dashboard sections">
+        {([
+          ["/dashboard", "Home", "dashboard"],
+          ["/dashboard/spg", "SPGs", "spg"],
+          ["/dashboard/tickets", "Tickets", "tickets"],
+          ["/dashboard/events", "Events", "events"],
+        ] as const).map(([href, label, icon]) => {
+          const active = href === "/dashboard" ? pathname === href : pathname.startsWith(href);
+          return <Link key={href} href={href} aria-current={active ? "page" : undefined}><MemberIcon name={icon} size={20} /><span>{label}</span></Link>;
+        })}
+        <button type="button" aria-label="More dashboard sections" aria-expanded={open} aria-controls="member-drawer" onClick={() => { dialog.current?.showModal(); setOpen(true); }}><MemberIcon name="menu" size={20} /><span>More</span></button>
+      </nav>
+    </div>
   </div>;
 }

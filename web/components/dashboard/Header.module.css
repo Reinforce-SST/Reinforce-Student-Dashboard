@@ -181,13 +181,7 @@
     min-width: 0;
   }
   .menuBtn {
-    display: grid;
-    place-items: center;
-    flex: none;
-    width: 40px;
-    height: 40px;
-    padding: 0;
-    border-radius: 9px;
+    display: none;
   }
   .pageTitle {
     min-width: 0;

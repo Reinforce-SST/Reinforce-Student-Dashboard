@@ -70,6 +70,17 @@ export default function DashboardClient() {
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [slideIndex, setSlideIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const [mobileDesign, setMobileDesign] = useState<"a" | "b" | "c">("a");
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem("reinforce-mobile-design");
+    if (saved === "a" || saved === "b" || saved === "c") setMobileDesign(saved);
+  }, []);
+
+  function chooseMobileDesign(design: "a" | "b" | "c") {
+    setMobileDesign(design);
+    window.localStorage.setItem("reinforce-mobile-design", design);
+  }
 
   useEffect(() => {
     let active = true;
@@ -159,12 +170,22 @@ export default function DashboardClient() {
 
   const retry = () => setRetryCount((count) => count + 1);
 
-  return <div className={styles.dashboard}>
+  return <div className={styles.dashboard} data-mobile-design={mobileDesign}>
+    <div className={styles.mobileDesignPicker} role="group" aria-label="Compare mobile dashboard designs">
+      <span>Mobile layout</span>
+      {(["a", "b", "c"] as const).map((design) => <button key={design} type="button" aria-pressed={mobileDesign === design} onClick={() => chooseMobileDesign(design)}>{design.toUpperCase()}</button>)}
+    </div>
     <div className={styles.intro}>
       <div><h2>Your club workspace</h2><p>Projects, events, and contribution activity in one view.</p></div>
       <Link href="/profile" className={styles.textLink}>View profile</Link>
     </div>
     <div className={styles.overviewContainer}>
+      <nav className={styles.mobileQuickLinks} aria-label="Quick access">
+        <Link href="/dashboard/spg"><MemberIcon name="spg" size={19} /><span><strong>Project groups</strong><small>Teams &amp; reports</small></span><span aria-hidden="true">→</span></Link>
+        <Link href="/dashboard/tickets"><MemberIcon name="tickets" size={19} /><span><strong>Tickets</strong><small>Questions &amp; requests</small></span><span aria-hidden="true">→</span></Link>
+        <Link href="/dashboard/events"><MemberIcon name="events" size={19} /><span><strong>Events</strong><small>Club calendar</small></span><span aria-hidden="true">→</span></Link>
+        <Link href="/dashboard/ideas"><MemberIcon name="ideas" size={19} /><span><strong>Idea Jar</strong><small>Discover &amp; share</small></span><span aria-hidden="true">→</span></Link>
+      </nav>
       <div className={styles.leftColumn}>
         <section className={styles.heroBanner} aria-label="Featured club announcement" onMouseEnter={() => setIsPaused(true)} onMouseLeave={() => setIsPaused(false)}>
           <div className={styles.bannerSlide} key={activeSlide.id}>
