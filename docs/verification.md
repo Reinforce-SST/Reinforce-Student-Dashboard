@@ -69,6 +69,35 @@ status or review a contribution, then refresh the dashboard and confirm the
 new item opens the relevant ticket or ledger page. The viewed count is browser-local, not shared
 between devices.
 
+## 29 September live-site audit follow-up on PR #37
+
+The live-site report found nine issues on the deployed `main` site. These are
+branch fixes and local checks; production remains unchanged until the PR is
+merged and both web and API are deployed.
+
+| Finding | Branch status |
+|---|---|
+| F1 ledger 500 and false zero | The contribution query no longer needs a composite Firestore index. Unhandled API errors keep the allowed CORS header. The profile shows a retryable error rather than a zero ledger. |
+| F2 other member ledger | A signed-in member reads only approved, display-safe records through `/contributions/public/user/{user_id}`. The private owner/admin route remains restricted. |
+| F3 mobile profile overflow | Ledger tabs wrap within the card. The document measured 390 px at a 390 px viewport and 320 px at a 320 px viewport. |
+| F4–F7 search, bell, articles, ideas | Implemented earlier in PR #37; validate again with real signed-in content after deployment. |
+| F8 SPG membership | A tier no longer presents an inactive account as a club member. The charter explains the leader requirement and links directly to a support ticket for activation. Only an admin can change the membership flag. |
+| F9 deployment and bot | This document and the repo deployment map describe the VPS and Vercel surfaces. The API health check returned 200, but YUVI's old Render health URL returned 503. [YUVI PR #13](https://github.com/Reinforce-SST/YUVI/pull/13) is still open; Discord delivery remains unverified. |
+
+The new profile error state and public ledger were rendered in temporary local
+fixtures at [390 px](screenshots/audit-2026-09-29/profile-ledger-error-390.png)
+and [390 px with an approved entry](screenshots/audit-2026-09-29/public-profile-ledger-390.png).
+The [SPG membership guidance](screenshots/audit-2026-09-29/spg-membership-guidance-390.png)
+was also rendered at 390 px. Those fixtures were removed after screenshots; no
+production account, ticket, or contribution was changed.
+
+After deployment, sign in with an account whose ledger has approved entries.
+Confirm `/profile` and another member's profile show their own approved records,
+and that a forced API failure shows Retry without a zero claim. Check the
+390 px and 320 px ledger and the SPG support link. Do not mark Discord ticket
+delivery verified until the YUVI repair is deployed and a real ticket thread
+is observed.
+
 ## Live topology checked 29 September 2026
 
 | Check | Result |

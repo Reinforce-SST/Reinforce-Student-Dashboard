@@ -1472,6 +1472,12 @@
   gap: 6px;
 }
 
+.nonMemberWarning a {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
 /* Dynamic List Builder Styles (for Idea Jar prerequisites, roadmap, outcomes) */
 .itemAddRow {
   display: flex;

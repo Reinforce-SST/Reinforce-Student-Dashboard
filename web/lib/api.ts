@@ -6,7 +6,7 @@
  */
 
 import type { SPGRecord, SPGReportRecord } from "./spgData";
-import type { ContributionRecord } from "./contributionData";
+import type { ContributionRecord, PublicContributionRecord } from "./contributionData";
 
 const BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080/api/v1";
@@ -610,6 +610,16 @@ export const api = {
     const query = qs.toString();
     return request<{ items: T[]; next_cursor?: string | null }>(
       `/contributions/user/${encodeURIComponent(userId)}${query ? `?${query}` : ""}`,
+      token
+    );
+  },
+
+  getPublicUserContributions: (token: string, userId: string, limit: number = 50, cursor?: string | null) => {
+    const qs = new URLSearchParams();
+    qs.set("limit", String(limit));
+    if (cursor) qs.set("cursor", cursor);
+    return request<{ items: PublicContributionRecord[]; next_cursor?: string | null }>(
+      `/contributions/public/user/${encodeURIComponent(userId)}?${qs}`,
       token
     );
   },

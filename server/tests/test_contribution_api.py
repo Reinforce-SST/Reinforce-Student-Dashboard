@@ -311,6 +311,26 @@ class HistoryAccessTests(ContributionAPITestCase):
             self.client.get("/api/v1/contributions/user/uid_two").status_code, 404
         )
 
+    def test_another_members_public_history_contains_only_approved_safe_fields(self):
+        self.sign_in_as(MEMBER)
+        response = self.client.get("/api/v1/contributions/public/user/uid_two")
+        self.assertEqual(response.status_code, 200)
+        items = response.json()["items"]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["id"], self.other)
+        self.assertEqual(items[0]["status"], "approved")
+        self.assertEqual(items[0]["title"], AWARD["title"])
+        self.assertFalse({"recorded_by", "reviewed_by", "deduplication_key", "status_reason", "source"} & items[0].keys())
+
+    def test_public_history_excludes_revoked_records(self):
+        self.client.patch(
+            f"/api/v1/contributions/{self.other}/revoke", json={"status_reason": "Correction"}
+        )
+        self.sign_in_as(MEMBER)
+        response = self.client.get("/api/v1/contributions/public/user/uid_two")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["items"], [])
+
     def test_an_admin_may_read_any_history_by_uid(self):
         self.assertEqual(
             self.client.get("/api/v1/contributions/user/uid_two").status_code, 200

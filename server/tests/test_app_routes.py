@@ -19,6 +19,7 @@ EXPECTED_ROUTES = {
     ("GET", "/api/v1/contributions/leaderboard"),
     ("GET", "/api/v1/contributions/me"),
     ("GET", "/api/v1/contributions/user/{user_id}"),
+    ("GET", "/api/v1/contributions/public/user/{user_id}"),
     ("GET", "/api/v1/contributions"),
     ("GET", "/api/v1/contributions/{record_id}"),
     # Users
@@ -97,6 +98,34 @@ def routes_of(app: FastAPI) -> set:
 
 
 class ApplicationImportTests(unittest.TestCase):
+    def test_cors_is_present_on_unhandled_api_errors(self):
+        import main
+
+        @main.app.get("/__cors_failure_probe")
+        def fail_for_cors_probe():
+            raise RuntimeError("test-only failure")
+
+        try:
+            response = TestClient(main.app, raise_server_exceptions=False).get(
+                "/__cors_failure_probe",
+                headers={"Origin": "https://www.reinforce-sst.com"},
+            )
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(
+                response.headers.get("access-control-allow-origin"),
+                "https://www.reinforce-sst.com",
+            )
+            other_origin = TestClient(main.app, raise_server_exceptions=False).get(
+                "/__cors_failure_probe",
+                headers={"Origin": "https://example.org"},
+            )
+            self.assertNotIn("access-control-allow-origin", other_origin.headers)
+        finally:
+            main.app.router.routes[:] = [
+                route for route in main.app.router.routes
+                if getattr(route, "path", None) != "/__cors_failure_probe"
+            ]
+
     def test_import_main_registers_all_routes(self):
         import main
 
