@@ -41,20 +41,12 @@ export default function AdminClient() {
 
   const tabParam = (searchParams.get("tab") as AdminTab) || "banners";
   const [activeTab, setActiveTab] = useState<AdminTab>(tabParam);
-  const tabsNavRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (searchParams.get("tab")) {
       setActiveTab(searchParams.get("tab") as AdminTab);
     }
   }, [searchParams]);
-
-  useEffect(() => {
-    tabsNavRef.current?.querySelector(`[data-tab="${activeTab}"]`)?.scrollIntoView({
-      block: "nearest",
-      inline: "center",
-    });
-  }, [activeTab]);
 
   const handleTabChange = (tab: AdminTab) => {
     setActiveTab(tab);
@@ -602,106 +594,6 @@ export default function AdminClient() {
             Switch to Student View
           </button>
         </div>
-      </div>
-
-      {/* Tabs Navigation */}
-      <div className={styles.tabsNav} role="tablist" aria-label="Administration sections" ref={tabsNavRef}>
-        <button
-          data-tab="banners"
-          role="tab"
-          aria-selected={activeTab === "banners"}
-          onClick={() => {
-            setSubmitSuccess(null);
-            setSubmitError(null);
-            handleTabChange("banners");
-          }}
-          className={`${styles.tabButton} ${activeTab === "banners" ? styles.tabButtonActive : ""}`}
-        >
-          <MemberIcon name="image" size={16} />
-          Dashboard Banners
-          <span className={styles.tabBadge}>Hero Slider</span>
-        </button>
-
-        <button
-          data-tab="events"
-          role="tab"
-          aria-selected={activeTab === "events"}
-          onClick={() => {
-            setSubmitSuccess(null);
-            setSubmitError(null);
-            handleTabChange("events");
-          }}
-          className={`${styles.tabButton} ${activeTab === "events" ? styles.tabButtonActive : ""}`}
-        >
-          <MemberIcon name="calendar" size={16} />
-          Club Events
-        </button>
-
-        <button
-          data-tab="spg"
-          role="tab"
-          aria-selected={activeTab === "spg"}
-          onClick={() => handleTabChange("spg")}
-          className={`${styles.tabButton} ${activeTab === "spg" ? styles.tabButtonActive : ""}`}
-        >
-          <MemberIcon name="spg" size={16} />
-          SPG Requests
-        </button>
-
-        <button
-          data-tab="tickets"
-          role="tab"
-          aria-selected={activeTab === "tickets"}
-          onClick={() => handleTabChange("tickets")}
-          className={`${styles.tabButton} ${activeTab === "tickets" ? styles.tabButtonActive : ""}`}
-        >
-          <MemberIcon name="tickets" size={16} />
-          Ticket Console
-        </button>
-
-        <button
-          data-tab="contributions"
-          role="tab"
-          aria-selected={activeTab === "contributions"}
-          onClick={() => handleTabChange("contributions")}
-          className={`${styles.tabButton} ${activeTab === "contributions" ? styles.tabButtonActive : ""}`}
-        >
-          <MemberIcon name="award" size={16} />
-          Merit Auditing
-        </button>
-
-        <button
-          data-tab="members"
-          role="tab"
-          aria-selected={activeTab === "members"}
-          onClick={() => handleTabChange("members")}
-          className={`${styles.tabButton} ${activeTab === "members" ? styles.tabButtonActive : ""}`}
-        >
-          <MemberIcon name="users" size={16} />
-          Member Directory
-        </button>
-
-        <button
-          data-tab="articles"
-          role="tab"
-          aria-selected={activeTab === "articles"}
-          onClick={() => handleTabChange("articles")}
-          className={`${styles.tabButton} ${activeTab === "articles" ? styles.tabButtonActive : ""}`}
-        >
-          <MemberIcon name="articles" size={16} />
-          Articles
-        </button>
-
-        <button
-          data-tab="ideas"
-          role="tab"
-          aria-selected={activeTab === "ideas"}
-          onClick={() => handleTabChange("ideas")}
-          className={`${styles.tabButton} ${activeTab === "ideas" ? styles.tabButtonActive : ""}`}
-        >
-          <MemberIcon name="ideas" size={16} />
-          Idea Jar
-        </button>
       </div>
 
       {submitSuccess && (
