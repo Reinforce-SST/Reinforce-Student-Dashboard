@@ -4,6 +4,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { api, type ApiTicketDetail, type TicketStatus, type TicketSummary } from "@/lib/api";
 import MemberIcon from "@/components/dashboard/MemberIcon";
+import PaginationBar from "@/components/dashboard/PaginationBar";
+import LoadingBar from "@/components/dashboard/LoadingBar";
 import styles from "./AdminWorkflows.module.css";
 
 export default function AdminTicketsPanel({ token, spgOnly = false }: { token: string; spgOnly?: boolean }) {
@@ -40,6 +42,7 @@ export default function AdminTicketsPanel({ token, spgOnly = false }: { token: s
 
   return (
     <section className={`${styles.panel} ${spgOnly ? styles.spgPanel : ""}`}>
+      <LoadingBar loading={loading} />
       <h2>{spgOnly ? "SPG registration requests" : "Member tickets"}</h2>
       <p>
         {spgOnly
@@ -51,7 +54,7 @@ export default function AdminTicketsPanel({ token, spgOnly = false }: { token: s
           {error} <button type="button" onClick={() => setRevision((value) => value + 1)}>Retry</button>
         </p>
       )}
-      {loading && <p>Loading tickets…</p>}
+      {loading && items.length === 0 && <p>Loading tickets…</p>}
       {!loading && !error && items.length === 0 && (
         <p>No {spgOnly ? "SPG registration requests" : "tickets"} found.</p>
       )}
@@ -82,12 +85,15 @@ export default function AdminTicketsPanel({ token, spgOnly = false }: { token: s
           ))}
         </div>
       )}
-      {!loading && !error && total > 20 && (
-        <div className={styles.pager}>
-          <button type="button" disabled={page === 1} onClick={() => setPage((value) => value - 1)}>Previous</button>
-          <span>{page} / {Math.ceil(total / 20)}</span>
-          <button type="button" disabled={page * 20 >= total} onClick={() => setPage((value) => value + 1)}>Next</button>
-        </div>
+      {!error && (
+        <PaginationBar
+          currentPage={page}
+          totalItems={total}
+          pageSize={20}
+          onPageChange={setPage}
+          itemLabel={spgOnly ? "requests" : "tickets"}
+          disabled={loading}
+        />
       )}
     </section>
   );

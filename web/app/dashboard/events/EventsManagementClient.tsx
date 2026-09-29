@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { useMember } from "@/lib/useMember";
 import { loadAllUpcomingEvents } from "@/lib/memberData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
+import PaginationBar from "@/components/dashboard/PaginationBar";
+import LoadingBar from "@/components/dashboard/LoadingBar";
 import styles from "./EventsManagement.module.css";
 
 export type CalendarEventItem = {
@@ -37,6 +39,14 @@ export default function EventsManagementClient() {
 
   // Current calendar month view (default to current date)
   const [currentCalendarDate, setCurrentCalendarDate] = useState(() => new Date());
+
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(6);
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab, selectedDay, currentCalendarDate]);
 
   useEffect(() => {
     let active = true;
@@ -135,6 +145,11 @@ export default function EventsManagementClient() {
     });
   }, [events, activeTab, selectedDay, currentCalendarDate]);
 
+  const paginatedEvents = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredEvents.slice(start, start + pageSize);
+  }, [filteredEvents, page, pageSize]);
+
   // Calendar calculations
   const calYear = currentCalendarDate.getFullYear();
   const calMonth = currentCalendarDate.getMonth();
@@ -205,6 +220,7 @@ export default function EventsManagementClient() {
       <div className={styles.mainLayout}>
         {/* Left Column: Stack of Event Cards */}
         <section className={styles.eventsStack} aria-label="Upcoming Events Schedule">
+          <LoadingBar loading={loading} />
           {loading ? (
             <div style={{ textAlign: "center", padding: "60px 20px", color: "#8e8e93" }}>
               Loading upcoming club events...
@@ -238,7 +254,7 @@ export default function EventsManagementClient() {
               )}
             </div>
           ) : (
-            filteredEvents.map((ev) => {
+            paginatedEvents.map((ev) => {
               return (
                 <article key={ev.id} className={styles.eventCard}>
                   <Link
@@ -290,6 +306,22 @@ export default function EventsManagementClient() {
                 </article>
               );
             })
+          )}
+
+          {!loading && filteredEvents.length > 0 && (
+            <PaginationBar
+              currentPage={page}
+              totalItems={filteredEvents.length}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={(sz) => {
+                setPageSize(sz);
+                setPage(1);
+              }}
+              pageSizeOptions={[6, 12, 24]}
+              itemLabel="events"
+              disabled={loading}
+            />
           )}
         </section>
 

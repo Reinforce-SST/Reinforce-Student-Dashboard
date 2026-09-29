@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import MemberIcon, { type IconName } from "@/components/dashboard/MemberIcon";
+import PaginationBar from "@/components/dashboard/PaginationBar";
+import LoadingBar from "@/components/dashboard/LoadingBar";
 import { useMember } from "@/lib/useMember";
 import { api, type ApiTicketDetail, type TicketSummary, type StudentProfile } from "@/lib/api";
 import { loadAllSpgs } from "@/lib/memberData";
@@ -158,6 +160,12 @@ export default function TicketManagementClient() {
   const [retryCount, setRetryCount] = useState(0);
   const [filterStatus, setFilterStatus] = useState<"all" | "open" | "in_progress" | "resolved">("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filterStatus, searchQuery]);
 
   useEffect(() => {
     let active = true;
@@ -660,6 +668,11 @@ export default function TicketManagementClient() {
     return matchesStatus && matchesSearch;
   });
 
+  const paginatedTickets = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredTickets.slice(start, start + pageSize);
+  }, [filteredTickets, page, pageSize]);
+
   const getCategoryBadgeClass = (category: TicketCategory) => {
     const opt = ticketTypeOptions.find((t) => t.id === category);
     return opt?.badgeClass || styles.catSupport;
@@ -809,8 +822,9 @@ export default function TicketManagementClient() {
             </div>
           </div>
 
+          <LoadingBar loading={loadingTickets} />
           <div className={styles.ticketsList}>
-            {filteredTickets.map((ticket) => (
+            {paginatedTickets.map((ticket) => (
               <article
                 key={ticket.id}
                 onClick={() => setSelectedTicketId(ticket.id)}
@@ -872,6 +886,22 @@ export default function TicketManagementClient() {
               >
                 {loadingTickets ? "Loading your tickets…" : "No tickets matching your filter criteria."}
               </div>
+            )}
+
+            {!loadingTickets && filteredTickets.length > 0 && (
+              <PaginationBar
+                currentPage={page}
+                totalItems={filteredTickets.length}
+                pageSize={pageSize}
+                onPageChange={setPage}
+                onPageSizeChange={(sz) => {
+                  setPageSize(sz);
+                  setPage(1);
+                }}
+                pageSizeOptions={[10, 20, 50]}
+                itemLabel="tickets"
+                disabled={loadingTickets}
+              />
             )}
           </div>
         </section>

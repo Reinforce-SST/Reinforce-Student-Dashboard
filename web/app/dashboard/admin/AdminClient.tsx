@@ -9,6 +9,8 @@ import { api, type StudentProfile } from "@/lib/api";
 import { getEventGraduationBatches } from "@/lib/eventsData";
 import { getBannerPresentation, isBannerDestination } from "@/lib/dashboardData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
+import PaginationBar from "@/components/dashboard/PaginationBar";
+import LoadingBar from "@/components/dashboard/LoadingBar";
 import AdminTicketsPanel from "./AdminTicketsPanel";
 import AdminContentPanel from "./AdminContentPanel";
 import MemberRoleRow from "./MemberRoleRow";
@@ -138,7 +140,9 @@ export default function AdminClient() {
   const awardOccurredAtRef = useRef<string | null>(null);
   const [memberSearch, setMemberSearch] = useState("");
   const [memberPage, setMemberPage] = useState(1);
+  const [memberPageSize, setMemberPageSize] = useState(20);
   const [memberDirectory, setMemberDirectory] = useState<{ items: StudentProfile[]; total: number; has_more: boolean } | null>(null);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
   const [directoryError, setDirectoryError] = useState("");
   const [directoryMessage, setDirectoryMessage] = useState("");
   const [directoryRevision, setDirectoryRevision] = useState(0);
@@ -146,13 +150,15 @@ export default function AdminClient() {
   useEffect(() => {
     if (activeTab !== "members" || !token) return;
     let active = true;
+    setDirectoryLoading(true);
     const timer = setTimeout(() => {
-      api.adminDirectory(token, { search: memberSearch.trim(), page: memberPage, page_size: 20 })
+      api.adminDirectory(token, { search: memberSearch.trim(), page: memberPage, page_size: memberPageSize })
         .then((result) => { if (active) { setMemberDirectory(result); setDirectoryError(""); } })
-        .catch((error) => { if (active) setDirectoryError(error instanceof Error ? error.message : "Could not load members."); });
+        .catch((error) => { if (active) setDirectoryError(error instanceof Error ? error.message : "Could not load members."); })
+        .finally(() => { if (active) setDirectoryLoading(false); });
     }, 250);
     return () => { active = false; clearTimeout(timer); };
-  }, [activeTab, token, memberSearch, memberPage, directoryRevision]);
+  }, [activeTab, token, memberSearch, memberPage, memberPageSize, directoryRevision]);
 
   useEffect(() => {
     if (activeTab !== "contributions" || !token) {
@@ -1635,19 +1641,30 @@ export default function AdminClient() {
 
           <div className={styles.formGroup}>
             <label className={styles.formLabel} htmlFor="member-search">Search members by name or email</label>
-            <input id="member-search" className={styles.formInput} value={memberSearch} onChange={(event) => { setMemberSearch(event.target.value); setMemberPage(1); setMemberDirectory(null); setDirectoryError(""); setDirectoryMessage(""); }} placeholder="Name or college email" />
+            <input id="member-search" className={styles.formInput} value={memberSearch} onChange={(event) => { setMemberSearch(event.target.value); setMemberPage(1); setDirectoryError(""); setDirectoryMessage(""); }} placeholder="Name or college email" />
           </div>
-          {directoryError && <p role="alert" className={styles.memberMessage}>{directoryError} <button type="button" className={styles.smallAction} onClick={() => { setDirectoryError(""); setMemberDirectory(null); setDirectoryRevision((value) => value + 1); }}>Retry</button></p>}
+          <LoadingBar loading={directoryLoading} />
+          {directoryError && <p role="alert" className={styles.memberMessage}>{directoryError} <button type="button" className={styles.smallAction} onClick={() => { setDirectoryError(""); setDirectoryRevision((value) => value + 1); }}>Retry</button></p>}
           {directoryMessage && <p role="status" className={styles.memberMessage}>{directoryMessage}</p>}
           <div className={styles.memberList}>
             {memberDirectory?.items.map((member) => <MemberRoleRow key={`${member.id}-${member.updated_at}`} member={member} token={token} onSaved={(message) => { setDirectoryMessage(message); setDirectoryRevision((value) => value + 1); }} />)}
-            {memberDirectory?.items.length === 0 && !directoryError && <p className={styles.cardSubtitle}>No members found.</p>}
+            {memberDirectory?.items.length === 0 && !directoryError && !directoryLoading && <p className={styles.cardSubtitle}>No members found.</p>}
           </div>
-          <div className={styles.directoryPager}>
-            <span>{memberDirectory ? `${memberDirectory.total} members · page ${memberPage}` : directoryError ? "Members unavailable" : "Loading members…"}</span>
-            <button type="button" className={styles.smallAction} disabled={memberPage <= 1} onClick={() => { setMemberPage((page) => page - 1); setMemberDirectory(null); setDirectoryError(""); setDirectoryMessage(""); }}>Previous</button>
-            <button type="button" className={styles.smallAction} disabled={!memberDirectory?.has_more} onClick={() => { setMemberPage((page) => page + 1); setMemberDirectory(null); setDirectoryError(""); setDirectoryMessage(""); }}>Next</button>
-          </div>
+          {!directoryError && (
+            <PaginationBar
+              currentPage={memberPage}
+              totalItems={memberDirectory?.total ?? 0}
+              pageSize={memberPageSize}
+              onPageChange={setMemberPage}
+              onPageSizeChange={(sz) => {
+                setMemberPageSize(sz);
+                setMemberPage(1);
+              }}
+              pageSizeOptions={[20, 50, 100]}
+              itemLabel="members"
+              disabled={directoryLoading}
+            />
+          )}
         </div>
       )}
 

@@ -3,7 +3,10 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import MemberIcon from "@/components/dashboard/MemberIcon";
+import LoadingBar from "@/components/dashboard/LoadingBar";
+import PaginationBar from "@/components/dashboard/PaginationBar";
 import { useMember } from "@/lib/useMember";
+import { useDebounce } from "@/lib/useDebounce";
 import { loadAllSpgs } from "@/lib/memberData";
 import { type SPGRecord } from "@/lib/spgData";
 import { api } from "@/lib/api";
@@ -15,11 +18,19 @@ export default function SpgManagementClient() {
   const [activeStatus, setActiveStatus] = useState<"ALL" | "ACTIVE" | "COMPLETED" | "ARCHIVED">("ALL");
   const [selectedTrack, setSelectedTrack] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearch = useDebounce(searchQuery, 300);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(12);
   const [spgs, setSpgs] = useState<SPGRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [membersMap, setMembersMap] = useState<Record<string, { full_name: string; avatar_url?: string | null }>>({});
   const [failedAvatars, setFailedAvatars] = useState<Set<string>>(new Set());
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [scopeTab, activeStatus, selectedTrack, debouncedSearch]);
 
   // Fetch SPGs from Backend API
   const fetchSpgs = useCallback(async () => {
@@ -100,8 +111,8 @@ export default function SpgManagementClient() {
     }
 
     // 4. Search query
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
+    if (debouncedSearch.trim()) {
+      const q = debouncedSearch.toLowerCase();
       const matchName = cluster.name.toLowerCase().includes(q);
       const matchDesc = (cluster.description || "").toLowerCase().includes(q);
       const matchLead = (cluster.lead_name || cluster.lead_id).toLowerCase().includes(q);
@@ -110,6 +121,8 @@ export default function SpgManagementClient() {
 
     return true;
   });
+
+  const paginatedClusters = filteredClusters.slice((page - 1) * pageSize, page * pageSize);
 
   const getAccentClass = (track: string) => {
     switch (track) {
@@ -331,6 +344,8 @@ export default function SpgManagementClient() {
         )}
       </section>
 
+      <LoadingBar loading={loading} />
+
       {/* 3-Column Projects Grid */}
       <section className={styles.projectsGrid} aria-label="Active Project Clusters">
         {loading ? (
@@ -370,7 +385,7 @@ export default function SpgManagementClient() {
             </div>
           </div>
         ) : (
-          filteredClusters.map((cluster) => {
+          paginatedClusters.map((cluster) => {
             const leadName = membersMap[cluster.lead_id]?.full_name || cluster.lead_name || cluster.lead_id;
             const membersToDisplay = cluster.member_ids.slice(0, 3).map((uid) => {
               const memProfile = membersMap[uid];
@@ -507,6 +522,20 @@ export default function SpgManagementClient() {
           </Link>
         ) : null}
       </section>
+
+      <PaginationBar
+        currentPage={page}
+        totalItems={filteredClusters.length}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={(sz) => {
+          setPageSize(sz);
+          setPage(1);
+        }}
+        pageSizeOptions={[12, 24, 48]}
+        itemLabel="project groups"
+        disabled={loading}
+      />
     </div>
   );
 }
