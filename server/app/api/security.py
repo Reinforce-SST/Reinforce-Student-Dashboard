@@ -107,36 +107,20 @@ def verify_internal_bot_secret(
 
 
 def require_admin(user: dict = Depends(get_current_user)) -> dict:
-    """Admin access, verified from the Firebase custom claim `admin` or Firestore `users/{uid}.is_admin`."""
-    if user.get("admin") is True or user.get("is_admin") is True:
-        return user
+    """Admin access, from the Firebase custom claim `admin`.
 
-    uid = user.get("uid")
-    if uid:
-        try:
-            from app.services.firebase import db
-            doc = db.collection("users").document(uid).get()
-            if doc.exists:
-                data = doc.to_dict() or {}
-                if data.get("is_admin") is True:
-                    # Sync claim to Firebase Auth so future token refreshes carry admin=True
-                    try:
-                        user_record = auth.get_user(uid)
-                        existing_claims = dict(user_record.custom_claims or {})
-                        if not existing_claims.get("admin"):
-                            auth.set_custom_user_claims(uid, {**existing_claims, "admin": True})
-                    except Exception:
-                        pass
-                    user["admin"] = True
-                    user["is_admin"] = True
-                    return user
-        except Exception:
-            pass
-
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Administrator privileges are required.",
-    )
+    The one authorization rule in the API. It fails closed: only the exact
+    boolean True passes, so a missing claim, a false one or a truthy string is
+    rejected. Nothing is read from Firestore, so `UserDocument.is_admin` can
+    exist for display without ever granting API privileges. Provisioning the
+    claim on an account is an environment setup step.
+    """
+    if user.get("admin") is not True:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator privileges are required.",
+        )
+    return user
 
 
 def get_admin_user(user: dict = Depends(require_admin)) -> dict:
