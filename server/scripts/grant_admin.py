@@ -5,6 +5,13 @@ does not use Firestore's display-only is_admin field as authority.
 """
 
 import argparse
+from pathlib import Path
+import sys
+
+# Ensure the server directory is on sys.path when invoked directly
+SERVER_DIR = Path(__file__).resolve().parent.parent
+if str(SERVER_DIR) not in sys.path:
+    sys.path.insert(0, str(SERVER_DIR))
 
 from firebase_admin import auth
 
