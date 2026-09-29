@@ -656,7 +656,7 @@
   cursor: not-allowed;
 }
 
-.memberList { display: flex; flex-direction: column; gap: 8px; }
+.memberList { display: flex; flex-direction: column; gap: 10px; margin: 14px 0; }
 .memberRow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px; border: 1px solid #31343a; border-radius: 10px; background: #121214; }
 .memberIdentity { display: flex; flex: 1 1 210px; min-width: 0; flex-direction: column; gap: 3px; color: #fff; font-size: 13px; }
 .memberIdentity span { color: #9e9ea4; font-size: 12px; overflow-wrap: anywhere; }
