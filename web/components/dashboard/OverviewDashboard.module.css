@@ -12,11 +12,11 @@
 .bannerSlide { position:relative; width:100%; height:100%; }
 .heroContent { position:relative; z-index:2; width:43%; height:100%; display:flex; flex-direction:column; align-items:flex-start; justify-content:space-between; padding:25px 27px; }
 .heroTopRow { display:flex; align-items:center; gap:10px; }
-.eventBadge { max-width:95px; background:var(--brand,#e5b731); border-radius:5px; padding:6px 8px; color:#13120d; font-size:.6rem; font-weight:850; line-height:1.15; text-transform:uppercase; }
+.eventBadge { max-width:120px; background:var(--brand,#e5b731); border-radius:5px; padding:6px 8px; color:#13120d; font-size:.6rem; font-weight:850; line-height:1.15; text-transform:uppercase; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
 .eventDate { color:var(--brand,#e5b731); font-size:.61rem; font-weight:800; line-height:1.35; text-transform:uppercase; }
 .heroTitle { margin:15px 0 7px; font-size:clamp(1.1rem,1.5vw,1.35rem); letter-spacing:-.045em; line-height:1.16; font-weight:800; }
 .heroDescription { margin:0; color:#d0d0d0; font-size:.72rem; line-height:1.5; display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; }
-.heroCtaBtn { display:inline-flex; align-items:center; justify-content:center; background:var(--brand,#e5b731); border-radius:7px; color:#111; padding:10px 15px; font-size:.72rem; font-weight:800; text-decoration:none; box-shadow:0 6px 16px #e5b73147; white-space:nowrap; }
+.heroCtaBtn { display:inline-flex; align-items:center; justify-content:center; max-width:100%; background:var(--brand,#e5b731); border-radius:7px; color:#111; padding:10px 15px; font-size:.72rem; font-weight:800; text-align:center; text-decoration:none; box-shadow:0 6px 16px #e5b73147; overflow-wrap:anywhere; }
 .heroCtaBtn:hover { background:#f3cb55; }
 .heroCoverRight { position:absolute; right:0; top:0; bottom:0; height:100%; aspect-ratio:16/9; -webkit-mask-image:linear-gradient(to right,transparent 0%,#0008 8%,#000 20%); mask-image:linear-gradient(to right,transparent 0%,#0008 8%,#000 20%); }
 .coverImage { display:block; width:100%; height:100%; object-fit:cover; }
@@ -135,7 +135,7 @@
   .mobileQuickLinks strong { font-size:.82rem; }
   .mobileQuickLinks small { margin-top:2px; font-size:.68rem; color:#aaaab0; }
   .mobileQuickLinks a > span:last-child { color:var(--brand,#e5b731); }
-  .heroBanner { height:154px; border-radius:12px; }
+  .heroBanner { height:190px; border-radius:12px; }
   .heroContent { padding:17px; justify-content:space-between; }
   .heroTopRow { gap:7px; }
   .eventBadge { padding:4px 6px; font-size:.52rem; }

@@ -7,6 +7,7 @@ import { useMember } from "@/lib/useMember";
 import { useAdminMode } from "@/lib/useAdminMode";
 import { api, type StudentProfile } from "@/lib/api";
 import { getEventGraduationBatches } from "@/lib/eventsData";
+import { getBannerPresentation, isBannerDestination } from "@/lib/dashboardData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import AdminTicketsPanel from "./AdminTicketsPanel";
 import AdminContentPanel from "./AdminContentPanel";
@@ -67,6 +68,15 @@ export default function AdminClient() {
   const bannerDateDisplay = formatBannerDate(bannerStartDateTime);
   const [bannerTitle, setBannerTitle] = useState("");
   const [bannerDescription, setBannerDescription] = useState("");
+  const [bannerBadgeText, setBannerBadgeText] = useState("");
+  const [bannerCtaText, setBannerCtaText] = useState("");
+  const [bannerCtaUrl, setBannerCtaUrl] = useState("");
+  const bannerPresentation = getBannerPresentation({
+    id: "", slug: "", event_type: "Featured Banner",
+    banner_badge_text: bannerBadgeText,
+    banner_cta_text: bannerCtaText,
+    banner_cta_url: bannerCtaUrl,
+  });
   const bannerTrack = "all";
   const bannerFormat = "offline";
   const [bannerUrl, setBannerUrl] = useState("");
@@ -317,6 +327,10 @@ export default function AdminClient() {
       if (endDateObj && endDateObj <= startDateObj) {
         throw new Error("The banner end time must be after its start time.");
       }
+      const ctaUrl = bannerCtaUrl.trim();
+      if (ctaUrl && !isBannerDestination(ctaUrl)) {
+        throw new Error("Use a site path starting with / or a full HTTPS URL for the button destination.");
+      }
       const imageUrl = bannerFile
         ? (await api.adminUploadEventMedia(token, bannerFile)).url
         : bannerUrl.trim();
@@ -341,6 +355,9 @@ export default function AdminClient() {
           duration_minutes: durationMinutes,
         },
         banner_url: imageUrl || undefined,
+        banner_badge_text: bannerBadgeText.trim() || undefined,
+        banner_cta_text: bannerCtaText.trim() || undefined,
+        banner_cta_url: ctaUrl || undefined,
         status: "published" as const,
       };
 
@@ -833,6 +850,29 @@ export default function AdminClient() {
                 />
               </div>
 
+              <div className={styles.formRow}>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel} htmlFor="banner-badge-text">Badge text (optional)</label>
+                  <input id="banner-badge-text" type="text" value={bannerBadgeText}
+                    onChange={(e) => setBannerBadgeText(e.target.value)} maxLength={40}
+                    placeholder="Featured Banner" className={styles.formInput} />
+                </div>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel} htmlFor="banner-cta-text">Button text (optional)</label>
+                  <input id="banner-cta-text" type="text" value={bannerCtaText}
+                    onChange={(e) => setBannerCtaText(e.target.value)} maxLength={40}
+                    placeholder="Explore Event →" className={styles.formInput} />
+                </div>
+              </div>
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel} htmlFor="banner-cta-url">Button destination (optional)</label>
+                <input id="banner-cta-url" type="text" value={bannerCtaUrl}
+                  onChange={(e) => setBannerCtaUrl(e.target.value)} maxLength={2048}
+                  placeholder="/dashboard/events or https://example.com/event"
+                  className={styles.formInput} />
+                <span className={styles.formLabelHint}>Leave blank to open this banner&apos;s event page. Use a site path or HTTPS URL.</span>
+              </div>
+
               <button type="submit" disabled={isSubmitting} className={styles.publishBtn}>
                 <MemberIcon name="plus" size={16} />
                 {isSubmitting ? "Publishing Banner..." : "Publish Dashboard Hero Banner"}
@@ -859,13 +899,13 @@ export default function AdminClient() {
                 <div className={styles.livePreviewContent}>
                   <div>
                     <div className={styles.livePreviewTop}>
-                      <span className={styles.livePreviewBadge}>FEATURED BANNER</span>
+                      <span className={styles.livePreviewBadge}>{bannerPresentation.badge}</span>
                       <span className={styles.livePreviewDate}>{bannerDateDisplay}</span>
                     </div>
                     <h4 className={styles.livePreviewTitle}>{bannerTitle || "Untitled Announcement"}</h4>
                     <p className={styles.livePreviewDesc}>{bannerDescription || "Description preview..."}</p>
                   </div>
-                  <span className={styles.livePreviewCta}>Explore Event →</span>
+                  <span className={styles.livePreviewCta}>{bannerPresentation.ctaText}</span>
                 </div>
 
                 <div className={styles.livePreviewImageSide}>
@@ -881,7 +921,7 @@ export default function AdminClient() {
 
               <div style={{ fontSize: "12px", color: "#8e8e93", lineHeight: 1.6, marginTop: "8px" }}>
                 <strong>Target Surface:</strong> Student Overview Hero Banner Carousel<br />
-                <strong>Stored Object:</strong> <code>title</code>, <code>description</code>, <code>banner_url</code>, <code>schedule</code>.
+                <strong>Button destination:</strong> {bannerCtaUrl.trim() || "This banner’s event page"}
               </div>
             </div>
           </div>

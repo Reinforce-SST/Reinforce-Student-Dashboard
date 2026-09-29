@@ -36,6 +36,11 @@ npm run build
 | `app/dashboard/admin/` | Authorized member, event, ticket, idea, article and merit tools |
 | `lib/api.ts` | Typed HTTP calls to the FastAPI service |
 
+The admin banner form can publish a short badge, button label, and button
+destination with the event. Leaving them blank keeps the existing hero
+defaults. Custom destinations accept site paths or HTTPS URLs. Deploy the API
+before admins use these fields.
+
 The admin SPG tab reviews registration details, accepts a proposition PDF for
 project groups, and approves the request through the ticket API. Approval
 creates a group and resolves its ticket in one transaction. On phones, the

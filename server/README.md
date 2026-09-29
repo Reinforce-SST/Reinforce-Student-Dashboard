@@ -32,6 +32,11 @@ Tests use Firestore doubles and do not write to the live database.
 | `/api/v1/tickets` | Member requests, conversations, status |
 | `/api/v1/spgs` | Project groups and reports |
 | `/api/v1/events` | Events, registrations, attendance, media |
+
+Event create and update accept optional `banner_badge_text`,
+`banner_cta_text`, and `banner_cta_url` fields for the dashboard hero.
+The list and detail responses return them. Older event documents need no
+migration; see the [Firestore contract](../docs/DATA_CONTRACT.md).
 | `/api/v1/contributions` | Auditable merit records and leaderboard |
 | `/api/v1/ideas` | Idea submission, voting, moderation |
 | `/api/v1/blogs` | Published articles |

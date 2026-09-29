@@ -19,6 +19,30 @@ export function getDashboardEvents(events: EventSummaryItem[], now: Date) {
   };
 }
 
+export function isBannerDestination(value: string): boolean {
+  if (!value || value.length > 2048 || /[\s\\]/.test(value)) return false;
+  if (value.startsWith("/") && !value.startsWith("//")) return true;
+  if (!value.startsWith("https://") || value.startsWith("https:///")) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && Boolean(url.hostname) && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
+export function getBannerPresentation(event: Pick<EventSummaryItem,
+  "id" | "slug" | "event_type" | "banner_badge_text" | "banner_cta_text" | "banner_cta_url">) {
+  const destination = event.banner_cta_url?.trim();
+  return {
+    badge: event.banner_badge_text?.trim() || event.event_type.toUpperCase(),
+    ctaText: event.banner_cta_text?.trim() || "Explore Event →",
+    ctaLink: destination && isBannerDestination(destination)
+      ? destination
+      : `/dashboard/events/${event.slug || event.id}`,
+  };
+}
+
 export function indiaDateParts(date: Date) {
   const parts = new Intl.DateTimeFormat("en-IN", {
     timeZone: "Asia/Kolkata",

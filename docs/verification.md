@@ -51,7 +51,13 @@ The no-event overview now hides the hero instead of showing an invented
 announcement; compare its [phone](screenshots/audit-2026-09-29/dashboard-no-events-390.png)
 and [desktop](screenshots/audit-2026-09-29/dashboard-no-events-desktop.png)
 fixtures. The [admin banner form](screenshots/audit-2026-09-29/admin-banner-cleanup-390.png)
-shows only publishable fields. The legacy client's [sign-in](screenshots/audit-2026-09-29/legacy-signin-cleanup-390.png)
+predates the optional badge and button fields; recheck its current layout and
+preview before rollout. The updated form was checked at
+[desktop](screenshots/audit-2026-09-29/admin-banner-publishable-desktop.png) and
+[390px](screenshots/audit-2026-09-29/admin-banner-publishable-390.png), and a
+[390px student banner](screenshots/audit-2026-09-29/dashboard-custom-banner-390.png)
+was rendered from a temporary local fixture. These screenshots verify layout,
+not a production publish. The legacy client's [sign-in](screenshots/audit-2026-09-29/legacy-signin-cleanup-390.png)
 and [member overview](screenshots/audit-2026-09-29/legacy-overview-cleanup-390.png)
 were checked at 390px. The member overview screenshot uses a temporary local
 fixture that was removed before the final build.
@@ -80,6 +86,12 @@ Dashboard [PR #37](https://github.com/Reinforce-SST/Reinforce-Student-Dashboard/
 remains open at this check. Branch code and production code may differ.
 
 ## Live acceptance after coordinated deployment
+
+Deploy the API before the web admin form for custom banner content. As an admin,
+publish one banner with a custom badge, button label, and destination; reload
+the student dashboard and confirm the displayed content and button target match
+the preview. Also check an older banner still uses its default badge and event
+page link.
 
 1. Confirm `web/` points to the intended API and both backends use the same
    Firebase project. Set `YUVI_BOT_URL` and the same `BOT_INTERNAL_SECRET` on

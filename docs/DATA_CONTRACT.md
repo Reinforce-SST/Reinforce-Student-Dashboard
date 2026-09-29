@@ -10,9 +10,9 @@ This document is the boundary between two repositories that share one database:
 Firestore enforces no schema. A renamed field does not raise — it reads back as
 `None` and renders as a blank cell. **This file is the contract. Derive from it.**
 
-Every shape below was read out of the bot's source (`models/ticket.py`,
-`utils/ticket_manager.py`, `views/ticket_modals.py`, `utils/user_manager.py`), not
-inferred from the UI.
+The YUVI shapes below were checked against its source (`models/ticket.py`,
+`utils/ticket_manager.py`, `views/ticket_modals.py`, `utils/user_manager.py`).
+The dashboard event fields are defined by this repository's API schemas.
 
 ---
 
@@ -68,6 +68,27 @@ have not signed in again. If the email cannot identify a graduation batch, the
 old value is retained rather than guessed and cannot satisfy a new batch rule.
 Members cannot change `batch_year` through profile edits; the server owns this
 value. An unresolvable profile requires an admin-confirmed correction.
+
+---
+
+## `events/{event_id}` — dashboard banner presentation
+
+The API owns event writes. Published events whose `event_type` contains
+`banner` appear in the dashboard hero. Alongside the normal event title,
+description, schedule, status, and `banner_url`, an event may store:
+
+| Field | Meaning | Default for older events |
+|---|---|---|
+| `banner_badge_text` | Short badge above the title (max 40 characters) | Uppercase `event_type` |
+| `banner_cta_text` | Button label (max 40 characters) | `Explore Event →` |
+| `banner_cta_url` | Button target: site path or HTTPS URL | `/dashboard/events/{slug or id}` |
+
+All three fields are optional and nullable. Create, update, detail, and list
+endpoints preserve them. YUVI does not read these fields. Deploy the API before
+using custom banner fields in the web admin form; an older API rejects unknown
+event fields.
+
+---
 
 ## `discord_link_tokens/{sha256(token)}`
 

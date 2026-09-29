@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getDashboardEvents, indiaDateKey } from '../.test-build/lib/dashboardData.js';
+import { getBannerPresentation, getDashboardEvents, indiaDateKey, isBannerDestination } from '../.test-build/lib/dashboardData.js';
 
 const event = (id, start, status = 'published', event_type = 'workshop') => ({
   id, slug: id, title: id, description: '', status, event_type,
@@ -28,4 +28,20 @@ test('dashboard excludes private and past events, and keeps all public event dat
 test('calendar dates use India time across a UTC month boundary', () => {
   assert.equal(indiaDateKey(new Date('2026-09-30T20:00:00Z')), '2026-10-01');
   assert.equal(indiaDateKey(new Date('2026-09-30T17:00:00Z')), '2026-09-30');
+});
+
+test('banner presentation keeps old defaults and uses saved content', () => {
+  const oldBanner = event('old', '2026-10-01T08:00:00Z', 'published', 'Featured Banner');
+  assert.deepEqual(getBannerPresentation(oldBanner), {
+    badge: 'FEATURED BANNER', ctaText: 'Explore Event →', ctaLink: '/dashboard/events/old',
+  });
+  assert.deepEqual(getBannerPresentation({
+    ...oldBanner, banner_badge_text: '  Orientation  ', banner_cta_text: '  Join now  ',
+    banner_cta_url: 'https://reinforce-sst.com/orientation',
+  }), {
+    badge: 'Orientation', ctaText: 'Join now', ctaLink: 'https://reinforce-sst.com/orientation',
+  });
+  assert.equal(isBannerDestination('javascript:alert(1)'), false);
+  assert.equal(isBannerDestination('//other.example'), false);
+  assert.equal(isBannerDestination('/dashboard/events'), true);
 });

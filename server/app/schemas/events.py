@@ -9,6 +9,7 @@ Strictly follows zero user denormalization (pure UID references).
 from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Annotated, List, Optional
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 from pydantic import (
     AfterValidator,
@@ -169,6 +170,33 @@ class EventStats(BaseModel):
 # --- Event Main Schemas ---
 
 
+def _banner_label(value: str) -> str:
+    value = value.strip()
+    if not value or len(value) > 40:
+        raise ValueError("Banner text must be 1–40 characters.")
+    return value
+
+
+def _banner_destination(value: str) -> str:
+    value = value.strip()
+    if not value or len(value) > 2048 or "\\" in value or any(char.isspace() or ord(char) < 32 for char in value):
+        raise ValueError("Banner destination must be a valid path or HTTPS URL.")
+    if value.startswith("/") and not value.startswith("//"):
+        return value
+    try:
+        parsed = urlsplit(value)
+        if parsed.scheme == "https" and parsed.hostname and parsed.username is None and parsed.password is None:
+            parsed.port  # Reject malformed ports.
+            return value
+    except ValueError:
+        pass
+    raise ValueError("Banner destination must be a relative path or HTTPS URL.")
+
+
+BannerLabel = Annotated[str, AfterValidator(_banner_label)]
+BannerDestination = Annotated[str, AfterValidator(_banner_destination)]
+
+
 class EventCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -189,6 +217,9 @@ class EventCreate(BaseModel):
     points_reward: Optional[PointsRewardConfig] = None
     resources: Optional[EventResources] = None
     banner_url: Optional[str] = None
+    banner_badge_text: Optional[BannerLabel] = None
+    banner_cta_text: Optional[BannerLabel] = None
+    banner_cta_url: Optional[BannerDestination] = None
     status: EventStatus = EventStatus.DRAFT
 
 
@@ -209,6 +240,9 @@ class EventUpdate(BaseModel):
     points_reward: Optional[PointsRewardConfig] = None
     resources: Optional[EventResources] = None
     banner_url: Optional[str] = None
+    banner_badge_text: Optional[BannerLabel] = None
+    banner_cta_text: Optional[BannerLabel] = None
+    banner_cta_url: Optional[BannerDestination] = None
     winners: Optional[List[EventWinner]] = None
     status: Optional[EventStatus] = None
 
@@ -242,6 +276,9 @@ class EventDocument(BaseModel):
     resources: EventResources = Field(default_factory=EventResources)
     stats: EventStats = Field(default_factory=EventStats)
     banner_url: Optional[str] = None
+    banner_badge_text: Optional[str] = None
+    banner_cta_text: Optional[str] = None
+    banner_cta_url: Optional[str] = None
     winners: Optional[List[EventWinner]] = None
     status: str = EventStatus.DRAFT.value
     created_by: str
@@ -263,6 +300,9 @@ class EventSummary(BaseModel):
     venue_info: VenueInfo
     stats: EventStats
     banner_url: Optional[str] = None
+    banner_badge_text: Optional[str] = None
+    banner_cta_text: Optional[str] = None
+    banner_cta_url: Optional[str] = None
     status: str
 
 

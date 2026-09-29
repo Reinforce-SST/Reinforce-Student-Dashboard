@@ -105,6 +105,9 @@ export type EventSummaryItem = {
     average_rating: number;
   };
   banner_url?: string | null;
+  banner_badge_text?: string | null;
+  banner_cta_text?: string | null;
+  banner_cta_url?: string | null;
   status: string;
 };
 
@@ -161,6 +164,9 @@ export type EventDocument = {
     average_rating: number;
   };
   banner_url?: string | null;
+  banner_badge_text?: string | null;
+  banner_cta_text?: string | null;
+  banner_cta_url?: string | null;
   status: string;
   created_by?: string;
   created_at?: string;

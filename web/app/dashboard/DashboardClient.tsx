@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useMember } from "@/lib/useMember";
 import { api, type EventSummaryItem } from "@/lib/api";
-import { getDashboardEvents, indiaDateKey, indiaDateParts } from "@/lib/dashboardData";
+import { getBannerPresentation, getDashboardEvents, indiaDateKey, indiaDateParts } from "@/lib/dashboardData";
 import { loadAllSpgs, loadAllUpcomingEvents } from "@/lib/memberData";
 import type { SPGRecord } from "@/lib/spgData";
 import type { ContributionRecord } from "@/lib/contributionData";
@@ -103,12 +103,10 @@ export default function DashboardClient() {
   const { banners, upcoming } = getDashboardEvents(events, now);
   const slides: FeaturedBanner[] = banners.map((event) => ({
     id: event.id,
-    badge: event.event_type.toUpperCase(),
+    ...getBannerPresentation(event),
     date: eventDate(event).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" }),
     title: event.title,
     description: event.description,
-    ctaText: "Explore Event →",
-    ctaLink: eventLink(event),
     imageSrc: event.banner_url || "/banners/reinforce-placeholder.png",
   }));
   const activeSlide = slides.length > 0 ? slides[slideIndex % slides.length] : null;
