@@ -558,7 +558,11 @@ def list_users(
 
         all_users.append(public_user)
 
-    all_users.sort(key=lambda u: u.points.total, reverse=True)
+    if track and track.lower().strip() in VALID_TRACKS:
+        t_key = track.lower().strip()
+        all_users.sort(key=lambda u: getattr(u.points, t_key, 0), reverse=True)
+    else:
+        all_users.sort(key=lambda u: u.points.total, reverse=True)
 
     total = len(all_users)
     start = (page - 1) * page_size
