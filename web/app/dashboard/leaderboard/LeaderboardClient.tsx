@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 
 import Link from "next/link";
 import MemberIcon from "@/components/dashboard/MemberIcon";
-import MemberLoading from "@/components/dashboard/MemberLoading";
 import LoadingBar from "@/components/dashboard/LoadingBar";
 import PaginationBar from "@/components/dashboard/PaginationBar";
 import { useMember } from "@/lib/useMember";
@@ -141,11 +140,6 @@ export default function LeaderboardClient() {
     const found = members.find((m) => m.id === memberId || m.email === memberId);
     if (found) setSelectedMember(found);
   };
-
-  // Only show full-screen loader on initial mount when everything is empty
-  if (loading && members.length === 0 && !debouncedSearch && selectedTrack === "total" && selectedTier === "all" && page === 1) {
-    return <MemberLoading message="Loading student leaderboard & rankings…" />;
-  }
 
   return (
     <div className={styles.pageContainer}>
