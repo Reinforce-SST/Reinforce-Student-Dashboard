@@ -5,7 +5,10 @@ from typing import Any
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 IMAGE_EXTENSIONS = {
     "image/png": "png",
+    "image/x-png": "png",
     "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/pjpeg": "jpg",
     "image/webp": "webp",
 }
 
