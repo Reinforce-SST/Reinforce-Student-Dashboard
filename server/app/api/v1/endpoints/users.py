@@ -124,9 +124,19 @@ def _get_or_create_user(user_token: dict) -> UserMeResponse:
         data = doc.to_dict() or {}
         # Keep last login fresh and backfill missing or legacy batch values.
         updates: Dict[str, Any] = {"last_login": now, "updated_at": now}
-        if bool(data.get("is_admin")) != has_admin_claim:
-            updates["is_admin"] = has_admin_claim
-            data["is_admin"] = has_admin_claim
+        is_db_admin = bool(data.get("is_admin"))
+        if is_db_admin or has_admin_claim:
+            if not is_db_admin:
+                updates["is_admin"] = True
+                data["is_admin"] = True
+            if not has_admin_claim:
+                try:
+                    user_record = auth.get_user(uid)
+                    existing_claims = dict(user_record.custom_claims or {})
+                    if not existing_claims.get("admin"):
+                        auth.set_custom_user_claims(uid, {**existing_claims, "admin": True})
+                except Exception:
+                    pass
         resolved_batch = resolve_batch_year(data.get("batch_year"), email)
         if resolved_batch is not None and resolved_batch != data.get("batch_year"):
             updates["batch_year"] = resolved_batch

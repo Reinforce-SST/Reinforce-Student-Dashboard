@@ -18,6 +18,7 @@ from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.security import get_current_user, require_admin
+from app.utils import is_admin_user
 from app.schemas.contributions import (
     AdminAwardSPG,
     AdminAwardUser,
@@ -226,7 +227,7 @@ def list_user_contributions(
 ) -> ContributionPage:
     """A member's trophy case. Readable by that member or by an admin, so one
     member cannot read another's rejections and revocation reasons."""
-    if user_id != user["uid"] and user.get("admin") is not True:
+    if user_id != user["uid"] and not is_admin_user(user):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contributions not found.")
     try:
         items, next_cursor = service.list_contributions(
@@ -321,6 +322,6 @@ def get_contribution(
     record = service.get_contribution(db, record_id)
     if record is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contribution not found.")
-    if record.user_id != user["uid"] and user.get("admin") is not True:
+    if record.user_id != user["uid"] and not is_admin_user(user):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contribution not found.")
     return record

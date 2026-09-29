@@ -31,6 +31,7 @@ from fastapi import (
 from pydantic import ValidationError
 
 from app.api.security import get_current_user, require_admin
+from app.utils import is_admin_user
 from app.schemas.spg_reports import (
     SPGFormReportSubmission,
     SPGReportPage,
@@ -62,7 +63,7 @@ def _uid(user: dict) -> str:
 
 
 def _is_admin(user: dict) -> bool:
-    return user.get("admin") is True
+    return is_admin_user(user)
 
 
 def _handle(error) -> HTTPException:

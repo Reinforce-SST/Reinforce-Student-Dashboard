@@ -55,8 +55,23 @@ def slugify(text: str) -> str:
 
 
 def is_admin_user(user: dict) -> bool:
-    """Use the verified Firebase custom claim as the sole admin authority."""
-    return bool(user and user.get("admin") is True)
+    """Check if the user has administrator privileges."""
+    if not user:
+        return False
+    if user.get("admin") is True or user.get("is_admin") is True:
+        return True
+    uid = user.get("uid")
+    if uid:
+        try:
+            from app.services.firebase import db
+            doc = db.collection("users").document(uid).get()
+            if doc.exists and doc.to_dict().get("is_admin") is True:
+                user["admin"] = True
+                user["is_admin"] = True
+                return True
+        except Exception:
+            pass
+    return False
 
 
 def get_user_uid(user: dict) -> str:
