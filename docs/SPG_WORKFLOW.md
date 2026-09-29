@@ -95,7 +95,9 @@ The unified registration ticket flow connects both the **Web Dashboard** (`/dash
    - **Lifespan & Cadence**: Separated integer fields in days: `duration_days` and `frequency_days`.
    - **Track**: `research`, `product`, `kaggle`, or `general` without legacy color designations.
 3. **Approval**:
-   - Internal service `create_spg()` remains the sole creation authority when an admin approves the ticket.
+   - In Admin → SPG Requests, a reviewer opens the submitted details, selects the SPG type and visibility, and supplies a proposition PDF for a project group.
+   - `POST /api/v1/tickets/{ticket_id}/approve-spg` requires the verified admin claim. It validates the stored registration, calls `create_spg()`, and resolves the ticket in one Firestore transaction.
+   - Generic ticket status changes cannot resolve an SPG registration. Closing one as rejected requires a reason.
 
 ```python
 create_spg(db, create=SPGCreate(..., source_ticket_id=ticket.id), admin_id=reviewer_uid)
@@ -142,10 +144,10 @@ was invented for them.
 The format enforced is **PDF**, matching the report pipeline and the dashboard's
 existing upload control.
 
-The upload endpoint that used to serve this was removed alongside the approval
-endpoint, since it existed only to feed it. The validation and storage helpers
-stay in `app/services/uploads.py` — `read_pdf()` and `proposition_path()` — for
-the ticket registration handler to use when it lands.
+The admin approval endpoint accepts the PDF as multipart form data. It checks
+content type, size and magic bytes before upload, stores it under a
+server-generated path and removes it if approval fails. The project group
+records the resulting URL.
 
 ---
 
@@ -380,15 +382,16 @@ awards one — not a trigger.
 - PDF validation and server-controlled storage
 - admin verification
 - the contribution boundary
+- dashboard and YUVI registration tickets in the shared `tickets` collection
+- admin-only approval from a stored ticket, with one transaction for SPG creation and ticket resolution
+- three switchable mobile member-home layouts for visual review
 
 ### BLOCKED
 
 | Blocked | On what |
 |---|---|
-| member-facing SPG registration | a write path into `tickets`, which is a contract shared with the bot |
-| ticket approval hook | the ticket domain is not on `backend` |
-| any HTTP route that creates an SPG | the above — see §3 |
-| member picker wiring | `GET /users` search can return legacy email- and Discord-keyed documents that SPG correctly rejects as UIDs. **Member search must resolve or select canonical `users/{uid}` documents before the picker ships.** The SPG side fails closed with a clear 400, and no picker is integrated yet, so this is a frontend integration prerequisite rather than a backend defect. |
+| live SPG approval proof | the branch needs deployment and a signed-in admin/member end-to-end test; local tests use a Firestore double |
+| Discord thread parity | YUVI can close its own tickets; that action does not create an SPG and must not be treated as approval |
 
 ### FUTURE
 
@@ -456,7 +459,7 @@ which reads `member_ids` to award each member.
 
 ```
 spgs/{spg_id}/reports/{report_id}.pdf
-spgs/registrations/{request_id}/proposition.pdf
+spgs/registrations/{server_generated_upload_id}/proposition.pdf
 ```
 
 Both are built by the server from IDs it generated.
@@ -480,6 +483,8 @@ whoever owns the Firebase console.
 
 | Method | Route | Who |
 |---|---|---|
+| POST | `/api/v1/tickets/{ticket_id}/approve-spg` | admin — create SPG from a stored registration, resolve ticket |
+| PATCH | `/api/v1/tickets/{ticket_id}/status` | admin — may reject an SPG registration with a reason, not approve it |
 | POST | `/api/v1/spgs/reports/{report_id}/verify` | admin |
 | GET | `/api/v1/spgs` | authenticated — public groups, plus own private ones |
 | GET | `/api/v1/spgs/{spg_id}` | member or admin if private; anyone if public |
@@ -492,7 +497,7 @@ whoever owns the Firebase console.
 | POST | `/api/v1/spgs/{spg_id}/reports/form` | SPG member — form, JSON |
 | GET | `/api/v1/spgs/{spg_id}/reports` | SPG member or admin |
 
-**There is no creation route.** See §3.
+**There is no direct `/spgs` creation route.** The ticket approval route is the one creation path. See §3.
 
 **Admin** means the Firebase custom claim `admin == true`, checked by
 `require_admin`. `users/{uid}.is_admin` is a display field and grants nothing.
@@ -557,4 +562,5 @@ Firestore fake and storage is an in-memory fake that records bytes and paths.
 - `tests/test_spg_schema.py` — enums, invariants, legacy documents
 - `tests/test_spg_service.py` — identity, creation, membership, lifecycle
 - `tests/test_spg_reports.py` — both formats, PDF validation, shared sequence, immutability, verification
-- `tests/test_spg_api.py` — permissions, visibility, routing, both report endpoints, contribution separation, and that no route creates an SPG
+- `tests/test_spg_api.py` — permissions, visibility, routing, reports, and the absence of a direct SPG creation route
+- `tests/test_spg_approval.py` — admin-only approval, one group per ticket, rejected and invalid requests, proposition PDF

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import logo from "@/public/brand/logo_main_trim.png";
 import { useMember } from "@/lib/useMember";
 import { useAdminMode } from "@/lib/useAdminMode";
@@ -31,7 +31,7 @@ const studentResourceLinks: NavLink[] = [
 const adminCoreLinks: NavLink[] = [
   { href: "/dashboard/admin?tab=banners", label: "Dashboard Banners", icon: "image" },
   { href: "/dashboard/admin?tab=events", label: "Club Events", icon: "calendar" },
-  { href: "/dashboard/admin?tab=spg", label: "SPG Approvals", icon: "spg" },
+  { href: "/dashboard/admin?tab=spg", label: "SPG Requests", icon: "spg" },
   { href: "/dashboard/admin?tab=tickets", label: "Ticket Console", icon: "tickets" },
   { href: "/dashboard/admin?tab=contributions", label: "Merit Auditing", icon: "award" },
 ];
@@ -44,6 +44,7 @@ const adminDirectoryLinks: NavLink[] = [
 
 export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const { profile } = useMember();
   const { isAdmin, isAdminMode, setAdminMode } = useAdminMode();
@@ -97,16 +98,15 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             <span className={styles.groupHeader}>OPERATIONS &amp; SETUP</span>
             <nav aria-label="Admin Core Navigation" className={styles.navList}>
               {adminCoreLinks.map(({ href, label, icon }) => {
-                const isExact = pathname === href;
-                const isSub = href.includes("?tab=") && pathname === "/dashboard/admin";
-                // URL matching
-                const active = href === "/dashboard/admin" ? pathname === href : pathname.startsWith(href.split("?")[0]);
+                const active = pathname === "/dashboard/admin" &&
+                  (searchParams.get("tab") || "banners") === href.split("tab=")[1];
 
                 return (
                   <Link
                     key={href}
                     href={href}
                     onClick={onNavigate}
+                    aria-current={active ? "page" : undefined}
                     className={`${styles.navItem} ${active ? styles.active : ""}`}
                   >
                     <MemberIcon name={icon} size={18} />
@@ -120,17 +120,21 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           <div className={styles.navGroup}>
             <span className={styles.groupHeader}>COMMUNITY &amp; CONTENT</span>
             <nav aria-label="Admin Community Navigation" className={styles.navList}>
-              {adminDirectoryLinks.map(({ href, label, icon }) => (
-                <Link
-                  key={href}
-                  href={href}
-                  onClick={onNavigate}
-                  className={styles.navItem}
-                >
-                  <MemberIcon name={icon} size={18} />
-                  <span>{label}</span>
-                </Link>
-              ))}
+              {adminDirectoryLinks.map(({ href, label, icon }) => {
+                const active = pathname === "/dashboard/admin" && searchParams.get("tab") === href.split("tab=")[1];
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    onClick={onNavigate}
+                    aria-current={active ? "page" : undefined}
+                    className={`${styles.navItem} ${active ? styles.active : ""}`}
+                  >
+                    <MemberIcon name={icon} size={18} />
+                    <span>{label}</span>
+                  </Link>
+                );
+              })}
             </nav>
           </div>
 

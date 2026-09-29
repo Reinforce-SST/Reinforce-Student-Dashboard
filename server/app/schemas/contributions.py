@@ -192,6 +192,30 @@ class ContributionPage(BaseModel):
     next_cursor: Optional[NonBlankStr] = None
 
 
+class PublicContributionRecord(BaseModel):
+    """Approved profile entry without reviewer or deduplication metadata."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: NonBlankStr
+    track: ContributionTrack
+    category: ContributionCategory
+    title: TitleStr
+    description: Optional[DescriptionStr] = None
+    points: int = Field(strict=True, ge=0)
+    spg_id: Optional[NonBlankStr] = None
+    event_id: Optional[NonBlankStr] = None
+    occurred_at: UtcDatetime
+    status: Literal[ContributionStatus.APPROVED] = ContributionStatus.APPROVED
+
+
+class PublicContributionPage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: List[PublicContributionRecord] = Field(default_factory=list)
+    next_cursor: Optional[NonBlankStr] = None
+
+
 class SPGAwardResponse(BaseModel):
     """Result of awarding every member of one SPG."""
 

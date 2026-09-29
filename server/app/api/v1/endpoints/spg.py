@@ -3,11 +3,9 @@
 Thin handlers over app/services/spgs.py and app/services/spg_reports.py.
 
 **No route here creates an SPG.** A registration raises an `spg_registration`
-ticket, a reviewer approves it, and that approval calls `create_spg`. The
-ticket domain does not exist in this repository yet — tickets are written by
-the Discord bot and mirrored read-only — so creation stays an internal service
-rather than being fronted by an endpoint that would take a ticket ID it could
-not check. See docs/SPG_WORKFLOW.md.
+ticket. An admin approves that ticket through the ticket API, which validates
+the stored request and calls `create_spg` in the same transaction as resolving
+the ticket. See docs/SPG_WORKFLOW.md.
 
 A report is either a filled-in form or an uploaded PDF. Both are the same
 record in the same collection, share one sequence per SPG, and carry a heading
@@ -106,12 +104,8 @@ def _member_or_403(spg, user: dict) -> None:
 # ---------------------------------------------------------------------------
 # There is deliberately no creation route here.
 #
-# An SPG is created by approving an `spg_registration` ticket, and this
-# repository has no writable ticket domain yet. An endpoint that took a ticket
-# ID it never checked would be a second creation path wearing the name of the
-# first, so `create_spg` stays an internal service until the ticket approval
-# handler can call it with a ticket it has actually read. The proposition
-# upload helpers stay in app/services/uploads.py for that handler to use.
+# An SPG is created by the ticket approval handler after it has read the
+# registration. Keeping that route with tickets preserves one creation path.
 #
 # Fixed segments below are declared before /{spg_id} so the path parameter
 # cannot swallow them.

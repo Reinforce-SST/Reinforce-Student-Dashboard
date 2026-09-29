@@ -14,7 +14,7 @@ The Reinforce Club (SST) platform. Three surfaces, one codebase:
 |---|---|---|
 | Public website | Landing page and project/track browsing | `web/` |
 | Member dashboard | Auth, profile, tickets, and member navigation | `web/` |
-| Legacy frontend | Vite client; still deployed by the existing Vercel project | `client/` |
+| Legacy frontend | Vite client; still served by the older Vercel URL | `client/` |
 | API | Users, tickets, SPGs, events, ideas, blogs, contributions | `server/` |
 
 The product specification is the PRD. **Do not assume a feature exists because
@@ -22,21 +22,21 @@ the PRD describes it.** Check the code and deployment.
 
 ## Deployment topology
 
-This is the part that surprises people. Three separate services, two repositories,
+This is the part that surprises people. Multiple deployments, two repositories,
 one shared database.
 
 ```
-  reinforce-student-dashboard.vercel.app      Vercel   (currently client/)
-  Next.js web/ must be selected as project root for the integrated release
+  www.reinforce-sst.com                       Vercel   (Next.js web/)
+  reinforce-student-dashboard.vercel.app      Vercel   (legacy client/)
                  │
                  ▼
-  reinforce-student-dashboard.onrender.com    Render   (this repo, server/)
+  api.reinforce-sst.com                       VPS      (this repo, server/)
                  │
                  ├──────────────► Firestore  project reinforce-sst-bfda8
                  │                              ▲
                  ▼                              │
-  yuvi-182k.onrender.com                        │
-  + Discord gateway connection         Render   │  (repo: Reinforce-SST/YUVI)
+  YUVI Discord bot                              │
+  + private bridge endpoint            VPS      │  (repo: Reinforce-SST/YUVI)
                  └────────────────────────────►─┘
 ```
 
@@ -53,11 +53,11 @@ Read these before changing anything structural.
 YUVI builds its verification link as `{FRONTEND_AUTH_URL}#link_token={one-time-token}`
 and sends it as an ephemeral Discord message. The Next.js `/auth` page accepts
 both query and fragment tokens. `FRONTEND_AUTH_URL` is an environment
-variable **on Render, in the bot's repo** — not in this codebase, not greppable here.
+variable on the bot host — not in this codebase, not greppable here.
 
 If you move, rename, or gate the route that handles the private link token, member
 verification breaks silently for everyone, and nothing in this repo errors. Changing
-it requires a coordinated change to the bot's Render environment.
+it requires a coordinated change to the bot's environment.
 
 ### 2. Firestore is a shared, untyped contract
 
@@ -80,26 +80,27 @@ is not ownership proof. See docs/DATA_CONTRACT.md.
 These are real and logged. Fixing one is a scoped PR with a description, not a
 drive-by edit inside an unrelated change.
 
-- **Developer Test Mode is live in production** (`client/src/App.jsx`). It renders a
-  fake authenticated dashboard to any visitor. Contained — the backend rejects the
-  simulated token — but it must be gated behind an environment check.
-- **Events and Projects tabs render hardcoded fake content.** Invented workshops with
-  invented dates, shipped to real users. They have no data source behind them.
 - **Legacy Discord records need reverification.** Raw-ID links no longer grant
   access; members must open a fresh private YUVI token link. See docs/verification.md.
-- **Deployment still selects the Vite client.** The existing Vercel project must
-  select `web/` for the Next.js release. The root Vite rewrite is not suitable
-  for Next.js. Coordinate this with the backend and bot rollout.
+- **The older Vercel URL still selects the Vite client.** The custom domain
+  serves `web/`; check both destinations before changing redirects or auth links.
+- **YUVI's hosted Render health URL returns 503.** The VPS bot is a separate
+  deployment; check its current commit and bridge endpoint before claiming a
+  dashboard ticket reached Discord. PR #13 repairs the bridge after a queue merge.
+
+The admin dashboard can approve an SPG registration through the ticket API;
+that endpoint is the only HTTP creation path. Generic ticket status changes
+cannot approve one. Live deployment still needs an end-to-end check.
 
 ## Conventions
 
 - **Never invent content.** No placeholder events, no sample students, no lorem
   ipsum, no plausible-looking data standing in for a missing API. If the data source
   does not exist, the component is not finished. This rule exists because the current
-  production site violates it.
-- **Verify against the live service, not against the repo.** Both backends are
-  publicly reachable and have `/health` and `/openapi.json`. Check what is actually
-  deployed before concluding something is missing.
+  older Vite client violates it.
+- **Verify against the live service, not against the repo.** The public API is
+  reachable, while YUVI's hosted Render URL returned 503 on 29 September 2026.
+  Check what is actually deployed before concluding something is missing.
 - **Read the bot's source before touching shared data.** The bot's models are the
   real schema.
 - Conventional Commits, signed, authored by the club member who wrote the code.

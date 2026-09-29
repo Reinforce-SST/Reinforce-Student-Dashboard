@@ -9,7 +9,7 @@ import { graduationBatchYear } from "@/lib/batchYear";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import MemberLoading from "@/components/dashboard/MemberLoading";
 import {
-  type ContributionRecord,
+  type PublicContributionRecord,
   type ContributionCategory,
   type ContributionTrack,
   CONTRIBUTION_CATEGORY_INDEX,
@@ -34,7 +34,7 @@ export interface HeatmapDayCell {
 }
 
 // Dynamic 52-week Contribution Heatmap generator from actual contribution records
-function buildHeatmapGrid(contributions: ContributionRecord[]): HeatmapDayCell[][] {
+function buildHeatmapGrid(contributions: PublicContributionRecord[]): HeatmapDayCell[][] {
   const weeks = 52;
   const daysPerWeek = 7;
   const grid: HeatmapDayCell[][] = [];
@@ -148,8 +148,9 @@ function ProfileClientContent() {
   const [notFound, setNotFound] = useState(false);
 
   // Live Contributions State
-  const [liveContributions, setLiveContributions] = useState<ContributionRecord[]>([]);
-  const [contributionsLoading, setContributionsLoading] = useState(false);
+  const [liveContributions, setLiveContributions] = useState<PublicContributionRecord[]>([]);
+  const [contributionsLoading, setContributionsLoading] = useState(true);
+  const [contributionsError, setContributionsError] = useState(false);
 
   // Collapsible Activity & Category Hierarchy Guide toggle
   const [isGuideOpen, setIsGuideOpen] = useState(false);
@@ -195,19 +196,21 @@ function ProfileClientContent() {
   const fetchContributions = useCallback(async () => {
     if (!token) return;
     setContributionsLoading(true);
+    setContributionsError(false);
+    setLiveContributions([]);
     try {
       if (isOwner) {
         const res = await api.getMyContributions(token, 100);
-        setLiveContributions(res?.items || []);
+        setLiveContributions((res?.items || []).filter((item) => item.status === "approved"));
       } else {
         const targetUserId = queryId;
         if (targetUserId) {
-          const res = await api.getUserContributions(token, targetUserId, 100);
+          const res = await api.getPublicUserContributions(token, targetUserId, 100);
           setLiveContributions(res?.items || []);
         }
       }
     } catch {
-      setLiveContributions([]);
+      setContributionsError(true);
     } finally {
       setContributionsLoading(false);
     }
@@ -249,7 +252,7 @@ function ProfileClientContent() {
 
   // Track Points strictly mapped from schema (Live API)
   const trackPoints: TrackPoints = useMemo(() => {
-    const raw = activeProfile?.points || loggedInProfile?.points;
+    const raw = activeProfile?.points || (isOwner ? loggedInProfile?.points : null);
     return {
       total: raw?.total || 0,
       research: raw?.research || 0,
@@ -257,7 +260,7 @@ function ProfileClientContent() {
       kaggle: raw?.kaggle || 0,
       misc: raw?.misc || 0,
     };
-  }, [activeProfile?.points, loggedInProfile?.points]);
+  }, [activeProfile?.points, isOwner, loggedInProfile?.points]);
 
   // Dynamic Heatmap computed strictly from verified live contributions
   const heatmapData = useMemo(
@@ -464,14 +467,16 @@ function ProfileClientContent() {
                 </div>
               )}
 
-              <span className={styles.avatarOnlineBadge} title="Active Member" />
+              {activeProfile?.is_member && <span className={styles.avatarOnlineBadge} title="Active club member" />}
             </div>
 
             <div className={styles.nameBlock}>
               <div className={styles.nameRow}>
                 <h1 className={styles.fullName}>{fullName}</h1>
                 <span className={styles.tierBadge}>
-                  {activeProfile?.tier ? `${activeProfile.tier.toUpperCase()} MEMBER` : "BEGINNER MEMBER"}
+                  {activeProfile?.is_member
+                    ? `${(activeProfile.tier || "beginner").toUpperCase()} MEMBER`
+                    : "MEMBERSHIP PENDING"}
                 </span>
                 {activeProfile?.is_admin && (
                   <span style={{ fontSize: "0.65rem", fontWeight: "850", padding: "3px 8px", borderRadius: "5px", background: "rgba(248, 113, 113, 0.15)", color: "#f87171", border: "1px solid rgba(248, 113, 113, 0.35)", textTransform: "uppercase" }}>
@@ -632,7 +637,7 @@ function ProfileClientContent() {
               />
             </div>
             <div className={styles.tierSubtext}>
-              {activeProfile?.tier ? `${activeProfile.tier.toUpperCase()} TIER` : "ACTIVE MEMBER"}
+              {activeProfile?.is_member ? `${(activeProfile.tier || "beginner").toUpperCase()} TIER` : "MEMBERSHIP PENDING"}
             </div>
           </article>
 
@@ -737,7 +742,7 @@ function ProfileClientContent() {
       </section>
 
       {/* 4. Contribution Activity Heatmap */}
-      <section className={styles.heatmapCard} aria-label="52-Week Contribution Activity Heatmap">
+      {!contributionsLoading && !contributionsError && <section className={styles.heatmapCard} aria-label="52-Week Contribution Activity Heatmap">
         <div className={styles.heatmapHeader}>
           <div className={styles.heatmapTitleGroup}>
             <h2 className={styles.heatmapTitle}>
@@ -976,10 +981,10 @@ function ProfileClientContent() {
             </div>
           </div>
         )}
-      </section>
+      </section>}
 
       {/* 5. Contribution History Area Below (Ledger Feed) */}
-      <section className={styles.historySection} aria-label="Contribution Ledger History">
+      <section id="contribution-history" className={styles.historySection} aria-label="Contribution Ledger History">
         <div className={styles.historyHeaderRow}>
           <div>
             <h2 className={styles.heatmapTitle}>Auditable Contribution Ledger</h2>
@@ -988,7 +993,7 @@ function ProfileClientContent() {
             </p>
           </div>
 
-          <div className={styles.historyFilterTabs} role="tablist">
+          {!contributionsLoading && !contributionsError && <div className={styles.historyFilterTabs} role="tablist">
             {(
               [
                 { id: "all", label: "ALL TRACKS" },
@@ -1011,11 +1016,11 @@ function ProfileClientContent() {
                 {tab.label}
               </button>
             ))}
-          </div>
+          </div>}
         </div>
 
         {/* Category Filter Chips */}
-        <div className={styles.categoryFilterRow}>
+        {!contributionsLoading && !contributionsError && <div className={styles.categoryFilterRow}>
           <button
             type="button"
             onClick={() => setSelectedCategoryFilter("all")}
@@ -1053,11 +1058,18 @@ function ProfileClientContent() {
               </button>
             );
           })}
-        </div>
+        </div>}
 
         {/* Contributions List */}
         {contributionsLoading ? (
           <MemberLoading message="Syncing contribution ledger…" />
+        ) : contributionsError ? (
+          <div className={styles.emptyStateCard} role="alert">
+            <MemberIcon name="alert-circle" size={28} />
+            <h3 className={styles.emptyStateTitle}>Contribution history unavailable</h3>
+            <p className={styles.emptyStateText}>The ledger could not be loaded. Contribution counts have not been checked.</p>
+            <button type="button" className={styles.ledgerRetryButton} onClick={fetchContributions}>Retry</button>
+          </div>
         ) : filteredContributions.length === 0 ? (
           <div className={styles.emptyStateCard}>
             <MemberIcon name="award" size={32} />

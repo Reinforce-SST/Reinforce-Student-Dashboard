@@ -120,9 +120,16 @@ class FakeTransaction:
     def set(self, reference: FakeDocumentRef, data: dict) -> None:
         self.writes.append((reference, data))
 
+    def update(self, reference: FakeDocumentRef, data: dict) -> None:
+        self.writes.append((reference, data, "update"))
+
     def commit(self) -> None:
-        for reference, data in self.writes:
-            reference.set(data)
+        for write in self.writes:
+            reference, data = write[:2]
+            if len(write) == 3:
+                reference.update(data)
+            else:
+                reference.set(data)
 
 
 class FakeFirestore:

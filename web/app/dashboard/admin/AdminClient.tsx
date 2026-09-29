@@ -7,7 +7,10 @@ import { useMember } from "@/lib/useMember";
 import { useAdminMode } from "@/lib/useAdminMode";
 import { api, type StudentProfile } from "@/lib/api";
 import { getEventGraduationBatches } from "@/lib/eventsData";
+import { getBannerPresentation, isBannerDestination } from "@/lib/dashboardData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
+import AdminTicketsPanel from "./AdminTicketsPanel";
+import AdminContentPanel from "./AdminContentPanel";
 import MemberRoleRow from "./MemberRoleRow";
 import styles from "./Admin.module.css";
 
@@ -21,38 +24,11 @@ type AdminTab =
   | "articles"
   | "ideas";
 
-function formatScheduleDisplay(startStr: string, endStr?: string): string {
-  if (!startStr) return "UPCOMING";
-  try {
-    const start = new Date(startStr);
-    if (isNaN(start.getTime())) return startStr;
-    const startMonth = start.toLocaleString("en-US", { month: "short" }).toUpperCase();
-    const startDay = start.getDate();
-    const startYear = start.getFullYear();
-    const startTime = start.toLocaleString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-
-    if (!endStr) {
-      return `${startMonth} ${startDay}, ${startYear} · ${startTime}`;
-    }
-
-    const end = new Date(endStr);
-    if (isNaN(end.getTime())) {
-      return `${startMonth} ${startDay}, ${startYear} · ${startTime}`;
-    }
-
-    const endMonth = end.toLocaleString("en-US", { month: "short" }).toUpperCase();
-    const endDay = end.getDate();
-    const endYear = end.getFullYear();
-    const endTime = end.toLocaleString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-
-    if (startDay === endDay && startMonth === endMonth && startYear === endYear) {
-      return `${startMonth} ${startDay}, ${startYear} · ${startTime} – ${endTime}`;
-    } else {
-      return `${startMonth} ${startDay} – ${endMonth} ${endDay}, ${endYear}`;
-    }
-  } catch {
-    return startStr;
-  }
+function formatBannerDate(startStr: string): string {
+  const start = new Date(startStr);
+  return startStr && Number.isFinite(start.getTime())
+    ? start.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" })
+    : "Date not set";
 }
 
 export default function AdminClient() {
@@ -63,12 +39,20 @@ export default function AdminClient() {
 
   const tabParam = (searchParams.get("tab") as AdminTab) || "banners";
   const [activeTab, setActiveTab] = useState<AdminTab>(tabParam);
+  const tabsNavRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (searchParams.get("tab")) {
       setActiveTab(searchParams.get("tab") as AdminTab);
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    tabsNavRef.current?.querySelector(`[data-tab="${activeTab}"]`)?.scrollIntoView({
+      block: "nearest",
+      inline: "center",
+    });
+  }, [activeTab]);
 
   const handleTabChange = (tab: AdminTab) => {
     setActiveTab(tab);
@@ -79,14 +63,20 @@ export default function AdminClient() {
   };
 
   // --- TAB 1: Dashboard Hero Banner State ---
-  const [bannerBadge, setBannerBadge] = useState("");
   const [bannerStartDateTime, setBannerStartDateTime] = useState("");
   const [bannerEndDateTime, setBannerEndDateTime] = useState("");
-  const bannerDateDisplay = formatScheduleDisplay(bannerStartDateTime, bannerEndDateTime);
+  const bannerDateDisplay = formatBannerDate(bannerStartDateTime);
   const [bannerTitle, setBannerTitle] = useState("");
   const [bannerDescription, setBannerDescription] = useState("");
+  const [bannerBadgeText, setBannerBadgeText] = useState("");
   const [bannerCtaText, setBannerCtaText] = useState("");
-  const [bannerCtaLink, setBannerCtaLink] = useState("");
+  const [bannerCtaUrl, setBannerCtaUrl] = useState("");
+  const bannerPresentation = getBannerPresentation({
+    id: "", slug: "", event_type: "Featured Banner",
+    banner_badge_text: bannerBadgeText,
+    banner_cta_text: bannerCtaText,
+    banner_cta_url: bannerCtaUrl,
+  });
   const bannerTrack = "all";
   const bannerFormat = "offline";
   const [bannerUrl, setBannerUrl] = useState("");
@@ -324,11 +314,6 @@ export default function AdminClient() {
       setSubmitError("Title and description are required.");
       return;
     }
-    if (bannerBadge.trim() || bannerCtaText.trim() || bannerCtaLink.trim()) {
-      setSubmitError("Custom badge and CTA fields are preview-only until the backend supports them. Clear these fields to publish with the standard event link.");
-      return;
-    }
-
     setIsSubmitting(true);
     setSubmitSuccess(null);
     setSubmitError(null);
@@ -341,6 +326,10 @@ export default function AdminClient() {
       }
       if (endDateObj && endDateObj <= startDateObj) {
         throw new Error("The banner end time must be after its start time.");
+      }
+      const ctaUrl = bannerCtaUrl.trim();
+      if (ctaUrl && !isBannerDestination(ctaUrl)) {
+        throw new Error("Use a site path starting with / or a full HTTPS URL for the button destination.");
       }
       const imageUrl = bannerFile
         ? (await api.adminUploadEventMedia(token, bannerFile)).url
@@ -366,6 +355,9 @@ export default function AdminClient() {
           duration_minutes: durationMinutes,
         },
         banner_url: imageUrl || undefined,
+        banner_badge_text: bannerBadgeText.trim() || undefined,
+        banner_cta_text: bannerCtaText.trim() || undefined,
+        banner_cta_url: ctaUrl || undefined,
         status: "published" as const,
       };
 
@@ -607,8 +599,11 @@ export default function AdminClient() {
       </div>
 
       {/* Tabs Navigation */}
-      <div className={styles.tabsNav} role="tablist">
+      <div className={styles.tabsNav} role="tablist" aria-label="Administration sections" ref={tabsNavRef}>
         <button
+          data-tab="banners"
+          role="tab"
+          aria-selected={activeTab === "banners"}
           onClick={() => {
             setSubmitSuccess(null);
             setSubmitError(null);
@@ -622,6 +617,9 @@ export default function AdminClient() {
         </button>
 
         <button
+          data-tab="events"
+          role="tab"
+          aria-selected={activeTab === "events"}
           onClick={() => {
             setSubmitSuccess(null);
             setSubmitError(null);
@@ -634,14 +632,20 @@ export default function AdminClient() {
         </button>
 
         <button
+          data-tab="spg"
+          role="tab"
+          aria-selected={activeTab === "spg"}
           onClick={() => handleTabChange("spg")}
           className={`${styles.tabButton} ${activeTab === "spg" ? styles.tabButtonActive : ""}`}
         >
           <MemberIcon name="spg" size={16} />
-          SPG Approvals
+          SPG Requests
         </button>
 
         <button
+          data-tab="tickets"
+          role="tab"
+          aria-selected={activeTab === "tickets"}
           onClick={() => handleTabChange("tickets")}
           className={`${styles.tabButton} ${activeTab === "tickets" ? styles.tabButtonActive : ""}`}
         >
@@ -650,6 +654,9 @@ export default function AdminClient() {
         </button>
 
         <button
+          data-tab="contributions"
+          role="tab"
+          aria-selected={activeTab === "contributions"}
           onClick={() => handleTabChange("contributions")}
           className={`${styles.tabButton} ${activeTab === "contributions" ? styles.tabButtonActive : ""}`}
         >
@@ -658,6 +665,9 @@ export default function AdminClient() {
         </button>
 
         <button
+          data-tab="members"
+          role="tab"
+          aria-selected={activeTab === "members"}
           onClick={() => handleTabChange("members")}
           className={`${styles.tabButton} ${activeTab === "members" ? styles.tabButtonActive : ""}`}
         >
@@ -666,6 +676,9 @@ export default function AdminClient() {
         </button>
 
         <button
+          data-tab="articles"
+          role="tab"
+          aria-selected={activeTab === "articles"}
           onClick={() => handleTabChange("articles")}
           className={`${styles.tabButton} ${activeTab === "articles" ? styles.tabButtonActive : ""}`}
         >
@@ -674,6 +687,9 @@ export default function AdminClient() {
         </button>
 
         <button
+          data-tab="ideas"
+          role="tab"
+          aria-selected={activeTab === "ideas"}
           onClick={() => handleTabChange("ideas")}
           className={`${styles.tabButton} ${activeTab === "ideas" ? styles.tabButtonActive : ""}`}
         >
@@ -784,16 +800,6 @@ export default function AdminClient() {
 
               <div className={styles.formRow}>
                 <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>Badge Tag</label>
-                  <input
-                    type="text"
-                    value={bannerBadge}
-                    onChange={(e) => setBannerBadge(e.target.value)}
-                    placeholder="e.g. NEW EVENT, HACKATHON"
-                    className={styles.formInput}
-                  />
-                </div>
-                <div className={styles.formGroup}>
                   <label className={styles.formLabel}>Start Date & Time</label>
                   <input
                     type="datetime-local"
@@ -803,9 +809,6 @@ export default function AdminClient() {
                     required
                   />
                 </div>
-              </div>
-
-              <div className={styles.formRow}>
                 <div className={styles.formGroup}>
                   <label className={styles.formLabel}>End Date & Time (Optional)</label>
                   <input
@@ -815,12 +818,12 @@ export default function AdminClient() {
                     className={styles.formInput}
                   />
                 </div>
-                <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>Calculated Display Date</label>
-                  <div className={styles.datetimeHelper}>
-                    <MemberIcon name="calendar" size={15} />
-                    <span>{bannerDateDisplay}</span>
-                  </div>
+              </div>
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Displayed Date</label>
+                <div className={styles.datetimeHelper}>
+                  <MemberIcon name="calendar" size={15} />
+                  <span>{bannerDateDisplay}</span>
                 </div>
               </div>
 
@@ -849,25 +852,25 @@ export default function AdminClient() {
 
               <div className={styles.formRow}>
                 <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>CTA Button Text</label>
-                  <input
-                    type="text"
-                    value={bannerCtaText}
-                    onChange={(e) => setBannerCtaText(e.target.value)}
-                    placeholder="Join Session →"
-                    className={styles.formInput}
-                  />
+                  <label className={styles.formLabel} htmlFor="banner-badge-text">Badge text (optional)</label>
+                  <input id="banner-badge-text" type="text" value={bannerBadgeText}
+                    onChange={(e) => setBannerBadgeText(e.target.value)} maxLength={40}
+                    placeholder="Featured Banner" className={styles.formInput} />
                 </div>
                 <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>CTA Destination Link</label>
-                  <input
-                    type="text"
-                    value={bannerCtaLink}
-                    onChange={(e) => setBannerCtaLink(e.target.value)}
-                    placeholder="/dashboard/events"
-                    className={styles.formInput}
-                  />
+                  <label className={styles.formLabel} htmlFor="banner-cta-text">Button text (optional)</label>
+                  <input id="banner-cta-text" type="text" value={bannerCtaText}
+                    onChange={(e) => setBannerCtaText(e.target.value)} maxLength={40}
+                    placeholder="Explore Event →" className={styles.formInput} />
                 </div>
+              </div>
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel} htmlFor="banner-cta-url">Button destination (optional)</label>
+                <input id="banner-cta-url" type="text" value={bannerCtaUrl}
+                  onChange={(e) => setBannerCtaUrl(e.target.value)} maxLength={2048}
+                  placeholder="/dashboard/events or https://example.com/event"
+                  className={styles.formInput} />
+                <span className={styles.formLabelHint}>Leave blank to open this banner&apos;s event page. Use a site path or HTTPS URL.</span>
               </div>
 
               <button type="submit" disabled={isSubmitting} className={styles.publishBtn}>
@@ -896,13 +899,13 @@ export default function AdminClient() {
                 <div className={styles.livePreviewContent}>
                   <div>
                     <div className={styles.livePreviewTop}>
-                      <span className={styles.livePreviewBadge}>{bannerBadge || "ANNOUNCEMENT"}</span>
+                      <span className={styles.livePreviewBadge}>{bannerPresentation.badge}</span>
                       <span className={styles.livePreviewDate}>{bannerDateDisplay}</span>
                     </div>
                     <h4 className={styles.livePreviewTitle}>{bannerTitle || "Untitled Announcement"}</h4>
                     <p className={styles.livePreviewDesc}>{bannerDescription || "Description preview..."}</p>
                   </div>
-                  <span className={styles.livePreviewCta}>{bannerCtaText || "Join →"}</span>
+                  <span className={styles.livePreviewCta}>{bannerPresentation.ctaText}</span>
                 </div>
 
                 <div className={styles.livePreviewImageSide}>
@@ -918,7 +921,7 @@ export default function AdminClient() {
 
               <div style={{ fontSize: "12px", color: "#8e8e93", lineHeight: 1.6, marginTop: "8px" }}>
                 <strong>Target Surface:</strong> Student Overview Hero Banner Carousel<br />
-                <strong>Stored Object:</strong> <code>title</code>, <code>description</code>, <code>banner_url</code>, <code>schedule</code>.
+                <strong>Button destination:</strong> {bannerCtaUrl.trim() || "This banner’s event page"}
               </div>
             </div>
           </div>
@@ -1322,59 +1325,9 @@ export default function AdminClient() {
         </div>
       )}
 
-      {/* TAB 3: SPG Approvals */}
-      {activeTab === "spg" && (
-        <div className={styles.card}>
-          <div className={styles.cardHeader}>
-            <div>
-              <h3 className={styles.cardTitle}>
-                <MemberIcon name="spg" size={18} />
-                Student Project Group (SPG) Proposal Approvals
-              </h3>
-              <div className={styles.cardSubtitle}>
-                Review incoming research and project proposals from students.
-              </div>
-            </div>
-          </div>
+      {activeTab === "spg" && <AdminTicketsPanel token={token} spgOnly />}
 
-          <div style={{ textAlign: "center", padding: "40px 20px", color: "#8e8e93" }}>
-            <MemberIcon name="spg" size={36} />
-            <p style={{ marginTop: "12px", fontSize: "14px", color: "#ffffff" }}>
-              No pending SPG proposals awaiting approval.
-            </p>
-            <p style={{ fontSize: "12.5px", maxWidth: "440px", margin: "0 auto" }}>
-              New student research proposals submitted via the SPG module will automatically appear here for review and compute allocation.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 4: Ticket Console */}
-      {activeTab === "tickets" && (
-        <div className={styles.card}>
-          <div className={styles.cardHeader}>
-            <div>
-              <h3 className={styles.cardTitle}>
-                <MemberIcon name="tickets" size={18} />
-                Ticket Support & Resolution Console
-              </h3>
-              <div className={styles.cardSubtitle}>
-                Track and resolve student tickets for compute access, club questions, and verification.
-              </div>
-            </div>
-          </div>
-
-          <div style={{ textAlign: "center", padding: "40px 20px", color: "#8e8e93" }}>
-            <MemberIcon name="tickets" size={36} />
-            <p style={{ marginTop: "12px", fontSize: "14px", color: "#ffffff" }}>
-              No open student support tickets.
-            </p>
-            <p style={{ fontSize: "12.5px", maxWidth: "440px", margin: "0 auto" }}>
-              Student queries and compute access requests submitted to the ticket console will appear here in real-time.
-            </p>
-          </div>
-        </div>
-      )}
+      {activeTab === "tickets" && <AdminTicketsPanel token={token} />}
 
       {/* TAB 5: Merit Auditing */}
       {activeTab === "contributions" && (
@@ -1698,34 +1651,7 @@ export default function AdminClient() {
         </div>
       )}
 
-      {/* TAB 7 & 8: Articles and Ideas */}
-      {(activeTab === "articles" || activeTab === "ideas") && (
-        <div className={styles.card}>
-          <div className={styles.cardHeader}>
-            <div>
-              <h3 className={styles.cardTitle}>
-                <MemberIcon name={activeTab} size={18} />
-                {activeTab === "articles" ? "Article Hub Editorial Pipeline" : "Idea Jar Moderation"}
-              </h3>
-              <div className={styles.cardSubtitle}>
-                Manage peer-reviewed articles, tutorials, and community ideas.
-              </div>
-            </div>
-          </div>
-
-          <div style={{ textAlign: "center", padding: "40px 20px", color: "#8e8e93" }}>
-            <MemberIcon name={activeTab} size={36} />
-            <p style={{ marginTop: "12px", fontSize: "14px", color: "#ffffff" }}>
-              {activeTab === "articles"
-                ? "Article editorial pipeline is ready."
-                : "Idea moderation pipeline is ready."}
-            </p>
-            <p style={{ fontSize: "12.5px", maxWidth: "480px", margin: "0 auto" }}>
-              Connect with authors, assign peer reviewers, and feature top pieces on the landing page.
-            </p>
-          </div>
-        </div>
-      )}
+      {(activeTab === "articles" || activeTab === "ideas") && <AdminContentPanel token={token} kind={activeTab} />}
     </div>
   );
 }

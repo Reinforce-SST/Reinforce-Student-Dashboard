@@ -531,6 +531,8 @@
 
 .heatmapFilterRow {
   display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   align-items: center;
   background: #19191e;
   border: 1px solid #262630;
@@ -916,6 +918,8 @@
    4. Contribution History Area Below (Ledger Feed)
    ========================================================================== */
 .historySection {
+  min-width: 0;
+  scroll-margin-top: 80px;
   background: #141416;
   border: 1px solid #232328;
   border-radius: 16px;
@@ -926,6 +930,7 @@
 }
 
 .historyHeaderRow {
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -935,6 +940,9 @@
 
 .historyFilterTabs {
   display: flex;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
   align-items: center;
   background: #19191e;
   border: 1px solid #262630;
@@ -944,6 +952,7 @@
 }
 
 .historyTabBtn {
+  flex: 0 0 auto;
   font-size: 0.7rem;
   font-weight: 750;
   padding: 5px 12px;
@@ -953,6 +962,19 @@
   color: #7e7e88;
   cursor: pointer;
   transition: all 0.15s ease;
+}
+
+@media (max-width: 600px) {
+  .historyHeaderRow > div:first-child {
+    min-width: 0;
+  }
+
+  .historyFilterTabs {
+    box-sizing: border-box;
+    width: 100%;
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
 }
 
 .historyTabBtn:hover {
@@ -1552,3 +1574,12 @@
   line-height: 1.45;
 }
 
+.ledgerRetryButton {
+  border: 0;
+  border-radius: 7px;
+  padding: 8px 18px;
+  background: var(--brand, #E5B731);
+  color: #111;
+  font-weight: 750;
+  cursor: pointer;
+}

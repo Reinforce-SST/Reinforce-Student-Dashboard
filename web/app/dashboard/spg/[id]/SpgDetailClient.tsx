@@ -284,7 +284,7 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
         {/* Left Main Column: Proposition & Reports History */}
         <div className={styles.contentColumn}>
           {/* Progress Reports Feed */}
-          <section className={styles.sectionCard} aria-label="Progress Reports History">
+          <section id="reports" className={`${styles.sectionCard} ${styles.reportsSection}`} aria-label="Progress Reports History">
             <div className={styles.sectionHeaderRow}>
               <h2 className={styles.sectionTitle}>
                 <MemberIcon name="articles" size={18} />

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useMember } from "@/lib/useMember";
 import { api, type EventSummaryItem } from "@/lib/api";
-import { getDashboardEvents, indiaDateKey, indiaDateParts } from "@/lib/dashboardData";
+import { getBannerPresentation, getDashboardEvents, indiaDateKey, indiaDateParts } from "@/lib/dashboardData";
 import { loadAllSpgs, loadAllUpcomingEvents } from "@/lib/memberData";
 import type { SPGRecord } from "@/lib/spgData";
 import type { ContributionRecord } from "@/lib/contributionData";
@@ -22,17 +22,6 @@ type FeaturedBanner = {
   ctaText: string;
   ctaLink: string;
   imageSrc: string;
-};
-
-const fallbackBanner: FeaturedBanner = {
-  id: "club-overview",
-  badge: "REINFORCE CLUB",
-  date: "UPCOMING SESSIONS & GRANTS",
-  title: "Reinforce AI/ML Student Hub",
-  description: "Explore Student Project Groups, published club events, and technical workshops.",
-  ctaText: "Explore Events →",
-  ctaLink: "/dashboard/events",
-  imageSrc: "/banners/reinforce-placeholder.png",
 };
 
 function eventLink(event: EventSummaryItem) {
@@ -70,7 +59,6 @@ export default function DashboardClient() {
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [slideIndex, setSlideIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
-
   useEffect(() => {
     let active = true;
     const load = async () => {
@@ -113,17 +101,15 @@ export default function DashboardClient() {
     (spg.status === "active" || spg.status === "paused") &&
     (spg.lead_id === profile.id || spg.member_ids.includes(profile.id || "")));
   const { banners, upcoming } = getDashboardEvents(events, now);
-  const slides: FeaturedBanner[] = banners.length > 0 ? banners.map((event) => ({
+  const slides: FeaturedBanner[] = banners.map((event) => ({
     id: event.id,
-    badge: event.event_type.toUpperCase(),
+    ...getBannerPresentation(event),
     date: eventDate(event).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" }),
     title: event.title,
     description: event.description,
-    ctaText: "Explore Event →",
-    ctaLink: eventLink(event),
     imageSrc: event.banner_url || "/banners/reinforce-placeholder.png",
-  })) : [fallbackBanner];
-  const activeSlide = slides[slideIndex % slides.length];
+  }));
+  const activeSlide = slides.length > 0 ? slides[slideIndex % slides.length] : null;
 
   useEffect(() => {
     if (isPaused || slides.length < 2) return;
@@ -165,8 +151,12 @@ export default function DashboardClient() {
       <Link href="/profile" className={styles.textLink}>View profile</Link>
     </div>
     <div className={styles.overviewContainer}>
+      <nav className={styles.mobileQuickLinks} aria-label="Quick access">
+        <Link href="/dashboard/spg"><MemberIcon name="spg" size={19} /><span><strong>Project groups</strong><small>Teams &amp; reports</small></span><span aria-hidden="true">→</span></Link>
+        <Link href="/dashboard/tickets"><MemberIcon name="tickets" size={19} /><span><strong>Tickets</strong><small>Questions &amp; requests</small></span><span aria-hidden="true">→</span></Link>
+      </nav>
       <div className={styles.leftColumn}>
-        <section className={styles.heroBanner} aria-label="Featured club announcement" onMouseEnter={() => setIsPaused(true)} onMouseLeave={() => setIsPaused(false)}>
+        {activeSlide && <section className={styles.heroBanner} aria-label="Featured club announcement" onMouseEnter={() => setIsPaused(true)} onMouseLeave={() => setIsPaused(false)}>
           <div className={styles.bannerSlide} key={activeSlide.id}>
             <div className={styles.heroContent}>
               <div><div className={styles.heroTopRow}><span className={styles.eventBadge}>{activeSlide.badge}</span><span className={styles.eventDate}>{activeSlide.date}</span></div><h2 className={styles.heroTitle}>{activeSlide.title}</h2><p className={styles.heroDescription}>{activeSlide.description}</p></div>
@@ -175,7 +165,7 @@ export default function DashboardClient() {
             <div className={styles.heroCoverRight}><img src={activeSlide.imageSrc} alt="" className={styles.coverImage} onError={(event) => { const image = event.currentTarget; if (!image.src.endsWith("/banners/reinforce-placeholder.png")) image.src = "/banners/reinforce-placeholder.png"; }} /></div>
           </div>
           {slides.length > 1 && <><div className={styles.heroNavArrows}><button type="button" onClick={() => setSlideIndex((index) => (index - 1 + slides.length) % slides.length)} aria-label="Previous featured event"><MemberIcon name="chevron-left" size={16} /></button><button type="button" onClick={() => setSlideIndex((index) => (index + 1) % slides.length)} aria-label="Next featured event"><MemberIcon name="chevron-right" size={16} /></button></div><div className={styles.dotsRow}>{slides.map((slide, index) => <button type="button" key={slide.id} aria-label={`Go to featured slide ${index + 1}`} aria-current={slideIndex === index ? "true" : undefined} className={slideIndex === index ? styles.dotActive : styles.dot} onClick={() => setSlideIndex(index)} />)}</div></>}
-        </section>
+        </section>}
 
         <section className={styles.metrics} aria-label="Activity summary">
           <div className={styles.metric}><strong>{spgStatus === "ready" ? memberSpgs.filter((spg) => spg.status === "active").length : "—"}</strong><span><b>Active SPGs</b><small>From your membership</small></span></div>

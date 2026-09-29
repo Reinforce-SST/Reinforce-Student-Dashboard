@@ -341,37 +341,58 @@ def list_contributions(
     limit: int = DEFAULT_PAGE_SIZE,
     cursor: Optional[str] = None,
 ) -> Tuple[List[ContributionRecord], Optional[str]]:
-    """A bounded page of contributions, newest first, with the next cursor."""
+    """A page of contributions, newest first, without a composite index.
+
+    Firestore only creates single-field indexes automatically. The dashboard's
+    user + status + created_at query needs a separately deployed composite
+    index, so it fails for every member in a fresh project. Select on one
+    indexed field and apply the remaining filters and ordering here. The club
+    ledger is small; if it grows substantially this should move to managed
+    indexes and server-side cursor pagination.
+    """
     size = max(1, min(limit, MAX_PAGE_SIZE))
     collection = db.collection(CONTRIBUTIONS_COLLECTION)
-
     query = collection
     if user_id:
         query = query.where("user_id", "==", user_id)
-    if spg_id:
+    elif spg_id:
         query = query.where("spg_id", "==", spg_id)
-    if event_id:
+    elif event_id:
         query = query.where("event_id", "==", event_id)
-    if status:
+    elif status:
         query = query.where("status", "==", status.value)
-    if track:
+    elif track:
         query = query.where("track", "==", track.value)
-    if category:
+    elif category:
         query = query.where("category", "==", category.value)
 
-    query = query.order_by("created_at", direction="DESCENDING")
+    found = []
+    for snapshot in query.stream():
+        data = snapshot.to_dict() or {}
+        if user_id and data.get("user_id") != user_id:
+            continue
+        if spg_id and data.get("spg_id") != spg_id:
+            continue
+        if event_id and data.get("event_id") != event_id:
+            continue
+        if status and data.get("status") != status.value:
+            continue
+        if track and data.get("track") != track.value:
+            continue
+        if category and data.get("category") != category.value:
+            continue
+        found.append(_load(snapshot))
 
+    # Break timestamp ties by document ID, so a cursor never skips a record.
+    found.sort(key=lambda record: (record.created_at, record.id), reverse=True)
     if cursor:
-        start_at = collection.document(cursor).get()
-        if not getattr(start_at, "exists", False):
+        cursor_index = next((i for i, record in enumerate(found) if record.id == cursor), None)
+        if cursor_index is None:
             raise ContributionError(400, "Unknown pagination cursor.")
-        query = query.start_after(start_at)
+        found = found[cursor_index + 1:]
 
-    # One extra row tells us whether another page exists.
-    found = [_load(snapshot) for snapshot in query.limit(size + 1).stream()]
-    if len(found) > size:
-        return found[:size], found[size - 1].id
-    return found, None
+    page = found[:size]
+    return page, page[-1].id if len(found) > size else None
 
 
 def leaderboard(

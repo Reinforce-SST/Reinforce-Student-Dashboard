@@ -19,6 +19,7 @@ EXPECTED_ROUTES = {
     ("GET", "/api/v1/contributions/leaderboard"),
     ("GET", "/api/v1/contributions/me"),
     ("GET", "/api/v1/contributions/user/{user_id}"),
+    ("GET", "/api/v1/contributions/public/user/{user_id}"),
     ("GET", "/api/v1/contributions"),
     ("GET", "/api/v1/contributions/{record_id}"),
     # Users
@@ -97,6 +98,34 @@ def routes_of(app: FastAPI) -> set:
 
 
 class ApplicationImportTests(unittest.TestCase):
+    def test_cors_is_present_on_unhandled_api_errors(self):
+        import main
+
+        @main.app.get("/__cors_failure_probe")
+        def fail_for_cors_probe():
+            raise RuntimeError("test-only failure")
+
+        try:
+            response = TestClient(main.app, raise_server_exceptions=False).get(
+                "/__cors_failure_probe",
+                headers={"Origin": "https://www.reinforce-sst.com"},
+            )
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(
+                response.headers.get("access-control-allow-origin"),
+                "https://www.reinforce-sst.com",
+            )
+            other_origin = TestClient(main.app, raise_server_exceptions=False).get(
+                "/__cors_failure_probe",
+                headers={"Origin": "https://example.org"},
+            )
+            self.assertNotIn("access-control-allow-origin", other_origin.headers)
+        finally:
+            main.app.router.routes[:] = [
+                route for route in main.app.router.routes
+                if getattr(route, "path", None) != "/__cors_failure_probe"
+            ]
+
     def test_import_main_registers_all_routes(self):
         import main
 
@@ -112,18 +141,21 @@ class ApplicationImportTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertNotIn("/api/v1/api/v1", path)
 
-    def test_client_uses_the_unified_user_routes(self):
+    def test_legacy_client_uses_supported_user_routes(self):
         client_source = (
             Path(__file__).resolve().parents[2] / "client" / "src" / "App.jsx"
         ).read_text(encoding="utf-8")
         for path in (
             "/users/sync",
-            "/users/verify-discord",
             "/users/unlink-discord",
             "/users/me",
         ):
             with self.subTest(path=path):
                 self.assertIn(f"${{API_BASE_URL}}{path}", client_source)
+        self.assertNotIn("${API_BASE_URL}/users/verify-discord", client_source)
+        self.assertIn("Run /auth in the club server", client_source)
+        self.assertIn("href={MAIN_SITE_URL}", client_source)
+        self.assertNotIn("simulated_dev_token", client_source)
         self.assertNotIn("${API_BASE_URL}/auth/", client_source)
 
     def test_cors_accepts_current_previews_and_rejects_other_vercel_teams(self):

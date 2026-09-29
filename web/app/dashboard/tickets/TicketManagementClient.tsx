@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import MemberIcon, { type IconName } from "@/components/dashboard/MemberIcon";
 import { useMember } from "@/lib/useMember";
@@ -595,7 +596,7 @@ export default function TicketManagementClient() {
         return;
       }
       if (!spgLeader.is_member) {
-        setSubmitError(`The team leader (${spgLeader.full_name || spgLeader.id}) must be an active club member (is_member: true).`);
+        setSubmitError(`The team leader (${spgLeader.full_name || spgLeader.id}) needs active club membership. Choose an active member or ask a club admin to update their membership.`);
         return;
       }
       if (spgDurationDays === "" || !Number.isInteger(spgDurationDays) || spgDurationDays <= 0 || spgDurationDays > 730) {
@@ -1154,7 +1155,7 @@ export default function TicketManagementClient() {
                               {spgLeader.is_member ? (
                                 <span className={`${styles.candidateBadge} ${styles.candidateBadgeMember}`}>✓ Club Member</span>
                               ) : (
-                                <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>✕ Not Club Member</span>
+                                <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Membership pending</span>
                               )}
                               {spgLeader.is_admin && <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Admin</span>}
                               {spgLeader.tier && spgLeader.tier !== "beginner" && <span className={styles.candidateBadge}>{spgLeader.tier}</span>}
@@ -1187,7 +1188,7 @@ export default function TicketManagementClient() {
                     {!spgLeader?.is_member && spgLeader && (
                       <div className={styles.nonMemberWarning}>
                         <MemberIcon name="alert-circle" size={14} />
-                        <span>The team leader must be an active club member (is_member: true) to submit an SPG proposal.</span>
+                        <span>The leader needs active club membership. Choose an active member or <Link href="/dashboard/tickets?category=support">request activation through a support ticket</Link>.</span>
                       </div>
                     )}
 

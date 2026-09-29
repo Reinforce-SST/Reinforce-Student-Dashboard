@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse
+import logging
 import re
 from app.services.config import get_settings
 
@@ -15,6 +17,37 @@ from app.api.v1.endpoints import (
 
 settings = get_settings()
 app = FastAPI()
+logger = logging.getLogger(__name__)
+
+
+class InternalErrorResponse:
+    """Return an opaque 500 inside CORS so browsers can read the error status."""
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.inner(scope, receive, send)
+            return
+
+        response_started = False
+
+        async def tracked_send(message):
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
+
+        try:
+            await self.inner(scope, receive, tracked_send)
+        except Exception:
+            logger.exception("Unhandled API error")
+            if response_started:
+                raise
+            await JSONResponse(
+                {"detail": "Internal server error"}, status_code=500
+            )(scope, receive, send)
 
 # A browser Origin header is scheme://host[:port] with no path and no trailing
 # slash, and Starlette matches these by exact string. An entry written with a
@@ -55,6 +88,9 @@ preview_origin_regex = (
     else r"(?!)"
 )
 
+# Middleware is built in reverse registration order. Catch unhandled errors
+# inside CORS so even a 500 has the configured origin header.
+app.add_middleware(InternalErrorResponse)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,

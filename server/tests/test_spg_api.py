@@ -89,8 +89,8 @@ class SPGAPITestCase(unittest.TestCase):
     def create_spg(self, **overrides) -> str:
         """Seed an SPG through the service.
 
-        No HTTP route creates one: creation belongs to registration approval,
-        and the ticket domain that would drive it does not exist yet.
+        No direct SPG route creates one: production creation belongs to the
+        admin ticket-approval endpoint.
         """
         record, _created = service.create_spg(
             self.db,
