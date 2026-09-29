@@ -80,7 +80,7 @@ export default function AdminClient() {
   // --- TAB 2: Full Club Event Publisher State ---
   const [eventTitle, setEventTitle] = useState("");
   const [eventSlug, setEventSlug] = useState("");
-  const [eventType, setEventType] = useState("Workshop");
+  const [eventType, setEventType] = useState("");
   const [eventTrack, setEventTrack] = useState("research");
   const [eventFormat, setEventFormat] = useState("offline");
   const [eventSummary, setEventSummary] = useState("");
@@ -373,8 +373,8 @@ export default function AdminClient() {
   // Submit 2: Full Club Event Publisher
   const handleSubmitClubEvent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!eventTitle.trim() || !eventSummary.trim()) {
-      setSubmitError("Event title and summary description are required.");
+    if (!eventTitle.trim() || !eventSummary.trim() || !eventType.trim()) {
+      setSubmitError("Event title, event type, and summary description are required.");
       return;
     }
     if (eventEligibleBatches.length === 0) {
@@ -386,7 +386,7 @@ export default function AdminClient() {
       return;
     }
     if (!["research", "product", "kaggle", "misc", "all"].includes(eventTrack)) {
-      setSubmitError("This event track is not supported by the backend yet. Choose Research, Product, Kaggle, or General Community.");
+      setSubmitError("This event track is not supported by the backend yet. Choose Research, Product, Kaggle, Misc, or All.");
       return;
     }
     if (!["open_to_all", "members_only"].includes(eventAccessScope)) {
@@ -881,18 +881,13 @@ export default function AdminClient() {
             <div className={styles.formRowThree}>
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Event Type</label>
-                <select
+                <input
+                  type="text"
                   value={eventType}
                   onChange={(e) => setEventType(e.target.value)}
-                  className={styles.formSelect}
-                >
-                  <option value="Workshop">Workshop</option>
-                  <option value="Hackathon">Hackathon</option>
-                  <option value="Meetup">Meetup</option>
-                  <option value="Fireside Chat">Fireside Chat</option>
-                  <option value="AMA">AMA</option>
-                  <option value="Keynote">Keynote</option>
-                </select>
+                  placeholder="e.g. Workshop, Hackathon, Meetup"
+                  className={styles.formInput}
+                />
               </div>
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Track</label>
@@ -901,13 +896,11 @@ export default function AdminClient() {
                   onChange={(e) => setEventTrack(e.target.value)}
                   className={styles.formSelect}
                 >
-                  <option value="research">Research Track</option>
-                  <option value="ai_ml" disabled>AI / ML</option>
-                  <option value="kaggle">Kaggle Track</option>
-                  <option value="product">Product Track</option>
-                  <option value="systems" disabled>Systems Track</option>
-                  <option value="web3" disabled>Web3 Track</option>
-                  <option value="misc">General Community</option>
+                  <option value="research">Research</option>
+                  <option value="product">Product</option>
+                  <option value="kaggle">Kaggle</option>
+                  <option value="misc">Misc</option>
+                  <option value="all">All</option>
                 </select>
               </div>
               <div className={styles.formGroup}>
