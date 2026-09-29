@@ -7,6 +7,7 @@ import io
 import json
 import uuid
 from typing import Any, Dict, List, Optional
+import logging
 import urllib.error
 import urllib.request
 
@@ -41,21 +42,58 @@ settings = get_settings()
 USERS_COLLECTION = "users"
 VALID_TRACKS = {"total", "kaggle", "product", "research", "misc"}
 
+logger = logging.getLogger(__name__)
+
 
 from app.utils import now_iso, resolve_batch_year
 
 
-def _to_user_me(uid: str, data: Dict[str, Any]) -> UserMeResponse:
-    points_raw = data.get("points") or {}
-    points = TrackPoints(
-        total=int(points_raw.get("total", 0)),
-        kaggle=int(points_raw.get("kaggle", 0)),
-        product=int(points_raw.get("product", 0)),
-        research=int(points_raw.get("research", 0)),
-        misc=int(points_raw.get("misc", 0)),
+def _normalize_tier(raw_tier: Any) -> MemberTier:
+    if isinstance(raw_tier, MemberTier):
+        return raw_tier
+    if str(raw_tier or "").lower().strip() == "advanced":
+        return MemberTier.ADVANCED
+    return MemberTier.BEGINNER
+
+
+def _normalize_points(points_raw: Any) -> TrackPoints:
+    if not isinstance(points_raw, dict):
+        return TrackPoints()
+
+    def _safe_int(val: Any) -> int:
+        try:
+            return max(0, int(val or 0))
+        except (ValueError, TypeError):
+            return 0
+
+    return TrackPoints(
+        total=_safe_int(points_raw.get("total")),
+        kaggle=_safe_int(points_raw.get("kaggle")),
+        product=_safe_int(points_raw.get("product")),
+        research=_safe_int(points_raw.get("research")),
+        misc=_safe_int(points_raw.get("misc")),
     )
+
+
+def _to_user_me(uid: str, data: Dict[str, Any]) -> UserMeResponse:
+    points = _normalize_points(data.get("points"))
     social_raw = data.get("social_links") or {}
     social_links = SocialLinks(**social_raw) if isinstance(social_raw, dict) else SocialLinks()
+
+    raw_tier = data.get("tier")
+    tier = _normalize_tier(raw_tier)
+
+    role_label = data.get("role_label")
+    if not role_label and str(raw_tier or "").lower().strip() in {"core", "custom"}:
+        role_label = str(raw_tier).strip().lower()
+
+    raw_skills = data.get("skills")
+    if isinstance(raw_skills, list):
+        skills = [str(s).strip() for s in raw_skills if str(s).strip()]
+    elif isinstance(raw_skills, str) and raw_skills.strip():
+        skills = [s.strip() for s in raw_skills.split(",") if s.strip()]
+    else:
+        skills = []
 
     return UserMeResponse(
         id=uid,
@@ -66,14 +104,14 @@ def _to_user_me(uid: str, data: Dict[str, Any]) -> UserMeResponse:
         discord_link_version=data.get("discord_link_version"),
         is_admin=bool(data.get("is_admin", False)),
         is_member=bool(data.get("is_member", False)),
-        tier=data.get("tier") or MemberTier.BEGINNER,
-        role_label=data.get("role_label"),
+        tier=tier,
+        role_label=role_label,
         batch_year=resolve_batch_year(data.get("batch_year"), data.get("email") or ""),
         is_verified=bool(data.get("is_verified") and data.get("discord_link_version") == 1),
         verified_at=data.get("verified_at"),
         points=points,
         bio=data.get("bio"),
-        skills=data.get("skills") or [],
+        skills=skills,
         social_links=social_links,
         created_at=data.get("created_at"),
         updated_at=data.get("updated_at"),
@@ -82,16 +120,24 @@ def _to_user_me(uid: str, data: Dict[str, Any]) -> UserMeResponse:
 
 
 def _to_user_public(uid: str, data: Dict[str, Any]) -> UserPublicResponse:
-    points_raw = data.get("points") or {}
-    points = TrackPoints(
-        total=int(points_raw.get("total", 0)),
-        kaggle=int(points_raw.get("kaggle", 0)),
-        product=int(points_raw.get("product", 0)),
-        research=int(points_raw.get("research", 0)),
-        misc=int(points_raw.get("misc", 0)),
-    )
+    points = _normalize_points(data.get("points"))
     social_raw = data.get("social_links") or {}
     social_links = SocialLinks(**social_raw) if isinstance(social_raw, dict) else SocialLinks()
+
+    raw_tier = data.get("tier")
+    tier = _normalize_tier(raw_tier)
+
+    role_label = data.get("role_label")
+    if not role_label and str(raw_tier or "").lower().strip() in {"core", "custom"}:
+        role_label = str(raw_tier).strip().lower()
+
+    raw_skills = data.get("skills")
+    if isinstance(raw_skills, list):
+        skills = [str(s).strip() for s in raw_skills if str(s).strip()]
+    elif isinstance(raw_skills, str) and raw_skills.strip():
+        skills = [s.strip() for s in raw_skills.split(",") if s.strip()]
+    else:
+        skills = []
 
     return UserPublicResponse(
         id=uid,
@@ -99,11 +145,11 @@ def _to_user_public(uid: str, data: Dict[str, Any]) -> UserPublicResponse:
         avatar_url=data.get("avatar_url"),
         bio=data.get("bio"),
         is_member=bool(data.get("is_member", False)),
-        tier=data.get("tier") or MemberTier.BEGINNER,
-        role_label=data.get("role_label"),
+        tier=tier,
+        role_label=role_label,
         batch_year=resolve_batch_year(data.get("batch_year"), data.get("email") or ""),
         is_verified=bool(data.get("is_verified") and data.get("discord_link_version") == 1),
-        skills=data.get("skills") or [],
+        skills=skills,
         social_links=social_links,
         points=points,
     )
@@ -382,8 +428,12 @@ def admin_directory(
             continue
         if query and query not in (data.get("full_name") or "").lower() and query not in (data.get("email") or "").lower():
             continue
-        members.append(_to_user_me(doc.id, data))
-    members.sort(key=lambda member: (member.full_name.lower(), member.id))
+        try:
+            members.append(_to_user_me(doc.id, data))
+        except Exception as exc:
+            logger.warning("Skipping invalid member document %s: %s", doc.id, exc)
+            continue
+    members.sort(key=lambda member: ((member.full_name or "").lower(), member.id or ""))
     start = (page - 1) * page_size
     return AdminMemberListResponse(
         items=members[start:start + page_size], total=len(members), page=page,
