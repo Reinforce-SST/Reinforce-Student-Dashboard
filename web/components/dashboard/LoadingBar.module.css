@@ -1,0 +1,33 @@
+.container {
+  width: 100%;
+  overflow: hidden;
+  position: relative;
+  background: rgba(229, 183, 49, 0.08);
+  border-radius: 999px;
+}
+
+.indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 35%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--brand, #E5B731) 50%,
+    transparent
+  );
+  animation: loadingBarSlide 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  box-shadow: 0 0 10px rgba(229, 183, 49, 0.5);
+  border-radius: 999px;
+}
+
+@keyframes loadingBarSlide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
+}

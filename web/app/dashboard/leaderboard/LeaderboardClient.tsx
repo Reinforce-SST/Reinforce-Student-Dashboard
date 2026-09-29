@@ -5,7 +5,10 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import MemberLoading from "@/components/dashboard/MemberLoading";
+import LoadingBar from "@/components/dashboard/LoadingBar";
+import PaginationBar from "@/components/dashboard/PaginationBar";
 import { useMember } from "@/lib/useMember";
+import { useDebounce } from "@/lib/useDebounce";
 
 import { api, type StudentProfile, type TrackPoints } from "@/lib/api";
 import { type LeaderboardEntry } from "@/lib/leaderboardData";
@@ -53,10 +56,22 @@ export default function LeaderboardClient() {
   const [selectedTrack, setSelectedTrack] = useState<"total" | "research" | "product" | "kaggle">("total");
   const [selectedTier, setSelectedTier] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedMember, setSelectedMember] = useState<StudentProfile | null>(null);
+  const debouncedSearch = useDebounce(searchQuery, 350);
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [totalCount, setTotalCount] = useState(0);
+
+  const [selectedMember, setSelectedMember] = useState<StudentProfile | null>(null);
   const [members, setMembers] = useState<StudentProfile[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const isSearching = searchQuery !== debouncedSearch || (loading && Boolean(searchQuery.trim()));
+
+  // Reset page to 1 when search or filters change
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, selectedTrack, selectedTier]);
 
   // Fetch live members/leaderboard from backend API
   const fetchDirectoryData = useCallback(async () => {
@@ -64,23 +79,27 @@ export default function LeaderboardClient() {
     try {
       setLoading(true);
       const res = await api.browseUsers(token, {
-        search: searchQuery.trim() || undefined,
+        search: debouncedSearch.trim() || undefined,
         track: selectedTrack !== "total" ? selectedTrack : undefined,
         tier: selectedTier !== "all" ? selectedTier : undefined,
+        page,
+        page_size: pageSize,
       }).catch(() => null);
 
       if (res && res.items) {
         setMembers(res.items);
+        setTotalCount(res.total ?? res.items.length);
       } else {
         setMembers([]);
+        setTotalCount(0);
       }
     } catch {
       setMembers([]);
+      setTotalCount(0);
     } finally {
       setLoading(false);
     }
-  }, [token, searchQuery, selectedTrack, selectedTier]);
-
+  }, [token, debouncedSearch, selectedTrack, selectedTier, page, pageSize]);
 
   useEffect(() => {
     void Promise.resolve().then(fetchDirectoryData);
@@ -100,43 +119,15 @@ export default function LeaderboardClient() {
         rank: 1,
       };
     })
-    .filter((entry) => {
-      // Tier filter
-      if (selectedTier !== "all" && entry.tier !== selectedTier) return false;
-      // Search filter
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchName = entry.full_name.toLowerCase().includes(q);
-        const originalMember = members.find((m) => m.id === entry.id);
-        const matchSkills = originalMember?.skills?.some((s) => s.toLowerCase().includes(q));
-        const matchBio = (originalMember?.bio || "").toLowerCase().includes(q);
-        if (!matchName && !matchSkills && !matchBio) return false;
-      }
-      return true;
-    })
     .sort((a, b) => {
       const scoreA = a.points[selectedTrack] ?? a.points.total;
       const scoreB = b.points[selectedTrack] ?? b.points.total;
       return scoreB - scoreA;
     })
-    .map((entry, idx) => ({ ...entry, rank: idx + 1 }));
+    .map((entry, idx) => ({ ...entry, rank: (page - 1) * pageSize + idx + 1 }));
 
   // Directory filtered list
-  const filteredDirectory = members.filter((m) => {
-    if (selectedTier !== "all" && m.tier !== selectedTier) return false;
-    if (selectedTrack !== "total") {
-      const trackScore = m.points?.[selectedTrack] || 0;
-      if (trackScore <= 0) return false;
-    }
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const matchName = m.full_name.toLowerCase().includes(q);
-      const matchSkills = m.skills?.some((s) => s.toLowerCase().includes(q));
-      const matchBio = (m.bio || "").toLowerCase().includes(q);
-      if (!matchName && !matchSkills && !matchBio) return false;
-    }
-    return true;
-  });
+  const filteredDirectory = members;
 
   const getDominantTrackClass = (points?: TrackPoints) => {
     if (!points) return styles.trackPillRes;
@@ -151,7 +142,8 @@ export default function LeaderboardClient() {
     if (found) setSelectedMember(found);
   };
 
-  if (loading && members.length === 0) {
+  // Only show full-screen loader on initial mount when everything is empty
+  if (loading && members.length === 0 && !debouncedSearch && selectedTrack === "total" && selectedTier === "all" && page === 1) {
     return <MemberLoading message="Loading student leaderboard & rankings…" />;
   }
 
@@ -235,7 +227,11 @@ export default function LeaderboardClient() {
         {/* Search & Tier Controls */}
         <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
           <div className={styles.searchBox}>
-            <MemberIcon name="filter" size={14} />
+            {isSearching ? (
+              <div className={styles.searchSpinner} />
+            ) : (
+              <MemberIcon name="filter" size={14} />
+            )}
             <input
               type="text"
               placeholder="Search by name, skill, or bio..."
@@ -243,6 +239,24 @@ export default function LeaderboardClient() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className={styles.searchInput}
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#656570",
+                  cursor: "pointer",
+                  padding: "0 4px",
+                  fontSize: "12px",
+                  lineHeight: 1,
+                }}
+                title="Clear search"
+              >
+                ✕
+              </button>
+            )}
           </div>
 
           <select
@@ -264,6 +278,7 @@ export default function LeaderboardClient() {
         <>
           {/* Full Rankings Table */}
           <section className={styles.tableCard} aria-label="Ecosystem Rankings List">
+            <LoadingBar loading={loading} />
             <div className={styles.tableHeader}>
               <span>RANK</span>
               <span>MEMBER</span>
@@ -273,8 +288,19 @@ export default function LeaderboardClient() {
               <span style={{ textAlign: "right" }}>PROFILE</span>
             </div>
 
-            <div className={styles.tableBody}>
-              {sortedLeaderboard.length === 0 ? (
+            <div
+              className={styles.tableBody}
+              style={{
+                opacity: loading && members.length > 0 ? 0.65 : 1,
+                transition: "opacity 0.2s ease",
+              }}
+            >
+              {loading && members.length === 0 ? (
+                <div style={{ padding: "48px 24px", textAlign: "center", color: "#8c8c98", fontSize: "0.85rem" }}>
+                  <div className={styles.searchSpinner} style={{ margin: "0 auto 12px" }} />
+                  <span>Loading leaderboard rankings…</span>
+                </div>
+              ) : sortedLeaderboard.length === 0 ? (
                 <div style={{ padding: "48px 24px", textAlign: "center", color: "#8c8c98", fontSize: "0.85rem" }}>
                   No members found on the leaderboard matching your search or filters.
                 </div>
@@ -351,106 +377,151 @@ export default function LeaderboardClient() {
               )}
             </div>
           </section>
+
+          {/* Reusable Pagination */}
+          <PaginationBar
+            currentPage={page}
+            totalItems={totalCount}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(newSize) => {
+              setPageSize(newSize);
+              setPage(1);
+            }}
+            pageSizeOptions={[20, 50]}
+            itemLabel="members"
+            disabled={loading}
+          />
         </>
       )}
 
       {/* VIEW MODE 2: BROWSE DIRECTORY */}
       {viewMode === "DIRECTORY" && (
-        <section className={styles.directoryGrid} aria-label="Student Member Directory">
-          {filteredDirectory.length === 0 ? (
-            <div className={styles.tableCard} style={{ gridColumn: "1 / -1", padding: "48px 24px", textAlign: "center", color: "#8c8c98", fontSize: "0.85rem" }}>
-              No student profiles found matching your search or filters.
-            </div>
-          ) : (
-            filteredDirectory.map((member) => (
-              <article
-                key={member.id || member.email}
-                className={styles.memberCard}
-                onClick={() => setSelectedMember(member)}
-              >
-                {/* Card Top: Avatar & Name */}
-                <div className={styles.memberCardTop}>
-                  <div className={styles.memberCardHeader}>
-                    <UserAvatar
-                      src={member.avatar_url}
-                      name={member.full_name}
-                      className={styles.cardAvatar}
-                    />
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                        <h2 style={{ fontSize: "0.96rem", fontWeight: "800", color: "#ffffff", margin: 0 }}>
-                          {member.full_name}
-                        </h2>
-                        {member.is_verified && (
-                          <span style={{ color: "#5865F2", fontSize: "0.8rem" }} title="Verified Discord Member">
-                            ✓
-                          </span>
-                        )}
+        <>
+          <LoadingBar loading={loading} />
+          <section
+            className={styles.directoryGrid}
+            aria-label="Student Member Directory"
+            style={{
+              opacity: loading && members.length > 0 ? 0.65 : 1,
+              transition: "opacity 0.2s ease",
+            }}
+          >
+            {loading && members.length === 0 ? (
+              <div className={styles.tableCard} style={{ gridColumn: "1 / -1", padding: "48px 24px", textAlign: "center", color: "#8c8c98", fontSize: "0.85rem" }}>
+                <div className={styles.searchSpinner} style={{ margin: "0 auto 12px" }} />
+                <span>Searching student member directory…</span>
+              </div>
+            ) : filteredDirectory.length === 0 ? (
+              <div className={styles.tableCard} style={{ gridColumn: "1 / -1", padding: "48px 24px", textAlign: "center", color: "#8c8c98", fontSize: "0.85rem" }}>
+                No student profiles found matching your search or filters.
+              </div>
+            ) : (
+              filteredDirectory.map((member) => (
+                <article
+                  key={member.id || member.email}
+                  className={styles.memberCard}
+                  onClick={() => setSelectedMember(member)}
+                >
+                  {/* Card Top: Avatar & Name */}
+                  <div className={styles.memberCardTop}>
+                    <div className={styles.memberCardHeader}>
+                      <UserAvatar
+                        src={member.avatar_url}
+                        name={member.full_name}
+                        className={styles.cardAvatar}
+                      />
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <h2 style={{ fontSize: "0.96rem", fontWeight: "800", color: "#ffffff", margin: 0 }}>
+                            {member.full_name}
+                          </h2>
+                          {member.is_verified && (
+                            <span style={{ color: "#5865F2", fontSize: "0.8rem" }} title="Verified Discord Member">
+                              ✓
+                            </span>
+                          )}
+                        </div>
+                        <span style={{ fontSize: "0.68rem", color: "#8c8c98" }}>
+                          Batch &apos;{member.batch_year ? String(member.batch_year).slice(-2) : "24"} • {member.tier?.toUpperCase() || "MEMBER"}
+                        </span>
                       </div>
-                      <span style={{ fontSize: "0.68rem", color: "#8c8c98" }}>
-                        Batch &apos;{member.batch_year ? String(member.batch_year).slice(-2) : "24"} • {member.tier?.toUpperCase() || "MEMBER"}
-                      </span>
                     </div>
+
+                    <span className={getDominantTrackClass(member.points)}>
+                      {member.points?.total || 0} PTS
+                    </span>
                   </div>
 
-                  <span className={getDominantTrackClass(member.points)}>
-                    {member.points?.total || 0} PTS
-                  </span>
-                </div>
+                  {/* Bio */}
+                  <p className={styles.cardBio}>
+                    {member.bio || "Active contributor and project builder in Reinforce SST guild."}
+                  </p>
 
-                {/* Bio */}
-                <p className={styles.cardBio}>
-                  {member.bio || "Active contributor and project builder in Reinforce SST guild."}
-                </p>
-
-                {/* Skills Tags */}
-                <div className={styles.skillsRow}>
-                  {member.skills?.slice(0, 4).map((skill, idx) => (
-                    <span key={idx} className={styles.skillPill}>
-                      {skill}
-                    </span>
-                  ))}
-                  {(member.skills?.length || 0) > 4 && (
-                    <span className={styles.skillPill}>
-                      +{(member.skills?.length || 0) - 4}
-                    </span>
-                  )}
-                </div>
-
-                {/* Card Footer: Social Links & Action */}
-                <div className={styles.cardFooter}>
-                  <div className={styles.cardSocialLinks}>
-                    {member.social_links?.github && (
-                      <a
-                        href={member.social_links.github}
-                        target="_blank"
-                        rel="noreferrer"
-                        className={styles.socialIconBtn}
-                        onClick={(e) => e.stopPropagation()}
-                        title="GitHub Profile"
-                      >
-                        <MemberIcon name="github" size={14} />
-                      </a>
-                    )}
-                    {member.social_links?.discord && (
-                      <span className={styles.socialIconBtn} title={`Discord: ${member.social_links.discord}`}>
-                        <MemberIcon name="discord" size={14} />
+                  {/* Skills Tags */}
+                  <div className={styles.skillsRow}>
+                    {member.skills?.slice(0, 4).map((skill, idx) => (
+                      <span key={idx} className={styles.skillPill}>
+                        {skill}
+                      </span>
+                    ))}
+                    {(member.skills?.length || 0) > 4 && (
+                      <span className={styles.skillPill}>
+                        +{(member.skills?.length || 0) - 4}
                       </span>
                     )}
                   </div>
 
-                  <Link
-                    href={`/dashboard/profile?id=${encodeURIComponent(member.id || member.email || "")}`}
-                    className={styles.rowViewProfileBtn}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    VIEW PROFILE →
-                  </Link>
-                </div>
-              </article>
-            ))
-          )}
-        </section>
+                  {/* Card Footer: Social Links & Action */}
+                  <div className={styles.cardFooter}>
+                    <div className={styles.cardSocialLinks}>
+                      {member.social_links?.github && (
+                        <a
+                          href={member.social_links.github}
+                          target="_blank"
+                          rel="noreferrer"
+                          className={styles.socialIconBtn}
+                          onClick={(e) => e.stopPropagation()}
+                          title="GitHub Profile"
+                        >
+                          <MemberIcon name="github" size={14} />
+                        </a>
+                      )}
+                      {member.social_links?.discord && (
+                        <span className={styles.socialIconBtn} title={`Discord: ${member.social_links.discord}`}>
+                          <MemberIcon name="discord" size={14} />
+                        </span>
+                      )}
+                    </div>
+
+                    <Link
+                      href={`/dashboard/profile?id=${encodeURIComponent(member.id || member.email || "")}`}
+                      className={styles.rowViewProfileBtn}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      VIEW PROFILE →
+                    </Link>
+                  </div>
+                </article>
+              ))
+            )}
+          </section>
+
+          {/* Reusable Pagination */}
+          <PaginationBar
+            currentPage={page}
+            totalItems={totalCount}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(newSize) => {
+              setPageSize(newSize);
+              setPage(1);
+            }}
+            pageSizeOptions={[20, 50]}
+            itemLabel="profiles"
+            disabled={loading}
+          />
+        </>
       )}
 
 

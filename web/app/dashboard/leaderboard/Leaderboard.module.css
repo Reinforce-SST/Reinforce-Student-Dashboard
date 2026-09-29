@@ -166,6 +166,22 @@
   color: #656570;
 }
 
+.searchSpinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #2e2e38;
+  border-top-color: var(--brand, #E5B731);
+  border-radius: 50%;
+  animation: searchSpin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes searchSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* ==========================================================================
    Top 3 Podium Section
    ========================================================================== */
