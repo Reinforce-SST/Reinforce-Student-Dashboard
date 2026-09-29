@@ -10,6 +10,7 @@ resolve through the same lazy path.
 
 import urllib.parse
 import uuid
+from pathlib import Path
 
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
@@ -17,6 +18,22 @@ from firebase_admin import credentials, firestore, storage
 from app.services.config import get_settings
 
 _app = None
+
+
+def _resolve_credentials_path(path_str: str) -> str:
+    cleaned = (path_str or "").strip().strip("'\"").strip()
+    candidate = Path(cleaned)
+    if candidate.is_file():
+        return str(candidate)
+
+    server_dir = Path(__file__).resolve().parent.parent.parent
+    if (server_dir / cleaned).is_file():
+        return str(server_dir / cleaned)
+    if (server_dir / "serviceAccountKey.json").is_file():
+        return str(server_dir / "serviceAccountKey.json")
+    if (server_dir / "firebase_credentials.json").is_file():
+        return str(server_dir / "firebase_credentials.json")
+    return cleaned
 
 
 def ensure_app():
@@ -27,7 +44,8 @@ def ensure_app():
             _app = firebase_admin.get_app()
         else:
             settings = get_settings()
-            cred = credentials.Certificate(settings.firebase_credentials_path)
+            cred_path = _resolve_credentials_path(settings.firebase_credentials_path)
+            cred = credentials.Certificate(cred_path)
             _app = firebase_admin.initialize_app(
                 cred, {"storageBucket": settings.firebase_storage_bucket}
             )
