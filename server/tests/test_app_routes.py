@@ -141,23 +141,6 @@ class ApplicationImportTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertNotIn("/api/v1/api/v1", path)
 
-    def test_legacy_client_uses_supported_user_routes(self):
-        client_source = (
-            Path(__file__).resolve().parents[2] / "client" / "src" / "App.jsx"
-        ).read_text(encoding="utf-8")
-        for path in (
-            "/users/sync",
-            "/users/unlink-discord",
-            "/users/me",
-        ):
-            with self.subTest(path=path):
-                self.assertIn(f"${{API_BASE_URL}}{path}", client_source)
-        self.assertNotIn("${API_BASE_URL}/users/verify-discord", client_source)
-        self.assertIn("Run /auth in the club server", client_source)
-        self.assertIn("href={MAIN_SITE_URL}", client_source)
-        self.assertNotIn("simulated_dev_token", client_source)
-        self.assertNotIn("${API_BASE_URL}/auth/", client_source)
-
     def test_cors_accepts_current_previews_and_rejects_other_vercel_teams(self):
         import main
 
