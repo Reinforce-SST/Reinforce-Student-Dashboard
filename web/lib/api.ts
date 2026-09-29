@@ -252,10 +252,13 @@ export type TicketSummary = {
   status: TicketStatus;
   priority?: "low" | "medium" | "high" | "urgent";
   created_by_uid?: string;
+  assigned_to_uid?: string | null;
   spg_id?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
   thread_url?: string | null;
+  created_by_name?: string | null;
+  assigned_to_name?: string | null;
 };
 
 export type TicketListResponse = {
@@ -269,7 +272,16 @@ export type ApiTicketDetail = TicketSummary & {
   fields?: Record<string, unknown>;
   close_reason?: string | null;
   closed_at?: string | null;
-  discord_meta?: { thread_url?: string | null } | null;
+  discord_meta?: {
+    thread_url?: string | null;
+    guild_id?: string | null;
+    channel_id?: string | null;
+    thread_id?: string | null;
+  } | null;
+  created_by_email?: string | null;
+  created_by_avatar?: string | null;
+  assigned_to_email?: string | null;
+  assigned_to_avatar?: string | null;
 };
 
 export type TicketCreateRequest = {
@@ -317,25 +329,90 @@ const FIELD_ORDER: Partial<Record<TicketCategory, string[]>> = {
     "Roadmap & Outcomes",
   ],
   support: ["Subject", "Details"],
-  feedback: ["Suggestion Topic", "Feedback Details", "Feedback Topic", "Comments", "Topic"],
+  feedback: ["Feedback Topic", "Feedback Details", "Comments", "Topic"],
   misc: ["Subject", "Details"],
   report: ["Incident Summary", "Report Details"],
 };
 
 function ticketFields(category: TicketCategory, fields: Record<string, unknown>) {
   const order = FIELD_ORDER[category] ?? [];
-  return Object.entries(fields)
-    .sort(([left], [right]) => {
-      const leftIndex = order.indexOf(left);
-      const rightIndex = order.indexOf(right);
-      if (leftIndex !== -1 || rightIndex !== -1) {
-        if (leftIndex === -1) return 1;
-        if (rightIndex === -1) return -1;
-        return leftIndex - rightIndex;
+  const internalKeysToSkip = new Set([
+    "leader_uid",
+    "member_uids",
+    "duration_days",
+    "frequency_days",
+    "prerequisites",
+    "rough_roadmap",
+    "learning_outcomes",
+    "topic",
+  ]);
+
+  const rawEntries: [string, unknown][] = [];
+  for (const [key, val] of Object.entries(fields)) {
+    if (val === undefined || val === null) continue;
+    const strVal = String(val).trim();
+    if (!strVal || strVal === "None specified" || strVal === "None") continue;
+
+    // Skip redundant raw snake_case keys if Title Case key exists
+    if (
+      internalKeysToSkip.has(key.toLowerCase()) &&
+      Object.keys(fields).some(
+        (k) => k !== key && k.toLowerCase().replace(/[^a-z0-9]/g, "") === key.replace(/[^a-z0-9]/g, "")
+      )
+    ) {
+      continue;
+    }
+    rawEntries.push([key, strVal]);
+  }
+
+  // Sort according to preferred order
+  rawEntries.sort(([left], [right]) => {
+    const leftIndex = order.indexOf(left);
+    const rightIndex = order.indexOf(right);
+    if (leftIndex !== -1 || rightIndex !== -1) {
+      if (leftIndex === -1) return 1;
+      if (rightIndex === -1) return -1;
+      return leftIndex - rightIndex;
+    }
+    return left.localeCompare(right);
+  });
+
+  // Deduplicate synonym labels or duplicate values
+  const seenValues = new Map<string, string>();
+  const deduped: { label: string; value: string }[] = [];
+
+  for (const [label, val] of rawEntries) {
+    const strVal = String(val).trim();
+    // Synonym mapping:
+    // Suggestion Topic <-> Feedback Topic
+    // Feedback Details <-> Comments
+    if (label === "Suggestion Topic" && fields["Feedback Topic"] !== undefined && String(fields["Feedback Topic"]).trim() === strVal) {
+      continue;
+    }
+    if (label === "Comments" && fields["Feedback Details"] !== undefined && String(fields["Feedback Details"]).trim() === strVal) {
+      continue;
+    }
+    if (label === "Feedback Topic" && fields["Suggestion Topic"] !== undefined && String(fields["Suggestion Topic"]).trim() === strVal && deduped.some((d) => d.label === "Suggestion Topic")) {
+      continue;
+    }
+
+    if (seenValues.has(strVal)) {
+      const prevLabel = seenValues.get(strVal)!;
+      if (
+        (prevLabel.includes("Topic") && label.includes("Topic")) ||
+        (prevLabel.includes("Comment") && label.includes("Detail")) ||
+        (prevLabel.includes("Detail") && label.includes("Comment")) ||
+        prevLabel.toLowerCase() === label.toLowerCase()
+      ) {
+        continue;
       }
-      return left.localeCompare(right);
-    })
-    .map(([label, value]) => ({ label, value: String(value) }));
+    }
+
+    seenValues.set(strVal, label);
+    deduped.push({ label, value: strVal });
+  }
+
+  return deduped;
 }
 
 /* --------------------------------------------------------------- requests */
@@ -394,10 +471,18 @@ export const api = {
         ...detail,
         description: detail.description ?? "",
         fields: ticketFields(detail.category, detail.fields ?? {}),
+        created_by_name: detail.created_by_name ?? null,
+        created_by_email: detail.created_by_email ?? null,
+        created_by_avatar: detail.created_by_avatar ?? null,
+        assigned_to_name: detail.assigned_to_name ?? null,
+        assigned_to_email: detail.assigned_to_email ?? null,
+        assigned_to_avatar: detail.assigned_to_avatar ?? null,
       },
-      messages: messages.map(message => ({
+      messages: messages.map((message) => ({
         ...message,
-        sender_name: message.sender_name?.trim() || (message.sender_role === "admin" || message.sender_role === "lead" ? "Club team" : "Member"),
+        sender_name:
+          message.sender_name?.trim() ||
+          (message.sender_role === "admin" || message.sender_role === "lead" ? "Club team" : "Member"),
       })),
     };
   },
@@ -798,6 +883,21 @@ export const api = {
     if (approval.proposition) body.set("proposition", approval.proposition);
     return request<ApiTicketDetail>(`/tickets/${encodeURIComponent(ticketId)}/approve-spg`, token, { method: "POST", body });
   },
+  postTicketMessage: (token: string, ticketId: string, content: string, attachments: string[] = []) =>
+    request<ApiTicketMessage>(`/tickets/${encodeURIComponent(ticketId)}/messages`, token, {
+      method: "POST",
+      body: JSON.stringify({ content, attachments }),
+    }),
+  adminAssignTicket: (token: string, ticketId: string, assignedToUid: string) =>
+    request<ApiTicketDetail>(`/tickets/${encodeURIComponent(ticketId)}/assign`, token, {
+      method: "PATCH",
+      body: JSON.stringify({ assigned_to_uid: assignedToUid }),
+    }),
+  closeTicket: (token: string, ticketId: string, closeReason?: string) =>
+    request<ApiTicketDetail>(`/tickets/${encodeURIComponent(ticketId)}/close`, token, {
+      method: "POST",
+      body: JSON.stringify({ close_reason: closeReason || null }),
+    }),
 };
 
 /**
@@ -834,6 +934,26 @@ export const STATUS_LABEL: Record<TicketStatus, string> = {
 };
 
 export type TicketThread = {
-  ticket: TicketSummary & { description: string; fields: { label: string; value: string }[]; close_reason?: string | null; closed_at?: string | null };
-  messages: { id: string; sender_name: string; sender_role: string; content: string; attachments: string[]; timestamp?: string | null }[];
+  ticket: TicketSummary & {
+    description: string;
+    fields: { label: string; value: string }[];
+    close_reason?: string | null;
+    closed_at?: string | null;
+    created_by_name?: string | null;
+    created_by_email?: string | null;
+    created_by_avatar?: string | null;
+    assigned_to_name?: string | null;
+    assigned_to_email?: string | null;
+    assigned_to_avatar?: string | null;
+    discord_meta?: ApiTicketDetail["discord_meta"];
+  };
+  messages: {
+    id: string;
+    sender_name: string;
+    sender_role: string;
+    content: string;
+    attachments: string[];
+    timestamp?: string | null;
+    source?: string;
+  }[];
 };

@@ -129,8 +129,31 @@ def _to_discord_meta(data: Dict[str, Any]) -> Optional[DiscordMeta]:
     return None
 
 
+def _get_user_info(uid: Optional[str]) -> Dict[str, Optional[str]]:
+    if not uid:
+        return {"name": None, "email": None, "avatar_url": None}
+    try:
+        user_doc = db.collection(USERS_COLLECTION).document(uid).get()
+        if user_doc and user_doc.exists:
+            u_data = user_doc.to_dict() or {}
+            return {
+                "name": u_data.get("full_name") or u_data.get("name"),
+                "email": u_data.get("email"),
+                "avatar_url": u_data.get("avatar_url") or u_data.get("photo_url"),
+            }
+    except Exception as exc:
+        logger.debug("Failed to fetch user info for uid %s: %s", uid, exc)
+    return {"name": None, "email": None, "avatar_url": None}
+
+
 def _to_ticket_summary(doc_id: str, data: Dict[str, Any]) -> TicketSummary:
     discord_meta = _to_discord_meta(data)
+    legacy_creator = data.get("created_by") if isinstance(data.get("created_by"), dict) else {}
+    created_by_name = (
+        data.get("created_by_name")
+        or legacy_creator.get("username")
+        or legacy_creator.get("name")
+    )
     return TicketSummary(
         id=doc_id,
         category=data.get("category") or TicketCategory.MISC,
@@ -143,11 +166,15 @@ def _to_ticket_summary(doc_id: str, data: Dict[str, Any]) -> TicketSummary:
         created_at=iso_str(data.get("created_at")),
         updated_at=iso_str(data.get("updated_at")),
         thread_url=discord_meta.thread_url if discord_meta else None,
+        created_by_name=created_by_name,
+        assigned_to_name=data.get("assigned_to_name"),
     )
 
 
 def _to_ticket_detail(doc_id: str, data: Dict[str, Any]) -> TicketDetail:
     summary = _to_ticket_summary(doc_id, data)
+    creator_info = _get_user_info(summary.created_by_uid)
+    assigned_info = _get_user_info(summary.assigned_to_uid)
     return TicketDetail(
         **summary.model_dump(),
         description=data.get("description"),
@@ -156,6 +183,12 @@ def _to_ticket_detail(doc_id: str, data: Dict[str, Any]) -> TicketDetail:
         close_reason=data.get("close_reason"),
         closed_at=iso_str(data.get("closed_at")),
         discord_meta=_to_discord_meta(data),
+        created_by_name=summary.created_by_name or creator_info["name"],
+        created_by_email=data.get("created_by_email") or creator_info["email"],
+        created_by_avatar=data.get("created_by_avatar") or creator_info["avatar_url"],
+        assigned_to_name=summary.assigned_to_name or assigned_info["name"],
+        assigned_to_email=data.get("assigned_to_email") or assigned_info["email"],
+        assigned_to_avatar=data.get("assigned_to_avatar") or assigned_info["avatar_url"],
     )
 
 
@@ -427,6 +460,10 @@ def create_ticket(
     else:
         validated_fields = ticket_in.fields
 
+    creator_info = _get_user_info(uid)
+    creator_name = creator_info["name"] or current_user.get("name") or current_user.get("full_name")
+    creator_email = creator_info["email"] or current_user.get("email")
+
     ticket_doc: Dict[str, Any] = {
         "id": ticket_id,
         "category": ticket_in.category.value,
@@ -437,7 +474,10 @@ def create_ticket(
         "spg_id": ticket_in.spg_id,
         "fields": validated_fields,
         "created_by_uid": uid,
+        "created_by_name": creator_name,
+        "created_by_email": creator_email,
         "assigned_to_uid": None,
+        "assigned_to_name": None,
         "closed_by_uid": None,
         "close_reason": None,
         "closed_at": None,
@@ -896,8 +936,11 @@ def assign_ticket(
 
     data = doc.to_dict() or {}
     now = now_iso()
+    admin_info = _get_user_info(payload.assigned_to_uid)
     updates: Dict[str, Any] = {
         "assigned_to_uid": payload.assigned_to_uid,
+        "assigned_to_name": admin_info["name"],
+        "assigned_to_email": admin_info["email"],
         "updated_at": now,
     }
     # Auto-transition open tickets to in_progress

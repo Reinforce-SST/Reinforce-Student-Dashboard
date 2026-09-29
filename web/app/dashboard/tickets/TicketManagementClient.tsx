@@ -561,10 +561,8 @@ export default function TicketManagementClient() {
       };
     } else if (selectedCategory === "feedback") {
       fieldsObj = {
-        "Suggestion Topic": feedbackTopic.trim() || formTitle.trim() || "General Feedback",
-        "Feedback Details": feedbackComments.trim() || formDescription.trim(),
         "Feedback Topic": feedbackTopic.trim() || formTitle.trim() || "General Feedback",
-        Comments: feedbackComments.trim() || formDescription.trim(),
+        "Feedback Details": feedbackComments.trim() || formDescription.trim(),
       };
     } else if (selectedCategory === "report") {
       fieldsObj = {
