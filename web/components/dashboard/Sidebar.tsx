@@ -137,27 +137,6 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               })}
             </nav>
           </div>
-
-          {/* Admin Mode Badge & Switch to Student Footer */}
-          <div className={styles.adminStatusCard}>
-            <div className={styles.adminStatusHeader}>
-              <span className={styles.adminBadge}>⚡ ADMIN CONSOLE</span>
-              <span className={styles.onlineDot} title="Authorized Admin" />
-            </div>
-            <p className={styles.adminSubtitle}>
-              {profile?.full_name || "Lead Admin"}
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setAdminMode(false);
-                router.push("/dashboard");
-              }}
-              className={styles.exitAdminBtn}
-            >
-              ← Student Dashboard
-            </button>
-          </div>
         </>
       ) : (
         <>
