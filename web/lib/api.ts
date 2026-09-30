@@ -432,7 +432,7 @@ export const api = {
   listIdeas: (
     search = "",
     page = 1,
-    pageSize = 12,
+    pageSize = 20,
     track?: string,
     difficulty?: string,
     sortBy?: string
