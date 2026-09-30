@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { api, type EventSummaryItem, type EventDocument } from "@/lib/api";
 import { getBannerPresentation, isBannerDestination } from "@/lib/dashboardData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
@@ -42,6 +42,10 @@ export default function AdminBannerEditPanel({
   const [loadingList, setLoadingList] = useState(false);
   const [selectedId, setSelectedId] = useState<string>("");
   const [loadingDetail, setLoadingDetail] = useState(false);
+
+  // Search & Filter for List Area
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
 
   // Form State
   const [title, setTitle] = useState("");
@@ -127,6 +131,34 @@ export default function AdminBannerEditPanel({
     };
   }, [selectedId, token]);
 
+  const filteredBanners = useMemo(() => {
+    return banners.filter((b) => {
+      if (filterStatus !== "all" && b.status !== filterStatus) {
+        return false;
+      }
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchTitle = (b.title || "").toLowerCase().includes(q);
+        const matchBadge = (b.banner_badge_text || "").toLowerCase().includes(q);
+        return matchTitle || matchBadge;
+      }
+      return true;
+    });
+  }, [banners, filterStatus, searchQuery]);
+
+  const getStatusBadgeStyle = (st?: string) => {
+    switch (st?.toLowerCase()) {
+      case "published":
+        return { background: "rgba(34, 197, 94, 0.12)", color: "#22c55e", border: "1px solid rgba(34, 197, 94, 0.3)" };
+      case "draft":
+        return { background: "rgba(234, 179, 8, 0.12)", color: "#eab308", border: "1px solid rgba(234, 179, 8, 0.3)" };
+      case "archived":
+        return { background: "rgba(142, 142, 147, 0.12)", color: "#8e8e93", border: "1px solid rgba(142, 142, 147, 0.3)" };
+      default:
+        return { background: "rgba(142, 142, 147, 0.12)", color: "#8e8e93", border: "1px solid rgba(142, 142, 147, 0.3)" };
+    }
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -210,41 +242,176 @@ export default function AdminBannerEditPanel({
     }
   };
 
-  return (
-    <div className={styles.managerGrid}>
-      {/* Left: Edit Form */}
+  // VIEW 1: LIST BANNER AREA (When no banner is selected for editing)
+  if (!selectedId) {
+    return (
       <div className={styles.card}>
         <div className={styles.cardHeader}>
           <div>
             <h3 className={styles.cardTitle}>
-              <MemberIcon name="edit" size={18} />
-              Edit Existing Dashboard Hero Banner
+              <MemberIcon name="image" size={18} />
+              Existing Dashboard Hero Banners Directory
             </h3>
             <div className={styles.cardSubtitle}>
-              Select any live or past hero banner to modify its image, announcement text, CTA button, or dates.
+              Browse, inspect, and select any live or past hero banner to modify its image, announcement text, CTA button, or dates.
             </div>
+          </div>
+          <button
+            type="button"
+            onClick={loadBanners}
+            disabled={loadingList}
+            className={styles.viewActionBtn}
+            title="Refresh banners list"
+          >
+            <MemberIcon name="lightning" size={14} />
+            {loadingList ? "Refreshing…" : "Refresh List"}
+          </button>
+        </div>
+
+        {errorMessage && (
+          <div className={styles.alertError} style={{ marginBottom: "16px" }}>
+            <MemberIcon name="alert-circle" size={18} />
+            {errorMessage}
+          </div>
+        )}
+
+        {/* Toolbar: Search & Filter Pills */}
+        <div className={styles.eventListToolbar}>
+          <input
+            type="search"
+            placeholder="Search banners by title or badge…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className={styles.eventSearchInput}
+          />
+
+          <div className={styles.statusFilterPills}>
+            {["all", "published", "draft", "archived"].map((st) => (
+              <button
+                key={st}
+                type="button"
+                onClick={() => setFilterStatus(st)}
+                className={`${styles.statusFilterPill} ${filterStatus === st ? styles.statusFilterPillActive : ""}`}
+              >
+                {st.toUpperCase()}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Banner Selector */}
-        <div className={styles.formGroup} style={{ marginBottom: "18px" }}>
-          <label className={styles.formLabel}>
-            <span>Select Banner to Edit</span>
-            {loadingList && <span className={styles.formLabelHint}>Loading banners…</span>}
-          </label>
-          <select
-            value={selectedId}
-            onChange={(e) => setSelectedId(e.target.value)}
-            className={styles.formSelect}
-            style={{ fontSize: "14px", padding: "10px 14px", borderColor: selectedId ? "#e5b731" : undefined }}
+        {loadingList ? (
+          <div style={{ textAlign: "center", padding: "48px", color: "#e5b731" }}>
+            Loading existing dashboard hero banners…
+          </div>
+        ) : filteredBanners.length === 0 ? (
+          <div
+            style={{
+              textAlign: "center",
+              padding: "48px 24px",
+              color: "#8e8e93",
+              background: "#141416",
+              borderRadius: "12px",
+              border: "1px dashed #282830",
+            }}
           >
-            <option value="">-- Choose a dashboard banner ({banners.length} available) --</option>
-            {banners.map((b) => (
-              <option key={b.id} value={b.id}>
-                [{b.status?.toUpperCase()}] {b.title}
-              </option>
+            <MemberIcon name="image" size={32} />
+            <p style={{ marginTop: "12px", fontSize: "14px" }}>
+              {searchQuery || filterStatus !== "all"
+                ? "No banners found matching your search and filter criteria."
+                : "No dashboard hero banners created yet."}
+            </p>
+          </div>
+        ) : (
+          <div className={styles.eventListGrid}>
+            {filteredBanners.map((b) => (
+              <article key={b.id} className={styles.eventItemCard}>
+                <div className={styles.eventItemLeft}>
+                  <div className={styles.eventItemTitleRow}>
+                    <span
+                      style={{
+                        fontSize: "10.5px",
+                        fontWeight: 800,
+                        padding: "2px 7px",
+                        borderRadius: "4px",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                        ...getStatusBadgeStyle(b.status),
+                      }}
+                    >
+                      {b.status || "PUBLISHED"}
+                    </span>
+
+                    <h4 className={styles.eventItemTitle}>{b.title}</h4>
+
+                    {b.banner_badge_text && (
+                      <span
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: 700,
+                          color: "#e5b731",
+                          background: "rgba(229, 183, 49, 0.1)",
+                          padding: "2px 6px",
+                          borderRadius: "4px",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        {b.banner_badge_text}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className={styles.eventItemMeta}>
+                    <span className={styles.eventItemMetaSpan}>
+                      <MemberIcon name="clock" size={13} />
+                      {formatBannerDate(b.schedule?.start_time || "")}
+                    </span>
+
+                    {b.banner_cta_text && (
+                      <span className={styles.eventItemMetaSpan}>
+                        CTA: <strong>{b.banner_cta_text}</strong> {b.banner_cta_url ? `(${b.banner_cta_url})` : ""}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className={styles.eventItemActions}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(b.id)}
+                    className={styles.editActionBtn}
+                    title="Edit banner content, CTA, and image"
+                  >
+                    <MemberIcon name="edit" size={13} />
+                    Edit Banner
+                  </button>
+                </div>
+              </article>
             ))}
-          </select>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // VIEW 2: FULL EDIT FORM & LIVE PREVIEW (When a banner is selected)
+  return (
+    <div className={styles.managerGrid}>
+      {/* Left: Edit Form */}
+      <div className={styles.card}>
+        {/* Header Banner: Back to List */}
+        <div className={styles.editingBannerBox}>
+          <div className={styles.editingBannerText}>
+            <button
+              type="button"
+              onClick={() => setSelectedId("")}
+              className={styles.backToListBtn}
+            >
+              ← Back to All Banners
+            </button>
+            <span>
+              <strong>Currently Editing:</strong> {title || "Selected Banner"}
+            </span>
+          </div>
         </div>
 
         {loadingDetail && (
@@ -260,16 +427,7 @@ export default function AdminBannerEditPanel({
           </div>
         )}
 
-        {!selectedId && !loadingDetail && (
-          <div style={{ textAlign: "center", padding: "48px 24px", color: "#8e8e93", background: "#18181b", borderRadius: "10px", border: "1px dashed #2e2e34" }}>
-            <MemberIcon name="image" size={32} />
-            <p style={{ marginTop: "12px", fontSize: "14px" }}>
-              Select a banner from the dropdown above to load and edit its configuration.
-            </p>
-          </div>
-        )}
-
-        {selectedId && !loadingDetail && (
+        {!loadingDetail && (
           <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             {/* Banner Cover Image */}
             <div className={styles.formGroup}>
@@ -425,10 +583,20 @@ export default function AdminBannerEditPanel({
               <span className={styles.formLabelHint}>Leave blank to open default event page.</span>
             </div>
 
-            <button type="submit" disabled={isSubmitting} className={styles.publishBtn}>
-              <MemberIcon name="check" size={16} />
-              {isSubmitting ? "Updating Banner…" : "Update Dashboard Hero Banner"}
-            </button>
+            <div style={{ display: "flex", gap: "12px", marginTop: "8px" }}>
+              <button type="submit" disabled={isSubmitting} className={styles.publishBtn} style={{ flex: 1 }}>
+                <MemberIcon name="check" size={16} />
+                {isSubmitting ? "Updating Banner…" : "Update Dashboard Hero Banner"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedId("")}
+                className={styles.viewActionBtn}
+                style={{ padding: "0 24px" }}
+              >
+                Cancel
+              </button>
+            </div>
           </form>
         )}
       </div>

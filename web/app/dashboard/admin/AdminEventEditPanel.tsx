@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import Link from "next/link";
 import { api, type EventSummaryItem, type EventDocument } from "@/lib/api";
 import { getEventGraduationBatches } from "@/lib/eventsData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
@@ -19,6 +20,25 @@ function formatDateTimeInput(isoStr?: string | null): string {
   }
 }
 
+function formatEventDisplayDate(startStr?: string | null): string {
+  if (!startStr) return "Date TBD";
+  try {
+    const d = new Date(startStr);
+    if (isNaN(d.getTime())) return startStr;
+    return d.toLocaleDateString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  } catch {
+    return startStr;
+  }
+}
+
 export default function AdminEventEditPanel({
   token,
   onSaved,
@@ -30,6 +50,10 @@ export default function AdminEventEditPanel({
   const [loadingList, setLoadingList] = useState(false);
   const [selectedId, setSelectedId] = useState<string>("");
   const [loadingDetail, setLoadingDetail] = useState(false);
+
+  // Search & Filter for List Area
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
 
   // Form State
   const [title, setTitle] = useState("");
@@ -77,7 +101,7 @@ export default function AdminEventEditPanel({
     setLoadingList(true);
     try {
       const res = await api.listEvents(token, { limit: 100 });
-      // Show events (exclude dashboard hero banners)
+      // Exclude dashboard hero banners
       const filtered = (res.events || []).filter(
         (ev) => !ev.event_type?.toLowerCase().includes("banner")
       );
@@ -149,6 +173,24 @@ export default function AdminEventEditPanel({
       active = false;
     };
   }, [selectedId, token]);
+
+  // Filtered list
+  const filteredEvents = useMemo(() => {
+    return events.filter((ev) => {
+      if (filterStatus !== "all" && ev.status !== filterStatus) {
+        return false;
+      }
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchTitle = (ev.title || "").toLowerCase().includes(q);
+        const matchSlug = (ev.slug || "").toLowerCase().includes(q);
+        const matchTrack = (ev.track || "").toLowerCase().includes(q);
+        const matchType = (ev.event_type || "").toLowerCase().includes(q);
+        return matchTitle || matchSlug || matchTrack || matchType;
+      }
+      return true;
+    });
+  }, [events, filterStatus, searchQuery]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -267,46 +309,44 @@ export default function AdminEventEditPanel({
     }
   };
 
+  const getStatusBadgeStyle = (st?: string) => {
+    switch (st?.toLowerCase()) {
+      case "published":
+        return { background: "rgba(34, 197, 94, 0.12)", color: "#22c55e", border: "1px solid rgba(34, 197, 94, 0.3)" };
+      case "ongoing":
+        return { background: "rgba(56, 189, 248, 0.12)", color: "#38bdf8", border: "1px solid rgba(56, 189, 248, 0.3)" };
+      case "draft":
+        return { background: "rgba(234, 179, 8, 0.12)", color: "#eab308", border: "1px solid rgba(234, 179, 8, 0.3)" };
+      case "completed":
+        return { background: "rgba(168, 85, 247, 0.12)", color: "#a855f7", border: "1px solid rgba(168, 85, 247, 0.3)" };
+      default:
+        return { background: "rgba(142, 142, 147, 0.12)", color: "#8e8e93", border: "1px solid rgba(142, 142, 147, 0.3)" };
+    }
+  };
+
   return (
     <div className={styles.card}>
       <div className={styles.cardHeader}>
         <div>
           <h3 className={styles.cardTitle}>
-            <MemberIcon name="edit" size={18} />
-            Edit Existing Club Event
+            <MemberIcon name="calendar" size={18} />
+            Existing Club Events Directory
           </h3>
           <div className={styles.cardSubtitle}>
-            Select any published, ongoing, or draft event to modify its schedule, agenda, venue, capacity, or banner.
+            Browse, inspect, and select any club event to modify its configuration, schedule, agenda, or banner.
           </div>
         </div>
-      </div>
-
-      {/* Event Picker Dropdown */}
-      <div className={styles.formGroup} style={{ marginBottom: "20px" }}>
-        <label className={styles.formLabel}>
-          <span>Select Event to Edit</span>
-          {loadingList && <span className={styles.formLabelHint}>Refreshing events list…</span>}
-        </label>
-        <select
-          value={selectedId}
-          onChange={(e) => setSelectedId(e.target.value)}
-          className={styles.formSelect}
-          style={{ fontSize: "14.5px", padding: "10px 14px", borderColor: selectedId ? "#e5b731" : undefined }}
+        <button
+          type="button"
+          onClick={loadEvents}
+          disabled={loadingList}
+          className={styles.viewActionBtn}
+          title="Refresh event list"
         >
-          <option value="">-- Choose an event ({events.length} available) --</option>
-          {events.map((ev) => (
-            <option key={ev.id} value={ev.id}>
-              [{ev.status?.toUpperCase()}] {ev.title} ({ev.track?.toUpperCase()} · {ev.event_type})
-            </option>
-          ))}
-        </select>
+          <MemberIcon name="lightning" size={14} />
+          {loadingList ? "Refreshing…" : "Refresh List"}
+        </button>
       </div>
-
-      {loadingDetail && (
-        <div style={{ textAlign: "center", padding: "40px", color: "#e5b731" }}>
-          Loading event details…
-        </div>
-      )}
 
       {errorMessage && (
         <div className={styles.alertError} style={{ marginBottom: "16px" }}>
@@ -315,361 +355,547 @@ export default function AdminEventEditPanel({
         </div>
       )}
 
-      {!selectedId && !loadingDetail && (
-        <div style={{ textAlign: "center", padding: "48px 24px", color: "#8e8e93", background: "#18181b", borderRadius: "10px", border: "1px dashed #2e2e34" }}>
-          <MemberIcon name="calendar" size={32} />
-          <p style={{ marginTop: "12px", fontSize: "14px" }}>
-            Select an event from the dropdown above to load and edit its full configuration.
-          </p>
-        </div>
-      )}
-
-      {selectedId && !loadingDetail && (
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
-          {/* Section 1: General Info */}
-          <div className={styles.formSectionHeading}>1. General Information & Status</div>
-          <div className={styles.formRow}>
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Event Title</label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className={styles.formInput}
-                required
-              />
-            </div>
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>URL Slug</label>
-              <input
-                type="text"
-                value={slug}
-                onChange={(e) => setSlug(e.target.value)}
-                className={styles.formInput}
-              />
-            </div>
-          </div>
-
-          <div className={styles.formRowThree}>
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Event Type</label>
-              <input
-                type="text"
-                value={eventType}
-                onChange={(e) => setEventType(e.target.value)}
-                placeholder="e.g. Workshop, Hackathon, Meetup"
-                className={styles.formInput}
-                required
-              />
-            </div>
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Track</label>
-              <select
-                value={track}
-                onChange={(e) => setTrack(e.target.value)}
-                className={styles.formSelect}
-              >
-                <option value="research">Research</option>
-                <option value="product">Product</option>
-                <option value="kaggle">Kaggle</option>
-                <option value="misc">Misc</option>
-                <option value="all">All</option>
-              </select>
-            </div>
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Lifecycle Status</label>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className={styles.formSelect}
-              >
-                <option value="published">Published (Visible)</option>
-                <option value="draft">Draft (Admin Only)</option>
-                <option value="registration_closed">Registration Closed</option>
-                <option value="ongoing">Ongoing</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
-                <option value="archived">Archived</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Section 2: Date, Time & Venue */}
-          <div className={styles.formSectionHeading}>2. Schedule & Venue</div>
-          <div className={styles.formRowThree}>
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Start Date & Time</label>
-              <input
-                type="datetime-local"
-                value={startDateTime}
-                onChange={(e) => setStartDateTime(e.target.value)}
-                className={styles.formInput}
-                required
-              />
-            </div>
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>End Date & Time</label>
-              <input
-                type="datetime-local"
-                value={endDateTime}
-                onChange={(e) => setEndDateTime(e.target.value)}
-                className={styles.formInput}
-              />
-            </div>
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Registration Deadline</label>
-              <input
-                type="datetime-local"
-                value={regDeadline}
-                onChange={(e) => setRegDeadline(e.target.value)}
-                className={styles.formInput}
-              />
-            </div>
-          </div>
-
-          <div className={styles.formRowThree}>
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Format</label>
-              <select
-                value={format}
-                onChange={(e) => setFormat(e.target.value)}
-                className={styles.formSelect}
-              >
-                <option value="offline">Offline (Campus)</option>
-                <option value="online">Online (Discord / Meet)</option>
-                <option value="hybrid">Hybrid</option>
-              </select>
-            </div>
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Venue Name</label>
-              <input
-                type="text"
-                value={venueName}
-                onChange={(e) => setVenueName(e.target.value)}
-                placeholder="e.g. Macro Campus / Main Audi"
-                className={styles.formInput}
-              />
-            </div>
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Room / Meeting Link</label>
-              <input
-                type="text"
-                value={format === "online" ? meetingUrl : room}
-                onChange={(e) => (format === "online" ? setMeetingUrl(e.target.value) : setRoom(e.target.value))}
-                placeholder={format === "online" ? "https://meet.google.com/..." : "Classroom 204"}
-                className={styles.formInput}
-              />
-            </div>
-          </div>
-
-          {/* Section 3: Agenda & Description */}
-          <div className={styles.formSectionHeading}>3. Description & Curriculum</div>
-          <div className={styles.formGroup}>
-            <label className={styles.formLabel}>Summary Description</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-              className={styles.formTextarea}
-              required
+      {/* VIEW 1: LIST EVENT AREA (When no event is selected for editing) */}
+      {!selectedId && (
+        <div>
+          {/* Toolbar: Search & Filter Pills */}
+          <div className={styles.eventListToolbar}>
+            <input
+              type="search"
+              placeholder="Search events by title, slug, track, or type…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className={styles.eventSearchInput}
             />
-          </div>
 
-          <div className={styles.formGroup}>
-            <label className={styles.formLabel}>
-              <span>Full Specifications & Curriculum (Markdown)</span>
-            </label>
-            <textarea
-              value={detailedInfo}
-              onChange={(e) => setDetailedInfo(e.target.value)}
-              rows={6}
-              className={styles.formTextarea}
-              placeholder="Detailed schedule, prerequisites, submission rules..."
-            />
-          </div>
-
-          {/* Section 4: Eligibility & Capacity */}
-          <div className={styles.formSectionHeading}>4. Eligibility & Team Settings</div>
-          <div className={styles.formRow}>
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Access Scope</label>
-              <select
-                value={accessScope}
-                onChange={(e) => setAccessScope(e.target.value)}
-                className={styles.formSelect}
-              >
-                <option value="open_to_all">Open to All Students</option>
-                <option value="members_only">Club Members Only</option>
-              </select>
-            </div>
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Participation Mode</label>
-              <select
-                value={participationMode}
-                onChange={(e) => setParticipationMode(e.target.value as "solo" | "team")}
-                className={styles.formSelect}
-              >
-                <option value="solo">Solo (Individual)</option>
-                <option value="team">Team Based</option>
-              </select>
-            </div>
-          </div>
-
-          <div className={styles.formGroup}>
-            <label className={styles.formLabel}>Eligible Graduation Batches</label>
-            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "6px" }}>
-              {allGraduationBatches.map((batch) => (
-                <label
-                  key={batch}
-                  className={`${styles.checkboxPill} ${eligibleBatches.includes(batch) ? styles.checkboxPillActive : ""}`}
+            <div className={styles.statusFilterPills}>
+              {["all", "published", "draft", "ongoing", "completed", "cancelled"].map((st) => (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => setFilterStatus(st)}
+                  className={`${styles.statusFilterPill} ${filterStatus === st ? styles.statusFilterPillActive : ""}`}
                 >
-                  <input
-                    type="checkbox"
-                    checked={eligibleBatches.includes(batch)}
-                    onChange={() => handleBatchToggle(batch)}
-                  />
-                  <span>Batch {batch}</span>
-                </label>
+                  {st.toUpperCase()}
+                </button>
               ))}
             </div>
           </div>
 
-          {participationMode === "team" && (
-            <div className={styles.formRowThree}>
-              <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Min Team Size</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={minTeamSize}
-                  onChange={(e) => setMinTeamSize(Number(e.target.value))}
-                  className={styles.formInput}
-                />
-              </div>
-              <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Max Team Size</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={maxTeamSize}
-                  onChange={(e) => setMaxTeamSize(Number(e.target.value))}
-                  className={styles.formInput}
-                />
-              </div>
-              <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Max Event Capacity</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={maxParticipants}
-                  onChange={(e) => setMaxParticipants(e.target.value === "" ? "" : Number(e.target.value))}
-                  placeholder="Unlimited if blank"
-                  className={styles.formInput}
-                />
-              </div>
+          {loadingList ? (
+            <div style={{ textAlign: "center", padding: "48px", color: "#e5b731" }}>
+              Loading existing club events…
+            </div>
+          ) : filteredEvents.length === 0 ? (
+            <div
+              style={{
+                textAlign: "center",
+                padding: "48px 24px",
+                color: "#8e8e93",
+                background: "#141416",
+                borderRadius: "12px",
+                border: "1px dashed #282830",
+              }}
+            >
+              <MemberIcon name="calendar" size={32} />
+              <p style={{ marginTop: "12px", fontSize: "14px" }}>
+                {searchQuery || filterStatus !== "all"
+                  ? "No events found matching your search and filter criteria."
+                  : "No events published yet."}
+              </p>
+            </div>
+          ) : (
+            <div className={styles.eventListGrid}>
+              {filteredEvents.map((ev) => (
+                <article key={ev.id} className={styles.eventItemCard}>
+                  <div className={styles.eventItemLeft}>
+                    <div className={styles.eventItemTitleRow}>
+                      <span
+                        style={{
+                          fontSize: "10.5px",
+                          fontWeight: 800,
+                          padding: "2px 7px",
+                          borderRadius: "4px",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.05em",
+                          ...getStatusBadgeStyle(ev.status),
+                        }}
+                      >
+                        {ev.status || "PUBLISHED"}
+                      </span>
+
+                      <h4 className={styles.eventItemTitle}>{ev.title}</h4>
+
+                      <span
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: 700,
+                          color: "#e5b731",
+                          background: "rgba(229, 183, 49, 0.1)",
+                          padding: "2px 6px",
+                          borderRadius: "4px",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        {ev.track || "ALL"} TRACK
+                      </span>
+
+                      {ev.event_type && (
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: 600,
+                            color: "#b0b0be",
+                            background: "#212126",
+                            padding: "2px 6px",
+                            borderRadius: "4px",
+                          }}
+                        >
+                          {ev.event_type}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className={styles.eventItemMeta}>
+                      <span className={styles.eventItemMetaSpan}>
+                        <MemberIcon name="clock" size={13} />
+                        {formatEventDisplayDate(ev.schedule?.start_time)}
+                      </span>
+
+                      <span className={styles.eventItemMetaSpan}>
+                        <MemberIcon name="location" size={13} />
+                        {(ev.format || "OFFLINE").toUpperCase()}
+                        {ev.venue_info?.venue_name ? ` · ${ev.venue_info.venue_name}` : ""}
+                      </span>
+
+                      {ev.stats?.registered_count !== undefined && (
+                        <span className={styles.eventItemMetaSpan}>
+                          <MemberIcon name="users" size={13} />
+                          {ev.stats.registered_count} RSVP
+                        </span>
+                      )}
+
+                      <span style={{ color: "#52525b" }}>Slug: /{ev.slug || ev.id}</span>
+                    </div>
+                  </div>
+
+                  <div className={styles.eventItemActions}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedId(ev.id)}
+                      className={styles.editActionBtn}
+                      title="Edit event settings, dates, and content"
+                    >
+                      <MemberIcon name="edit" size={13} />
+                      Edit Event
+                    </button>
+
+                    <Link
+                      href={`/dashboard/events/${ev.slug || ev.id}`}
+                      target="_blank"
+                      className={styles.viewActionBtn}
+                      title="Open public event page in new tab"
+                    >
+                      <MemberIcon name="external" size={13} />
+                      View Page ↗
+                    </Link>
+                  </div>
+                </article>
+              ))}
             </div>
           )}
+        </div>
+      )}
 
-          {/* Section 5: Points & Media */}
-          <div className={styles.formSectionHeading}>5. Points & Cover Banner</div>
-          <div className={styles.formRow}>
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Attendance Merit Points</label>
-              <input
-                type="number"
-                min={0}
-                value={pointsReward}
-                onChange={(e) => setPointsReward(e.target.value === "" ? "" : Number(e.target.value))}
-                placeholder="e.g. 20"
-                className={styles.formInput}
-              />
+      {/* VIEW 2: FULL EDIT FORM (When an event is selected from the list) */}
+      {selectedId && (
+        <div>
+          {/* Header Banner: Back to List & Quick Actions */}
+          <div className={styles.editingBannerBox}>
+            <div className={styles.editingBannerText}>
+              <button
+                type="button"
+                onClick={() => setSelectedId("")}
+                className={styles.backToListBtn}
+              >
+                ← Back to All Events
+              </button>
+              <span>
+                <strong>Currently Editing:</strong> {title || "Selected Event"}
+              </span>
             </div>
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Slides / Docs URL</label>
-              <input
-                type="url"
-                value={slidesUrl}
-                onChange={(e) => setSlidesUrl(e.target.value)}
-                placeholder="https://docs.google.com/..."
-                className={styles.formInput}
-              />
-            </div>
+
+            <Link
+              href={`/dashboard/events/${slug || selectedId}`}
+              target="_blank"
+              className={styles.viewActionBtn}
+            >
+              <MemberIcon name="external" size={13} />
+              View Live Page ↗
+            </Link>
           </div>
 
-          {/* Banner Image */}
-          <div className={styles.formGroup}>
-            <label className={styles.formLabel}>
-              <span>Event Cover Banner Image</span>
-              <span className={styles.formLabelHint}>PNG, JPG, WebP up to 5MB</span>
-            </label>
+          {loadingDetail ? (
+            <div style={{ textAlign: "center", padding: "40px", color: "#e5b731" }}>
+              Loading event details…
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+              {/* Section 1: General Info */}
+              <div className={styles.formSectionHeading}>1. General Information & Status</div>
+              <div className={styles.formRow}>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Event Title</label>
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    className={styles.formInput}
+                    required
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>URL Slug</label>
+                  <input
+                    type="text"
+                    value={slug}
+                    onChange={(e) => setSlug(e.target.value)}
+                    className={styles.formInput}
+                  />
+                </div>
+              </div>
 
-            {bannerFilePreview || bannerUrl ? (
-              <div className={styles.imagePreviewBox}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={bannerFilePreview || bannerUrl}
-                  alt="Banner Preview"
-                  className={styles.imagePreviewImg}
+              <div className={styles.formRowThree}>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Event Type</label>
+                  <input
+                    type="text"
+                    value={eventType}
+                    onChange={(e) => setEventType(e.target.value)}
+                    placeholder="e.g. Workshop, Hackathon, Meetup"
+                    className={styles.formInput}
+                    required
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Track</label>
+                  <select
+                    value={track}
+                    onChange={(e) => setTrack(e.target.value)}
+                    className={styles.formSelect}
+                  >
+                    <option value="research">Research</option>
+                    <option value="product">Product</option>
+                    <option value="kaggle">Kaggle</option>
+                    <option value="misc">Misc</option>
+                    <option value="all">All</option>
+                  </select>
+                </div>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Lifecycle Status</label>
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                    className={styles.formSelect}
+                  >
+                    <option value="published">Published (Visible)</option>
+                    <option value="draft">Draft (Admin Only)</option>
+                    <option value="registration_closed">Registration Closed</option>
+                    <option value="ongoing">Ongoing</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                    <option value="archived">Archived</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Section 2: Date, Time & Venue */}
+              <div className={styles.formSectionHeading}>2. Schedule & Venue</div>
+              <div className={styles.formRowThree}>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Start Date & Time</label>
+                  <input
+                    type="datetime-local"
+                    value={startDateTime}
+                    onChange={(e) => setStartDateTime(e.target.value)}
+                    className={styles.formInput}
+                    required
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>End Date & Time</label>
+                  <input
+                    type="datetime-local"
+                    value={endDateTime}
+                    onChange={(e) => setEndDateTime(e.target.value)}
+                    className={styles.formInput}
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Registration Deadline</label>
+                  <input
+                    type="datetime-local"
+                    value={regDeadline}
+                    onChange={(e) => setRegDeadline(e.target.value)}
+                    className={styles.formInput}
+                  />
+                </div>
+              </div>
+
+              <div className={styles.formRowThree}>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Format</label>
+                  <select
+                    value={format}
+                    onChange={(e) => setFormat(e.target.value)}
+                    className={styles.formSelect}
+                  >
+                    <option value="offline">Offline (Campus)</option>
+                    <option value="online">Online (Discord / Meet)</option>
+                    <option value="hybrid">Hybrid</option>
+                  </select>
+                </div>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Venue Name</label>
+                  <input
+                    type="text"
+                    value={venueName}
+                    onChange={(e) => setVenueName(e.target.value)}
+                    placeholder="e.g. Macro Campus / Main Audi"
+                    className={styles.formInput}
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Room / Meeting Link</label>
+                  <input
+                    type="text"
+                    value={format === "online" ? meetingUrl : room}
+                    onChange={(e) => (format === "online" ? setMeetingUrl(e.target.value) : setRoom(e.target.value))}
+                    placeholder={format === "online" ? "https://meet.google.com/..." : "Classroom 204"}
+                    className={styles.formInput}
+                  />
+                </div>
+              </div>
+
+              {/* Section 3: Agenda & Description */}
+              <div className={styles.formSectionHeading}>3. Description & Curriculum</div>
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Summary Description</label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={2}
+                  className={styles.formTextarea}
+                  required
                 />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>
+                  <span>Full Specifications & Curriculum (Markdown)</span>
+                </label>
+                <textarea
+                  value={detailedInfo}
+                  onChange={(e) => setDetailedInfo(e.target.value)}
+                  rows={6}
+                  className={styles.formTextarea}
+                  placeholder="Detailed schedule, prerequisites, submission rules..."
+                />
+              </div>
+
+              {/* Section 4: Eligibility & Capacity */}
+              <div className={styles.formSectionHeading}>4. Eligibility & Team Settings</div>
+              <div className={styles.formRow}>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Access Scope</label>
+                  <select
+                    value={accessScope}
+                    onChange={(e) => setAccessScope(e.target.value)}
+                    className={styles.formSelect}
+                  >
+                    <option value="open_to_all">Open to All Students</option>
+                    <option value="members_only">Club Members Only</option>
+                  </select>
+                </div>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Participation Mode</label>
+                  <select
+                    value={participationMode}
+                    onChange={(e) => setParticipationMode(e.target.value as "solo" | "team")}
+                    className={styles.formSelect}
+                  >
+                    <option value="solo">Solo (Individual)</option>
+                    <option value="team">Team Based</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Eligible Graduation Batches</label>
+                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "6px" }}>
+                  {allGraduationBatches.map((batch) => (
+                    <label
+                      key={batch}
+                      className={`${styles.checkboxPill} ${eligibleBatches.includes(batch) ? styles.checkboxPillActive : ""}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={eligibleBatches.includes(batch)}
+                        onChange={() => handleBatchToggle(batch)}
+                      />
+                      <span>Batch {batch}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {participationMode === "team" && (
+                <div className={styles.formRowThree}>
+                  <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Min Team Size</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={minTeamSize}
+                      onChange={(e) => setMinTeamSize(Number(e.target.value))}
+                      className={styles.formInput}
+                    />
+                  </div>
+                  <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Max Team Size</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={maxTeamSize}
+                      onChange={(e) => setMaxTeamSize(Number(e.target.value))}
+                      className={styles.formInput}
+                    />
+                  </div>
+                  <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Max Event Capacity</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={maxParticipants}
+                      onChange={(e) => setMaxParticipants(e.target.value === "" ? "" : Number(e.target.value))}
+                      placeholder="Unlimited if blank"
+                      className={styles.formInput}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Section 5: Points & Media */}
+              <div className={styles.formSectionHeading}>5. Points & Cover Banner</div>
+              <div className={styles.formRow}>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Attendance Merit Points</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={pointsReward}
+                    onChange={(e) => setPointsReward(e.target.value === "" ? "" : Number(e.target.value))}
+                    placeholder="e.g. 20"
+                    className={styles.formInput}
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Slides / Docs URL</label>
+                  <input
+                    type="url"
+                    value={slidesUrl}
+                    onChange={(e) => setSlidesUrl(e.target.value)}
+                    placeholder="https://docs.google.com/..."
+                    className={styles.formInput}
+                  />
+                </div>
+              </div>
+
+              {/* Banner Image */}
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>
+                  <span>Event Cover Banner Image</span>
+                  <span className={styles.formLabelHint}>PNG, JPG, WebP up to 5MB</span>
+                </label>
+
+                {bannerFilePreview || bannerUrl ? (
+                  <div className={styles.imagePreviewBox}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={bannerFilePreview || bannerUrl}
+                      alt="Banner Preview"
+                      className={styles.imagePreviewImg}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBannerFilePreview(null);
+                        setBannerFile(null);
+                        setBannerUrl("");
+                        if (fileInputRef.current) fileInputRef.current.value = "";
+                      }}
+                      className={styles.removeImageBtn}
+                    >
+                      <MemberIcon name="trash" size={13} /> Remove Image
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    className={styles.uploadDropzone}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <span className={styles.uploadIcon}>
+                      <MemberIcon name="image" size={32} />
+                    </span>
+                    <span className={styles.uploadTextPrimary}>Click to upload new event cover banner</span>
+                    <span className={styles.uploadTextSecondary}>16:9 or 22:9 recommended (1200×630px)</span>
+                  </div>
+                )}
+
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  accept="image/png,image/jpeg,image/webp"
+                  className={styles.fileInputHidden}
+                />
+
+                <input
+                  type="text"
+                  value={bannerUrl}
+                  onChange={(e) => setBannerUrl(e.target.value)}
+                  placeholder="Or enter image URL directly: https://..."
+                  className={styles.formInput}
+                  style={{ marginTop: "8px" }}
+                />
+              </div>
+
+              {/* Submit & Cancel */}
+              <div style={{ display: "flex", gap: "12px", marginTop: "12px" }}>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className={styles.publishBtn}
+                  style={{ flex: 1 }}
+                >
+                  <MemberIcon name="check" size={16} />
+                  {isSubmitting ? "Saving Changes…" : "Save Event Changes"}
+                </button>
+
                 <button
                   type="button"
-                  onClick={() => {
-                    setBannerFilePreview(null);
-                    setBannerFile(null);
-                    setBannerUrl("");
-                    if (fileInputRef.current) fileInputRef.current.value = "";
-                  }}
-                  className={styles.removeImageBtn}
+                  onClick={() => setSelectedId("")}
+                  className={styles.viewActionBtn}
+                  style={{ padding: "0 24px" }}
                 >
-                  <MemberIcon name="trash" size={13} /> Remove Image
+                  Cancel
                 </button>
               </div>
-            ) : (
-              <div
-                className={styles.uploadDropzone}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <span className={styles.uploadIcon}>
-                  <MemberIcon name="image" size={32} />
-                </span>
-                <span className={styles.uploadTextPrimary}>Click to upload new event cover banner</span>
-                <span className={styles.uploadTextSecondary}>16:9 or 22:9 recommended (1200×630px)</span>
-              </div>
-            )}
-
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept="image/png,image/jpeg,image/webp"
-              className={styles.fileInputHidden}
-            />
-
-            <input
-              type="text"
-              value={bannerUrl}
-              onChange={(e) => setBannerUrl(e.target.value)}
-              placeholder="Or enter image URL directly: https://..."
-              className={styles.formInput}
-              style={{ marginTop: "8px" }}
-            />
-          </div>
-
-          {/* Submit */}
-          <div style={{ display: "flex", gap: "12px", marginTop: "12px" }}>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className={styles.publishBtn}
-              style={{ flex: 1 }}
-            >
-              <MemberIcon name="check" size={16} />
-              {isSubmitting ? "Saving Changes…" : "Save Event Changes"}
-            </button>
-          </div>
-        </form>
+            </form>
+          )}
+        </div>
       )}
     </div>
   );
