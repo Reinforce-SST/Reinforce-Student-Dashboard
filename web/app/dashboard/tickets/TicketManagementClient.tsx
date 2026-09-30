@@ -10,6 +10,7 @@ import { useMember } from "@/lib/useMember";
 import { api, type ApiTicketDetail, type TicketSummary, type StudentProfile } from "@/lib/api";
 import { loadAllSpgs } from "@/lib/memberData";
 import type { SPGRecord } from "@/lib/spgData";
+import { useDebounce } from "@/lib/useDebounce";
 import styles from "./TicketManagement.module.css";
 
 export type TicketCategory =
@@ -160,12 +161,13 @@ export default function TicketManagementClient() {
   const [retryCount, setRetryCount] = useState(0);
   const [filterStatus, setFilterStatus] = useState<"all" | "open" | "in_progress" | "resolved">("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     setPage(1);
-  }, [filterStatus, searchQuery]);
+  }, [filterStatus, debouncedSearchQuery]);
 
   useEffect(() => {
     let active = true;
@@ -233,12 +235,14 @@ export default function TicketManagementClient() {
   const [spgLeader, setSpgLeader] = useState<StudentProfile | null>(null);
   const [isChangingLeader, setIsChangingLeader] = useState(false);
   const [leaderSearch, setLeaderSearch] = useState("");
+  const debouncedLeaderSearch = useDebounce(leaderSearch, 400);
   const [leaderCandidates, setLeaderCandidates] = useState<StudentProfile[]>([]);
   const [leaderLoading, setLeaderLoading] = useState(false);
   const [leaderSearchError, setLeaderSearchError] = useState("");
 
   const [selectedTeamMembers, setSelectedTeamMembers] = useState<Record<string, StudentProfile>>({});
   const [memberSearch, setMemberSearch] = useState("");
+  const debouncedMemberSearch = useDebounce(memberSearch, 400);
   const [memberCandidates, setMemberCandidates] = useState<StudentProfile[]>([]);
   const [memberCandidatesLoading, setMemberCandidatesLoading] = useState(false);
   const [memberSearchError, setMemberSearchError] = useState("");
@@ -313,28 +317,26 @@ export default function TicketManagementClient() {
     let active = true;
     setLeaderLoading(true);
     setLeaderSearchError("");
-    const timer = setTimeout(() => {
-      api.browseUsers(token, {
-        search: leaderSearch.trim() || undefined,
-        is_member: true,
-        page_size: 50,
+    api.browseUsers(token, {
+      search: debouncedLeaderSearch.trim() || undefined,
+      is_member: true,
+      page_size: 50,
+    })
+      .then((res) => {
+        if (active) {
+          setLeaderCandidates(res.items || []);
+          setLeaderLoading(false);
+        }
       })
-        .then((res) => {
-          if (active) {
-            setLeaderCandidates(res.items || []);
-            setLeaderLoading(false);
-          }
-        })
-        .catch((error) => {
-          if (active) {
-            setLeaderCandidates([]);
-            setLeaderSearchError(error instanceof Error ? error.message : "Could not search club members.");
-            setLeaderLoading(false);
-          }
-        });
-    }, 250);
-    return () => { active = false; clearTimeout(timer); };
-  }, [isModalOpen, selectedCategory, isChangingLeader, leaderSearch, token]);
+      .catch((error) => {
+        if (active) {
+          setLeaderCandidates([]);
+          setLeaderSearchError(error instanceof Error ? error.message : "Could not search club members.");
+          setLeaderLoading(false);
+        }
+      });
+    return () => { active = false; };
+  }, [isModalOpen, selectedCategory, isChangingLeader, debouncedLeaderSearch, token]);
 
   // Team member candidate search
   useEffect(() => {
@@ -342,27 +344,25 @@ export default function TicketManagementClient() {
     let active = true;
     setMemberCandidatesLoading(true);
     setMemberSearchError("");
-    const timer = setTimeout(() => {
-      api.browseUsers(token, {
-        search: memberSearch.trim() || undefined,
-        page_size: 50,
+    api.browseUsers(token, {
+      search: debouncedMemberSearch.trim() || undefined,
+      page_size: 50,
+    })
+      .then((res) => {
+        if (active) {
+          setMemberCandidates(res.items || []);
+          setMemberCandidatesLoading(false);
+        }
       })
-        .then((res) => {
-          if (active) {
-            setMemberCandidates(res.items || []);
-            setMemberCandidatesLoading(false);
-          }
-        })
-        .catch((error) => {
-          if (active) {
-            setMemberCandidates([]);
-            setMemberSearchError(error instanceof Error ? error.message : "Could not search members.");
-            setMemberCandidatesLoading(false);
-          }
-        });
-    }, 250);
-    return () => { active = false; clearTimeout(timer); };
-  }, [isModalOpen, selectedCategory, memberSearch, token]);
+      .catch((error) => {
+        if (active) {
+          setMemberCandidates([]);
+          setMemberSearchError(error instanceof Error ? error.message : "Could not search members.");
+          setMemberCandidatesLoading(false);
+        }
+      });
+    return () => { active = false; };
+  }, [isModalOpen, selectedCategory, debouncedMemberSearch, token]);
 
   const selectSpgLeader = (member: StudentProfile) => {
     setSpgLeader(member);
@@ -658,10 +658,12 @@ export default function TicketManagementClient() {
       (filterStatus === "resolved"
         ? t.status === "resolved" || t.status === "closed"
         : t.status === filterStatus);
+    const q = debouncedSearchQuery.trim().toLowerCase();
     const matchesSearch =
-      t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.description.toLowerCase().includes(searchQuery.toLowerCase());
+      !q ||
+      t.title.toLowerCase().includes(q) ||
+      t.id.toLowerCase().includes(q) ||
+      t.description.toLowerCase().includes(q);
     return matchesStatus && matchesSearch;
   });
 
