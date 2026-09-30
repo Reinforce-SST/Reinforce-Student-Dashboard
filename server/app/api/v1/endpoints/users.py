@@ -304,6 +304,18 @@ def verify_discord(
                 bot_response_data = json.loads(bot_res_body)
             if not bot_response_data.get("role_assigned"):
                 bot_response_data = {"status": "bot_warning", "detail": "Your account is linked, but the Discord role is pending. Run /auth again to retry."}
+
+            bot_discord_user = bot_response_data.get("discord_username")
+            if bot_discord_user and isinstance(bot_discord_user, str) and bot_discord_user.strip():
+                clean_bot_user = bot_discord_user.strip()
+                current_socials = dict(member.get("social_links") or {})
+                if current_socials.get("discord") != clean_bot_user:
+                    current_socials["discord"] = clean_bot_user
+                    db.collection(USERS_COLLECTION).document(uid).set({
+                        "social_links": current_socials,
+                        "updated_at": now_iso(),
+                    }, merge=True)
+                    member["social_links"] = current_socials
         except urllib.error.HTTPError as e:
             error_detail = e.read().decode("utf-8")
             try:

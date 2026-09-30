@@ -59,6 +59,11 @@ def consume_link(transaction, db, token, user, now=None):
             raise HTTPException(409, "This link is no longer active. Run /auth in Discord again.")
         return member
 
+    discord_username = proof.get("discord_username")
+    social_links = dict(member.get("social_links") or {})
+    if discord_username and isinstance(discord_username, str) and discord_username.strip():
+        social_links["discord"] = discord_username.strip()
+
     now_text = now.isoformat()
     updated = {
         **member, "id": uid, "email": email,
@@ -68,6 +73,8 @@ def consume_link(transaction, db, token, user, now=None):
         "verified_at": now_text, "created_at": member.get("created_at") or now_text,
         "updated_at": now_text,
     }
+    if social_links:
+        updated["social_links"] = social_links
     transaction.set(member_ref, updated, merge=True)
     transaction.set(proof_ref, {"consumed_by": uid, "email": email, "consumed_at": now}, merge=True)
     return updated
@@ -81,7 +88,11 @@ def unlink_member(transaction, db, user, now=None):
     member = member_ref.get(transaction=transaction).to_dict()
     if not member:
         raise HTTPException(404, "User profile not found.")
+    social_links = dict(member.get("social_links") or {})
+    if "discord" in social_links:
+        social_links["discord"] = None
     updates = {"discord_id": None, "discord_link_version": None,
-               "is_verified": False, "verified_at": None, "updated_at": now.isoformat()}
+               "is_verified": False, "verified_at": None, "social_links": social_links,
+               "updated_at": now.isoformat()}
     transaction.set(member_ref, updates, merge=True)
     return {**member, **updates}

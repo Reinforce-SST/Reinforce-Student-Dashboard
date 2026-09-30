@@ -494,8 +494,8 @@ export default function LeaderboardClient() {
                           <MemberIcon name="github" size={14} />
                         </a>
                       )}
-                      {member.social_links?.discord && (
-                        <span className={styles.socialIconBtn} title={`Discord: ${member.social_links.discord}`}>
+                      {Boolean(member.is_verified && member.discord_id && (member.social_links?.discord || member.discord_id)) && (
+                        <span className={styles.socialIconBtn} title={`Discord: ${member.social_links?.discord || member.discord_id}`}>
                           <MemberIcon name="discord" size={14} />
                         </span>
                       )}
@@ -659,10 +659,10 @@ export default function LeaderboardClient() {
                     LinkedIn
                   </a>
                 )}
-                {selectedMember.social_links?.discord && (
+                {Boolean(selectedMember.is_verified && selectedMember.discord_id && (selectedMember.social_links?.discord || selectedMember.discord_id)) && (
                   <span style={{ color: "#9da3ae", fontSize: "0.78rem", display: "inline-flex", alignItems: "center", gap: "6px" }}>
                     <MemberIcon name="discord" size={14} />
-                    {selectedMember.social_links.discord}
+                    {selectedMember.social_links?.discord || selectedMember.discord_id}
                   </span>
                 )}
               </div>

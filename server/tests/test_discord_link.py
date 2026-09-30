@@ -81,3 +81,17 @@ class LinkTests(unittest.TestCase):
         self.assertIsNone(linked_discord_id(self.db, "uid-1", USER["email"]))
         with self.assertRaises(HTTPException):
             self.consume()
+
+    def test_token_with_discord_username_syncs_to_social_links(self):
+        self.db.data[TOKEN_PATH]["discord_username"] = "DiscordGuru"
+        self.consume()
+        self.assertEqual(self.db.data["users/uid-1"]["social_links"]["discord"], "DiscordGuru")
+
+    def test_unlink_clears_discord_social_link(self):
+        self.db.data[TOKEN_PATH]["discord_username"] = "DiscordGuru"
+        self.consume()
+        self.assertEqual(self.db.data["users/uid-1"]["social_links"]["discord"], "DiscordGuru")
+        transaction = Transaction()
+        unlink_member(transaction, self.db, USER, NOW)
+        transaction.commit()
+        self.assertIsNone(self.db.data["users/uid-1"]["social_links"]["discord"])

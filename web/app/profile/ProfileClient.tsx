@@ -498,10 +498,10 @@ function ProfileClientContent() {
                     {activeProfile.email}
                   </span>
                 )}
-                {socialLinks.discord ? (
+                {activeProfile?.is_verified && Boolean(activeProfile?.discord_id) ? (
                   <span className={styles.verifiedChip}>
                     <MemberIcon name="check" size={13} />
-                    Discord: {socialLinks.discord}
+                    Discord: {socialLinks.discord || activeProfile.discord_id}
                   </span>
                 ) : (
                   <span className={styles.metaItem} style={{ color: "#71717a" }}>
