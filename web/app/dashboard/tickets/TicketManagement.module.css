@@ -461,6 +461,10 @@
   background: #4ade80;
 }
 
+.dotClosed {
+  background: #71717a;
+}
+
 /* Right Column: Selected Ticket Full Detail Inspector */
 .detailPanel {
   background: #141416;

@@ -653,7 +653,11 @@ export default function TicketManagementClient() {
   };
 
   const filteredTickets = tickets.filter((t) => {
-    const matchesStatus = filterStatus === "all" || t.status === filterStatus;
+    const matchesStatus =
+      filterStatus === "all" ||
+      (filterStatus === "resolved"
+        ? t.status === "resolved" || t.status === "closed"
+        : t.status === filterStatus);
     const matchesSearch =
       t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       t.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -761,7 +765,7 @@ export default function TicketManagementClient() {
         <div className={styles.statCard}>
           <span className={styles.statLabel}>Resolved</span>
           <span className={`${styles.statValue} ${styles.statResolved}`}>
-            {tickets.filter((t) => t.status === "resolved").length.toString().padStart(2, "0")}
+            {tickets.filter((t) => t.status === "resolved" || t.status === "closed").length.toString().padStart(2, "0")}
           </span>
         </div>
 
@@ -851,6 +855,8 @@ export default function TicketManagementClient() {
                           ? styles.dotOpen
                           : ticket.status === "in_progress"
                           ? styles.dotInProgress
+                          : ticket.status === "closed"
+                          ? styles.dotClosed
                           : styles.dotResolved
                       }`}
                     />
@@ -858,6 +864,8 @@ export default function TicketManagementClient() {
                       ? "Pending Review"
                       : ticket.status === "in_progress"
                       ? "In Progress"
+                      : ticket.status === "closed"
+                      ? "Closed"
                       : "Resolved"}
                   </span>
                   <span>{ticket.updatedAt}</span>
@@ -942,6 +950,8 @@ export default function TicketManagementClient() {
                             ? styles.dotOpen
                             : selectedTicket.status === "in_progress"
                             ? styles.dotInProgress
+                            : selectedTicket.status === "closed"
+                            ? styles.dotClosed
                             : styles.dotResolved
                         }`}
                       />
@@ -949,6 +959,8 @@ export default function TicketManagementClient() {
                         ? "Open"
                         : selectedTicket.status === "in_progress"
                         ? "In Progress"
+                        : selectedTicket.status === "closed"
+                        ? "Closed"
                         : "Resolved"}
                     </span>
                   </div>
