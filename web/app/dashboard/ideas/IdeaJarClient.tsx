@@ -375,7 +375,7 @@ export default function IdeaJarClient() {
       {!loading && !error && ideas.length === 0 && (
         <div className={styles.emptyState}>
           <div className={styles.emptyIcon}>
-            <MemberIcon name="sparkles" size={24} />
+            <MemberIcon name="ideas" size={24} />
           </div>
           <h3 className={styles.emptyTitle}>No proposals found</h3>
           <p className={styles.emptyDesc}>

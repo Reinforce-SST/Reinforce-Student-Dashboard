@@ -320,12 +320,10 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
             aria-label="Filter by Track"
           >
             <option value="all">All Tracks</option>
-            <option value="ai">AI Track</option>
-            <option value="web">Web Track</option>
-            <option value="app">App Track</option>
-            <option value="systems">Systems Track</option>
-            <option value="cybersecurity">Cybersecurity Track</option>
-            <option value="misc">Misc / General</option>
+            <option value="research">Research Track</option>
+            <option value="product">Product Track</option>
+            <option value="kaggle">Kaggle Track</option>
+            <option value="misc">General / Misc</option>
           </select>
 
           <select
@@ -569,12 +567,10 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
                       value={formTrack}
                       onChange={(e) => setFormTrack(e.target.value)}
                     >
-                      <option value="ai">AI Track</option>
-                      <option value="web">Web Track</option>
-                      <option value="app">App Track</option>
-                      <option value="systems">Systems Track</option>
-                      <option value="cybersecurity">Cybersecurity Track</option>
-                      <option value="misc">Misc / General</option>
+                      <option value="research">Research Track</option>
+                      <option value="product">Product Track</option>
+                      <option value="kaggle">Kaggle Track</option>
+                      <option value="misc">General / Misc</option>
                     </select>
                   </div>
 

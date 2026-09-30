@@ -226,7 +226,7 @@ class BackendHardeningTests(unittest.TestCase):
             "category": "idea_jar",
             "status": "open",
             "fields": {
-                "track": "ai",
+                "track": "research",
                 "difficulty": "advanced",
                 "prerequisites": ["Python", "Reinforcement Learning"],
                 "rough_roadmap": ["1. Simulation in AirSim", "2. PPO Agent training"],
@@ -241,7 +241,7 @@ class BackendHardeningTests(unittest.TestCase):
         items = {item["id"]: item for item in res.json()["items"]}
         self.assertIn("tkt-idea-1", items)
         self.assertEqual(items["tkt-idea-1"]["title"], "Autonomous Drone Navigation")
-        self.assertEqual(items["tkt-idea-1"]["track"], "ai")
+        self.assertEqual(items["tkt-idea-1"]["track"], "research")
 
         # Admin approves the ticket-based idea proposal
         approve_res = self.client.post("/api/v1/ideas/tkt-idea-1/approve")
