@@ -30,9 +30,12 @@ export type IdeaSummary = {
   track: string; difficulty?: string | null; is_verified: boolean;
   stats: { upvote_count: number; views_count: number; claims_count: number };
   created_at?: string | null;
+  approved_at?: string | null;
+  status?: string | null;
 };
 export type IdeaDetail = IdeaSummary & {
   prerequisites: string[]; rough_roadmap: string[]; learning_outcomes: string[];
+  updated_at?: string | null;
 };
 
 /** Nothing should hang the UI forever. Render cold starts are slow but finite. */
@@ -448,6 +451,46 @@ export const api = {
   upvoteIdea: (token: string, id: string) =>
     request<{ upvoted: boolean; upvote_count: number }>(`/ideas/${encodeURIComponent(id)}/upvote`, token, { method: "POST" }),
   pendingIdeas: (token: string) => request<{ items: IdeaSummary[] }>("/ideas/pending", token),
+  adminListIdeas: (
+    token: string,
+    options?: {
+      status?: string;
+      search?: string;
+      track?: string;
+      difficulty?: string;
+      page?: number;
+      pageSize?: number;
+    }
+  ) => {
+    const query = new URLSearchParams();
+    if (options?.status && options.status !== "all") query.set("status", options.status);
+    if (options?.search) query.set("search", options.search);
+    if (options?.track && options.track !== "all") query.set("track", options.track);
+    if (options?.difficulty && options.difficulty !== "all") query.set("difficulty", options.difficulty);
+    if (options?.page) query.set("page", String(options.page));
+    if (options?.pageSize) query.set("page_size", String(options.pageSize));
+    return request<{ items: IdeaSummary[]; has_more: boolean; total: number; page: number; page_size: number }>(
+      `/ideas/admin?${query}`,
+      token
+    );
+  },
+  updateIdea: (
+    token: string,
+    id: string,
+    body: Partial<{
+      title: string;
+      description: string;
+      track: string;
+      difficulty: string;
+      prerequisites: string[];
+      rough_roadmap: string[];
+      learning_outcomes: string[];
+    }>
+  ) =>
+    request<IdeaDetail>(`/ideas/${encodeURIComponent(id)}`, token, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   approveIdea: (token: string, id: string) =>
     request<IdeaDetail>(`/ideas/${encodeURIComponent(id)}/approve`, token, { method: "POST" }),
   rejectIdea: (token: string, id: string) =>

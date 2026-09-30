@@ -259,7 +259,60 @@ class BackendHardeningTests(unittest.TestCase):
         items_after = {item["id"]: item for item in res_after.json()["items"]}
         self.assertNotIn("tkt-idea-1", items_after)
 
+    def test_admin_list_ideas_and_patch_idea(self):
+        self.db.store["tickets/tkt-edit-me"] = {
+            "id": "tkt-edit-me",
+            "title": "Raw Idea Title",
+            "description": "Raw description",
+            "category": "idea_jar",
+            "status": "open",
+            "fields": {
+                "track": "misc",
+                "difficulty": "beginner",
+            },
+            "created_by_uid": "someone",
+            "created_at": "2026-09-30T10:00:00Z",
+        }
+        self.user = dict(ADMIN)
+
+        # 1. Edit the idea proposal before approving
+        patch_res = self.client.patch(
+            "/api/v1/ideas/tkt-edit-me",
+            json={
+                "title": "Refined Idea Title",
+                "description": "Refined description",
+                "track": "research",
+                "difficulty": "advanced",
+                "prerequisites": ["Linear Algebra", "Python"],
+                "rough_roadmap": ["Step 1", "Step 2"],
+                "learning_outcomes": ["Outcome 1"],
+            },
+        )
+        self.assertEqual(patch_res.status_code, 200)
+        detail = patch_res.json()
+        self.assertEqual(detail["title"], "Refined Idea Title")
+        self.assertEqual(detail["track"], "research")
+        self.assertEqual(detail["difficulty"], "advanced")
+        self.assertEqual(detail["prerequisites"], ["Linear Algebra", "Python"])
+
+        # 2. Test GET /api/v1/ideas/admin
+        admin_list_res = self.client.get("/api/v1/ideas/admin?status=all")
+        self.assertEqual(admin_list_res.status_code, 200)
+        data = admin_list_res.json()
+        ids = [item["id"] for item in data["items"]]
+        self.assertIn("tkt-edit-me", ids)
+
+        # Filter by status=pending
+        pending_list = self.client.get("/api/v1/ideas/admin?status=pending").json()
+        self.assertIn("tkt-edit-me", [item["id"] for item in pending_list["items"]])
+
+        # Filter by search
+        search_res = self.client.get("/api/v1/ideas/admin?search=Refined").json()
+        self.assertEqual(len(search_res["items"]), 1)
+        self.assertEqual(search_res["items"][0]["id"], "tkt-edit-me")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

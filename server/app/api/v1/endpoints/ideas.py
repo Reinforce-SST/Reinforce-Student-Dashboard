@@ -107,18 +107,29 @@ def _ticket_to_idea_summary(ticket_id: str, tdata: Dict[str, Any]) -> IdeaSummar
         or fields.get("Difficulty")
         or tdata.get("difficulty")
     )
+    st = tdata.get("status")
+    status = (
+        "closed"
+        if st in (TicketStatus.CLOSED.value, "closed")
+        else (
+            "approved"
+            if st in (TicketStatus.RESOLVED.value, "resolved")
+            else "pending"
+        )
+    )
     return IdeaSummary(
         id=ticket_id,
         title=title,
         description=desc,
         track=_parse_track(track_val),
         difficulty=_parse_difficulty(diff_val),
-        is_verified=False,
+        is_verified=(status == "approved"),
         created_by_uid=_creator_uid(tdata),
         approved_by_uid=None,
         stats=IdeaStats(upvote_count=0, views_count=0, claims_count=0),
         created_at=iso_str(tdata.get("created_at")),
         approved_at=None,
+        status=status,
     )
 
 
@@ -150,18 +161,20 @@ def _to_idea_summary(doc_id: str, data: Dict[str, Any]) -> IdeaSummary:
         views_count=int(stats_raw.get("views_count", 0)),
         claims_count=int(stats_raw.get("claims_count", 0)),
     )
+    is_appr = _is_approved(data)
     return IdeaSummary(
         id=doc_id,
         title=data.get("title") or "Untitled Idea",
         description=data.get("description") or "",
         track=_normalise_track(data.get("track")),
         difficulty=data.get("difficulty"),
-        is_verified=_is_approved(data),
+        is_verified=is_appr,
         created_by_uid=_creator_uid(data),
         approved_by_uid=data.get("approved_by_uid"),
         stats=stats,
         created_at=iso_str(data.get("created_at")),
         approved_at=iso_str(data.get("approved_at")),
+        status="approved" if is_appr else "pending",
     )
 
 
@@ -321,6 +334,123 @@ def list_my_ideas(
     items.sort(key=lambda x: x.created_at or "", reverse=True)
     return IdeaListResponse(
         total=len(items), items=items, page=1, page_size=len(items), has_more=False
+    )
+
+
+@router.get(
+    "/admin",
+    response_model=IdeaListResponse,
+    summary="List all ideas with admin filtering (Admin only)",
+)
+def admin_list_ideas(
+    status: Optional[str] = Query(
+        "all", description="'all', 'pending', 'approved', 'closed'"
+    ),
+    track: Optional[str] = Query(None, description="Filter by track"),
+    difficulty: Optional[str] = Query(None, description="Filter by difficulty"),
+    search: Optional[str] = Query(
+        None, description="Search term in title or description"
+    ),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    admin: dict = Depends(get_admin_user),
+) -> IdeaListResponse:
+    """Fetch all ideas (approved, pending, ticket proposals, closed) with search, filter, and pagination."""
+    by_id: Dict[str, IdeaSummary] = {}
+    seen_ticket_ids = set()
+
+    # 1. All documents from IDEAS_COLLECTION
+    for doc in db.collection(IDEAS_COLLECTION).stream():
+        data = doc.to_dict() or {}
+        by_id[doc.id] = _to_idea_summary(doc.id, data)
+        if data.get("ticket_id"):
+            seen_ticket_ids.add(data["ticket_id"])
+
+    # 2. All Idea Jar proposals from TICKETS_COLLECTION
+    for doc in (
+        db.collection(TICKETS_COLLECTION)
+        .where("category", "==", TicketCategory.IDEA_JAR.value)
+        .stream()
+    ):
+        if doc.id in seen_ticket_ids:
+            continue
+        tdata = doc.to_dict() or {}
+        approved_idea_id = tdata.get("approved_idea_id")
+        if approved_idea_id and approved_idea_id in by_id:
+            continue
+        by_id[doc.id] = _ticket_to_idea_summary(doc.id, tdata)
+
+    all_items = list(by_id.values())
+
+    # Filtering
+    filtered: List[IdeaSummary] = []
+    status_lower = status.lower().strip() if status else "all"
+    track_lower = track.lower().strip() if track and track != "all" else None
+    diff_lower = (
+        difficulty.lower().strip() if difficulty and difficulty != "all" else None
+    )
+    search_lower = search.lower().strip() if search else None
+
+    for item in all_items:
+        # Status filter
+        if status_lower != "all":
+            item_status = (
+                item.status or ("approved" if item.is_verified else "pending")
+            ).lower()
+            if status_lower == "pending" and item_status != "pending":
+                continue
+            elif status_lower == "approved" and item_status != "approved":
+                continue
+            elif status_lower in ("closed", "rejected") and item_status not in (
+                "closed",
+                "rejected",
+            ):
+                continue
+
+        # Track filter
+        if track_lower:
+            item_track = (
+                item.track.value
+                if hasattr(item.track, "value")
+                else str(item.track)
+            ).lower()
+            if item_track != track_lower:
+                continue
+
+        # Difficulty filter
+        if diff_lower:
+            if not item.difficulty:
+                continue
+            item_diff = (
+                item.difficulty.value
+                if hasattr(item.difficulty, "value")
+                else str(item.difficulty)
+            ).lower()
+            if item_diff != diff_lower:
+                continue
+
+        # Search filter
+        if search_lower:
+            title_match = search_lower in (item.title or "").lower()
+            desc_match = search_lower in (item.description or "").lower()
+            if not (title_match or desc_match):
+                continue
+
+        filtered.append(item)
+
+    filtered.sort(key=lambda x: x.created_at or "", reverse=True)
+
+    total = len(filtered)
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_items = filtered[start:end]
+
+    return IdeaListResponse(
+        total=total,
+        items=page_items,
+        page=page,
+        page_size=page_size,
+        has_more=end < total,
     )
 
 
@@ -534,35 +664,80 @@ def update_idea(
     admin: dict = Depends(get_admin_user),
 ) -> IdeaDetail:
     """Admin endpoint to refine roadmap, difficulty, prerequisites, and description."""
+    now = now_iso()
     doc_ref = db.collection(IDEAS_COLLECTION).document(idea_id)
     doc = doc_ref.get()
 
-    if not doc.exists:
+    if doc.exists:
+        updates: Dict[str, Any] = {"updated_at": now}
+
+        if payload.title is not None:
+            updates["title"] = payload.title
+        if payload.description is not None:
+            updates["description"] = payload.description
+        if payload.track is not None:
+            updates["track"] = payload.track.value
+        if payload.difficulty is not None:
+            updates["difficulty"] = payload.difficulty.value
+        if payload.prerequisites is not None:
+            updates["prerequisites"] = payload.prerequisites
+        if payload.rough_roadmap is not None:
+            updates["rough_roadmap"] = payload.rough_roadmap
+        if payload.learning_outcomes is not None:
+            updates["learning_outcomes"] = payload.learning_outcomes
+
+        doc_ref.update(updates)
+        refreshed = doc_ref.get().to_dict() or {}
+        return _to_idea_detail(idea_id, refreshed)
+
+    ticket_ref = db.collection(TICKETS_COLLECTION).document(idea_id)
+    ticket_doc = ticket_ref.get()
+    if not ticket_doc.exists:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Idea not found."
         )
 
-    now = now_iso()
-    updates: Dict[str, Any] = {"updated_at": now}
+    tdata = ticket_doc.to_dict() or {}
+    if tdata.get("category") != TicketCategory.IDEA_JAR.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ticket is not an Idea Jar proposal.",
+        )
 
+    fields = dict(tdata.get("fields") or {})
+    ticket_updates: Dict[str, Any] = {"updated_at": now}
     if payload.title is not None:
-        updates["title"] = payload.title
+        ticket_updates["title"] = payload.title
+        fields["Idea Title"] = payload.title
+        fields["title"] = payload.title
     if payload.description is not None:
-        updates["description"] = payload.description
+        ticket_updates["description"] = payload.description
+        fields["Overview"] = payload.description
+        fields["description"] = payload.description
     if payload.track is not None:
-        updates["track"] = payload.track.value
+        fields["track"] = payload.track.value
+        fields["Track"] = f"{payload.track.value.upper()} Track"
     if payload.difficulty is not None:
-        updates["difficulty"] = payload.difficulty.value
+        fields["difficulty"] = payload.difficulty.value
+        fields["Difficulty"] = payload.difficulty.value.capitalize()
     if payload.prerequisites is not None:
-        updates["prerequisites"] = payload.prerequisites
+        fields["prerequisites"] = payload.prerequisites
+        fields["Prerequisites"] = "\n".join(f"• {p}" for p in payload.prerequisites)
     if payload.rough_roadmap is not None:
-        updates["rough_roadmap"] = payload.rough_roadmap
+        fields["rough_roadmap"] = payload.rough_roadmap
+        fields["Rough Roadmap"] = "\n".join(
+            f"{i+1}. {r}" for i, r in enumerate(payload.rough_roadmap)
+        )
     if payload.learning_outcomes is not None:
-        updates["learning_outcomes"] = payload.learning_outcomes
+        fields["learning_outcomes"] = payload.learning_outcomes
+        fields["Learning Outcomes"] = "\n".join(
+            f"• {o}" for o in payload.learning_outcomes
+        )
 
-    doc_ref.update(updates)
-    refreshed = doc_ref.get().to_dict() or {}
-    return _to_idea_detail(idea_id, refreshed)
+    ticket_updates["fields"] = fields
+    ticket_ref.update(ticket_updates)
+    refreshed_tdata = ticket_ref.get().to_dict() or {}
+    return _ticket_to_idea_detail(idea_id, refreshed_tdata)
 
 
 @router.post(

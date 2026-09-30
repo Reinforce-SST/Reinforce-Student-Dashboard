@@ -128,6 +128,7 @@ class IdeaSummary(BaseModel):
     created_at: Optional[str] = None
     approved_at: Optional[str] = None
     is_upvoted: Optional[bool] = None
+    status: Optional[str] = None
 
 
 class IdeaDetail(IdeaSummary):
