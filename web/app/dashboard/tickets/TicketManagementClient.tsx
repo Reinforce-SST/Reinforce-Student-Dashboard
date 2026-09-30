@@ -619,6 +619,7 @@ export default function TicketManagementClient() {
     setSubmitError("");
     try {
       const payload = buildTicketCreatePayload();
+      const created = await api.createTicket(token, payload);
       setTickets((items) => [toTicketItem(created, created), ...items]);
       setSelectedTicketId(created.id);
       setFormTitle("");
