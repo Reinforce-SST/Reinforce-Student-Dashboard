@@ -216,10 +216,9 @@ def _verify_ticket_access(
     creator_uid = _extract_creator_uid(ticket_data)
     identities = _identity_keys(current_user)
 
-    # Confidential reports stay off the member website. The admin API is the
-    # only route that may inspect one.
+    # Confidential reports are visible only to core admins and the creator.
     if category in HIDDEN_CATEGORIES:
-        if not is_admin:
+        if not is_admin and creator_uid not in identities:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found."
             )
@@ -272,8 +271,6 @@ def list_my_tickets(
     tickets: List[TicketSummary] = []
     for doc in docs:
         data = doc.to_dict() or {}
-        if (data.get("category") or TicketCategory.MISC.value) in HIDDEN_CATEGORIES:
-            continue
         tickets.append(_to_ticket_summary(doc.id, data))
 
     # Sort newest first

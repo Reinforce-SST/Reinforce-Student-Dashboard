@@ -28,13 +28,11 @@ class TicketTests(unittest.TestCase):
         }
 
     def test_newest_visible_tickets_are_selected_after_filtering(self):
-        for index in range(110): self.ticket(f"report-{index:03}", category="report")
         for index in range(105): self.ticket(f"own-{index:03}")
         self.ticket("newest", updated="2026-09-24T00:00:00+00:00")
         result = tickets.list_my_tickets(USER)
         self.assertEqual(len(result.items), 100)
         self.assertEqual(result.items[0].id, "newest")
-        self.assertNotIn("report", [item.category for item in result.items])
 
     def test_thread_shows_latest_messages_in_chronological_order(self):
         self.ticket("own")
@@ -48,11 +46,19 @@ class TicketTests(unittest.TestCase):
 
     def test_foreign_and_confidential_tickets_return_404(self):
         self.ticket("foreign", owner="999999999999999999")
-        self.ticket("confidential", category="report")
-        for ticket_id in ("foreign", "confidential"):
+        self.ticket("foreign_confidential", category="report", owner="999999999999999999")
+        for ticket_id in ("foreign", "foreign_confidential"):
             with self.subTest(ticket_id=ticket_id), self.assertRaises(HTTPException) as error:
                 tickets.get_ticket(ticket_id, USER)
             self.assertEqual(error.exception.status_code, 404)
+
+    def test_own_confidential_ticket_is_accessible_to_creator(self):
+        self.ticket("own_report", category="report", owner=DID)
+        detail = tickets.get_ticket("own_report", USER)
+        self.assertEqual(detail.id, "own_report")
+        self.assertEqual(detail.category, "report")
+        my_tickets = tickets.list_my_tickets(USER)
+        self.assertIn("own_report", [item.id for item in my_tickets.items])
 
     def test_one_sided_link_cannot_list_or_open_old_ticket(self):
         self.ticket("own")

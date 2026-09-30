@@ -489,7 +489,7 @@ export const api = {
 
   myTickets: async (token: string) => {
     const data = await request<{ total: number; items: TicketSummary[] }>("/tickets/my", token);
-    return data.items.filter(ticket => ticket.category !== "report").slice(0, 100);
+    return data.items.slice(0, 100);
   },
 
   updateProfile: (token: string, body: ProfileUpdate) =>
