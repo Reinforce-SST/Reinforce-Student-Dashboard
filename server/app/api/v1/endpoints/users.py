@@ -3,21 +3,26 @@
 Implements the specification in server/plan.md (Single Source of Truth: users/{uid}).
 """
 
+import io
 import json
+import uuid
 from typing import Any, Dict, List, Optional
+import logging
 import urllib.error
 import urllib.request
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
-from firebase_admin import firestore
+from firebase_admin import auth, firestore
 from google.api_core.exceptions import AlreadyExists
 
 from app.api.security import get_admin_user, get_current_user
 from app.services.discord_link import consume_link, unlink_member
 from app.services.firebase import db, upload_file_to_storage
+from app.services.images import ImageRejected, read_image
 from app.services.config import get_settings
 from app.schemas.users import (
     AdminUserUpdateRequest,
+    AdminMemberListResponse,
     DiscordVerifyRequest,
     LeaderboardEntry,
     LeaderboardResponse,
@@ -37,21 +42,58 @@ settings = get_settings()
 USERS_COLLECTION = "users"
 VALID_TRACKS = {"total", "kaggle", "product", "research", "misc"}
 
+logger = logging.getLogger(__name__)
+
 
 from app.utils import now_iso, resolve_batch_year
 
 
-def _to_user_me(uid: str, data: Dict[str, Any]) -> UserMeResponse:
-    points_raw = data.get("points") or {}
-    points = TrackPoints(
-        total=int(points_raw.get("total", 0)),
-        kaggle=int(points_raw.get("kaggle", 0)),
-        product=int(points_raw.get("product", 0)),
-        research=int(points_raw.get("research", 0)),
-        misc=int(points_raw.get("misc", 0)),
+def _normalize_tier(raw_tier: Any) -> MemberTier:
+    if isinstance(raw_tier, MemberTier):
+        return raw_tier
+    if str(raw_tier or "").lower().strip() == "advanced":
+        return MemberTier.ADVANCED
+    return MemberTier.BEGINNER
+
+
+def _normalize_points(points_raw: Any) -> TrackPoints:
+    if not isinstance(points_raw, dict):
+        return TrackPoints()
+
+    def _safe_int(val: Any) -> int:
+        try:
+            return max(0, int(val or 0))
+        except (ValueError, TypeError):
+            return 0
+
+    return TrackPoints(
+        total=_safe_int(points_raw.get("total")),
+        kaggle=_safe_int(points_raw.get("kaggle")),
+        product=_safe_int(points_raw.get("product")),
+        research=_safe_int(points_raw.get("research")),
+        misc=_safe_int(points_raw.get("misc")),
     )
+
+
+def _to_user_me(uid: str, data: Dict[str, Any]) -> UserMeResponse:
+    points = _normalize_points(data.get("points"))
     social_raw = data.get("social_links") or {}
     social_links = SocialLinks(**social_raw) if isinstance(social_raw, dict) else SocialLinks()
+
+    raw_tier = data.get("tier")
+    tier = _normalize_tier(raw_tier)
+
+    role_label = data.get("role_label")
+    if not role_label and str(raw_tier or "").lower().strip() in {"core", "custom"}:
+        role_label = str(raw_tier).strip().lower()
+
+    raw_skills = data.get("skills")
+    if isinstance(raw_skills, list):
+        skills = [str(s).strip() for s in raw_skills if str(s).strip()]
+    elif isinstance(raw_skills, str) and raw_skills.strip():
+        skills = [s.strip() for s in raw_skills.split(",") if s.strip()]
+    else:
+        skills = []
 
     return UserMeResponse(
         id=uid,
@@ -62,13 +104,14 @@ def _to_user_me(uid: str, data: Dict[str, Any]) -> UserMeResponse:
         discord_link_version=data.get("discord_link_version"),
         is_admin=bool(data.get("is_admin", False)),
         is_member=bool(data.get("is_member", False)),
-        tier=data.get("tier") or MemberTier.BEGINNER,
+        tier=tier,
+        role_label=role_label,
         batch_year=resolve_batch_year(data.get("batch_year"), data.get("email") or ""),
         is_verified=bool(data.get("is_verified") and data.get("discord_link_version") == 1),
         verified_at=data.get("verified_at"),
         points=points,
         bio=data.get("bio"),
-        skills=data.get("skills") or [],
+        skills=skills,
         social_links=social_links,
         created_at=data.get("created_at"),
         updated_at=data.get("updated_at"),
@@ -77,16 +120,24 @@ def _to_user_me(uid: str, data: Dict[str, Any]) -> UserMeResponse:
 
 
 def _to_user_public(uid: str, data: Dict[str, Any]) -> UserPublicResponse:
-    points_raw = data.get("points") or {}
-    points = TrackPoints(
-        total=int(points_raw.get("total", 0)),
-        kaggle=int(points_raw.get("kaggle", 0)),
-        product=int(points_raw.get("product", 0)),
-        research=int(points_raw.get("research", 0)),
-        misc=int(points_raw.get("misc", 0)),
-    )
+    points = _normalize_points(data.get("points"))
     social_raw = data.get("social_links") or {}
     social_links = SocialLinks(**social_raw) if isinstance(social_raw, dict) else SocialLinks()
+
+    raw_tier = data.get("tier")
+    tier = _normalize_tier(raw_tier)
+
+    role_label = data.get("role_label")
+    if not role_label and str(raw_tier or "").lower().strip() in {"core", "custom"}:
+        role_label = str(raw_tier).strip().lower()
+
+    raw_skills = data.get("skills")
+    if isinstance(raw_skills, list):
+        skills = [str(s).strip() for s in raw_skills if str(s).strip()]
+    elif isinstance(raw_skills, str) and raw_skills.strip():
+        skills = [s.strip() for s in raw_skills.split(",") if s.strip()]
+    else:
+        skills = []
 
     return UserPublicResponse(
         id=uid,
@@ -94,10 +145,11 @@ def _to_user_public(uid: str, data: Dict[str, Any]) -> UserPublicResponse:
         avatar_url=data.get("avatar_url"),
         bio=data.get("bio"),
         is_member=bool(data.get("is_member", False)),
-        tier=data.get("tier") or MemberTier.BEGINNER,
+        tier=tier,
+        role_label=role_label,
         batch_year=resolve_batch_year(data.get("batch_year"), data.get("email") or ""),
         is_verified=bool(data.get("is_verified") and data.get("discord_link_version") == 1),
-        skills=data.get("skills") or [],
+        skills=skills,
         social_links=social_links,
         points=points,
     )
@@ -108,6 +160,7 @@ def _get_or_create_user(user_token: dict) -> UserMeResponse:
     email = (user_token.get("email") or "").lower().strip()
     name = user_token.get("name") or (email.split("@")[0] if email else "Club Member")
     picture = user_token.get("picture")
+    has_admin_claim = user_token.get("admin") is True
 
     doc_ref = db.collection(USERS_COLLECTION).document(uid)
     doc = doc_ref.get()
@@ -117,6 +170,9 @@ def _get_or_create_user(user_token: dict) -> UserMeResponse:
         data = doc.to_dict() or {}
         # Keep last login fresh and backfill missing or legacy batch values.
         updates: Dict[str, Any] = {"last_login": now, "updated_at": now}
+        if bool(data.get("is_admin")) != has_admin_claim:
+            updates["is_admin"] = has_admin_claim
+            data["is_admin"] = has_admin_claim
         resolved_batch = resolve_batch_year(data.get("batch_year"), email)
         if resolved_batch is not None and resolved_batch != data.get("batch_year"):
             updates["batch_year"] = resolved_batch
@@ -145,9 +201,10 @@ def _get_or_create_user(user_token: dict) -> UserMeResponse:
             "avatar_url": owned_legacy.get("avatar_url") or picture,
             "discord_id": discord_id if proven_link else None,
             "discord_link_version": 1 if proven_link else None,
-            "is_admin": False,
+            "is_admin": has_admin_claim,
             "is_member": bool(owned_legacy.get("is_member", False)),
             "tier": owned_legacy.get("tier") or MemberTier.BEGINNER.value,
+            "role_label": owned_legacy.get("role_label"),
             "batch_year": resolve_batch_year(owned_legacy.get("batch_year"), email),
             "is_verified": bool(proven_link and owned_legacy.get("is_verified")),
             "verified_at": owned_legacy.get("verified_at") if proven_link else None,
@@ -195,8 +252,8 @@ def update_me(
 
     if payload.full_name is not None:
         updates["full_name"] = payload.full_name.strip()
-    if payload.avatar_url is not None:
-        updates["avatar_url"] = payload.avatar_url.strip()
+    if "avatar_url" in payload.model_fields_set:
+        updates["avatar_url"] = payload.avatar_url.strip() if payload.avatar_url else None
     if payload.bio is not None:
         updates["bio"] = payload.bio.strip()
     if payload.skills is not None:
@@ -247,6 +304,18 @@ def verify_discord(
                 bot_response_data = json.loads(bot_res_body)
             if not bot_response_data.get("role_assigned"):
                 bot_response_data = {"status": "bot_warning", "detail": "Your account is linked, but the Discord role is pending. Run /auth again to retry."}
+
+            bot_discord_user = bot_response_data.get("discord_username")
+            if bot_discord_user and isinstance(bot_discord_user, str) and bot_discord_user.strip():
+                clean_bot_user = bot_discord_user.strip()
+                current_socials = dict(member.get("social_links") or {})
+                if current_socials.get("discord") != clean_bot_user:
+                    current_socials["discord"] = clean_bot_user
+                    db.collection(USERS_COLLECTION).document(uid).set({
+                        "social_links": current_socials,
+                        "updated_at": now_iso(),
+                    }, merge=True)
+                    member["social_links"] = current_socials
         except urllib.error.HTTPError as e:
             error_detail = e.read().decode("utf-8")
             try:
@@ -281,34 +350,23 @@ def unlink_discord(current_user: dict = Depends(get_current_user)):
     }
 
 
-import base64
-
-
 @router.post("/me/avatar", summary="Upload avatar image")
 def upload_avatar(
     file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
 ):
     """Upload custom avatar image to storage and update profile."""
-    if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Only image files are allowed.")
-
     uid = current_user["uid"]
-    file_extension = file.filename.split(".")[-1] if file.filename else "png"
-    destination_path = f"users/{uid}/avatar.{file_extension}"
-
-    avatar_url = None
     try:
-        avatar_url = upload_file_to_storage(file.file, destination_path, file.content_type)
-    except Exception:
-        # Fallback to direct data URI when Cloud Storage bucket is unprovisioned
-        try:
-            file.file.seek(0)
-            file_bytes = file.file.read()
-            b64 = base64.b64encode(file_bytes).decode("utf-8")
-            avatar_url = f"data:{file.content_type};base64,{b64}"
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to process avatar file: {str(e)}")
+        payload, extension = read_image(file.file, file.content_type)
+    except ImageRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    destination_path = f"users/{uid}/avatars/{uuid.uuid4().hex}.{extension}"
+    try:
+        avatar_url = upload_file_to_storage(io.BytesIO(payload), destination_path, file.content_type, shareable=True)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Image storage is unavailable. Try again later.") from exc
 
     db.collection(USERS_COLLECTION).document(uid).set({
         "avatar_url": avatar_url,
@@ -334,6 +392,9 @@ def update_user_status(
 
     if not doc.exists:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    data = doc.to_dict() or {}
+    if data.get("id") != user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     now = now_iso()
     updates: Dict[str, Any] = {"updated_at": now}
@@ -341,13 +402,55 @@ def update_user_status(
     if payload.is_member is not None:
         updates["is_member"] = payload.is_member
     if payload.is_admin is not None:
+        if user_id == admin.get("uid") and not payload.is_admin:
+            raise HTTPException(status_code=400, detail="You cannot remove your own admin access.")
+        try:
+            firebase_user = auth.get_user(user_id)
+            claims = dict(firebase_user.custom_claims or {})
+            if payload.is_admin:
+                claims["admin"] = True
+            else:
+                claims.pop("admin", None)
+            auth.set_custom_user_claims(user_id, claims)
+        except auth.UserNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Firebase account not found") from exc
         updates["is_admin"] = payload.is_admin
     if payload.tier is not None:
         updates["tier"] = payload.tier.value
+    if "role_label" in payload.model_fields_set:
+        updates["role_label"] = payload.role_label
 
     doc_ref.set(updates, merge=True)
     updated = doc_ref.get().to_dict() or {}
     return _to_user_me(user_id, updated)
+
+
+@router.get("/admin-directory", response_model=AdminMemberListResponse, summary="Search members for role management (Admin only)")
+def admin_directory(
+    search: str = Query("", max_length=100),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    admin: dict = Depends(get_admin_user),
+) -> AdminMemberListResponse:
+    query = search.strip().lower()
+    members = []
+    for doc in db.collection(USERS_COLLECTION).stream():
+        data = doc.to_dict() or {}
+        if data.get("id") != doc.id:
+            continue
+        if query and query not in (data.get("full_name") or "").lower() and query not in (data.get("email") or "").lower():
+            continue
+        try:
+            members.append(_to_user_me(doc.id, data))
+        except Exception as exc:
+            logger.warning("Skipping invalid member document %s: %s", doc.id, exc)
+            continue
+    members.sort(key=lambda member: ((member.full_name or "").lower(), member.id or ""))
+    start = (page - 1) * page_size
+    return AdminMemberListResponse(
+        items=members[start:start + page_size], total=len(members), page=page,
+        page_size=page_size, has_more=start + page_size < len(members),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -373,6 +476,8 @@ def get_leaderboard(
 
     for doc in docs:
         data = doc.to_dict() or {}
+        if data.get("firebase_uid") and data["firebase_uid"] != doc.id:
+            continue
         if doc.id.isdigit() and not data.get("full_name"):
             continue
 
@@ -474,7 +579,7 @@ def list_users(
     tier: Optional[MemberTier] = Query(None, description="Filter by tier"),
     is_member: Optional[bool] = Query(None, description="Filter by club member status"),
     page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(20, ge=1, le=50, description="Items per page"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
 ) -> UserListResponse:
     """Search and browse member directory with filters."""
     docs = db.collection(USERS_COLLECTION).stream()
@@ -482,6 +587,8 @@ def list_users(
 
     for doc in docs:
         data = doc.to_dict() or {}
+        if data.get("firebase_uid") and data["firebase_uid"] != doc.id:
+            continue
         if doc.id.isdigit() and not data.get("full_name"):
             continue
 
@@ -504,14 +611,20 @@ def list_users(
         if search:
             s = search.lower().strip()
             name_match = s in public_user.full_name.lower()
+            email_match = s in (data.get("email") or "").lower()
+            id_match = s in public_user.id.lower()
             skill_match = any(s in sk.lower() for sk in public_user.skills)
             bio_match = s in (public_user.bio or "").lower()
-            if not (name_match or skill_match or bio_match):
+            if not (name_match or email_match or id_match or skill_match or bio_match):
                 continue
 
         all_users.append(public_user)
 
-    all_users.sort(key=lambda u: u.points.total, reverse=True)
+    if track and track.lower().strip() in VALID_TRACKS:
+        t_key = track.lower().strip()
+        all_users.sort(key=lambda u: getattr(u.points, t_key, 0), reverse=True)
+    else:
+        all_users.sort(key=lambda u: u.points.total, reverse=True)
 
     total = len(all_users)
     start = (page - 1) * page_size

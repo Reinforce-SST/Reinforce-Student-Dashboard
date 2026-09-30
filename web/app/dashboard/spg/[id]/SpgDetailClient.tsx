@@ -32,7 +32,8 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
-
+  const [membersMap, setMembersMap] = useState<Record<string, { full_name: string; avatar_url?: string | null }>>({});
+  const [failedAvatars, setFailedAvatars] = useState<Set<string>>(new Set());
 
   // Fetch SPG & Reports from Backend API
   const fetchSpgData = useCallback(async () => {
@@ -42,6 +43,22 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
       setLoadError("");
       const spgRes = await api.getSpg(token, spgId);
       setSpg(spgRes);
+
+      if (spgRes?.member_ids?.length) {
+        void Promise.all(
+          spgRes.member_ids.map(async (uid) => {
+            try {
+              const u = await api.getUserProfile(token, uid);
+              return [uid, { full_name: u.full_name || uid, avatar_url: u.avatar_url || null }] as const;
+            } catch {
+              const fallbackName = spgRes.member_names?.[uid] || (uid === spgRes.lead_id ? spgRes.lead_name : uid) || uid;
+              return [uid, { full_name: fallbackName, avatar_url: null }] as const;
+            }
+          })
+        ).then((entries) => {
+          setMembersMap(Object.fromEntries(entries));
+        }).catch(() => {});
+      }
       try {
         const repRes = await api.listSpgReports(token, spgId);
         setReports([...repRes.items].sort((a, b) => b.sequence_number - a.sequence_number));
@@ -267,7 +284,7 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
         {/* Left Main Column: Proposition & Reports History */}
         <div className={styles.contentColumn}>
           {/* Progress Reports Feed */}
-          <section className={styles.sectionCard} aria-label="Progress Reports History">
+          <section id="reports" className={`${styles.sectionCard} ${styles.reportsSection}`} aria-label="Progress Reports History">
             <div className={styles.sectionHeaderRow}>
               <h2 className={styles.sectionTitle}>
                 <MemberIcon name="articles" size={18} />
@@ -406,31 +423,60 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
 
             <div className={styles.rosterList}>
               {/* Project Lead */}
-              <div className={styles.rosterItem}>
-                <div className={styles.rosterLeft}>
-                  <div className={`${styles.memberAvatar} ${styles.leadAvatar}`}>
-                    {getInitials(spg.lead_name || spg.lead_id)}
+              {(() => {
+                const leadProfile = membersMap[spg.lead_id];
+                const leadName = leadProfile?.full_name || spg.lead_name || spg.lead_id;
+                const leadAvatar = leadProfile?.avatar_url;
+                return (
+                  <div className={styles.rosterItem}>
+                    <div className={styles.rosterLeft}>
+                      <div className={`${styles.memberAvatar} ${styles.leadAvatar}`}>
+                        {leadAvatar && !failedAvatars.has(spg.lead_id) ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={leadAvatar}
+                            alt={leadName}
+                            className={styles.avatarImg}
+                            onError={() => setFailedAvatars((prev) => new Set(prev).add(spg.lead_id))}
+                          />
+                        ) : (
+                          getInitials(leadName)
+                        )}
+                      </div>
+                      <div className={styles.memberNameGroup}>
+                        <span className={styles.memberName}>
+                          {leadName}
+                        </span>
+                        <span className={styles.memberRole}>Project Lead</span>
+                      </div>
+                    </div>
+                    <span className={styles.leadBadge}>LEAD</span>
                   </div>
-                  <div className={styles.memberNameGroup}>
-                    <span className={styles.memberName}>
-                      {spg.lead_name || spg.lead_id}
-                    </span>
-                    <span className={styles.memberRole}>Project Lead</span>
-                  </div>
-                </div>
-                <span className={styles.leadBadge}>LEAD</span>
-              </div>
+                );
+              })()}
 
               {/* Other Members */}
               {spg.member_ids
                 ?.filter((uid) => uid !== spg.lead_id)
                 .map((uid) => {
-                  const name = spg.member_names?.[uid] || uid;
+                  const memProfile = membersMap[uid];
+                  const name = memProfile?.full_name || spg.member_names?.[uid] || uid;
+                  const avatar = memProfile?.avatar_url;
                   return (
                     <div key={uid} className={styles.rosterItem}>
                       <div className={styles.rosterLeft}>
                         <div className={styles.memberAvatar}>
-                          {getInitials(name)}
+                          {avatar && !failedAvatars.has(uid) ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={avatar}
+                              alt={name}
+                              className={styles.avatarImg}
+                              onError={() => setFailedAvatars((prev) => new Set(prev).add(uid))}
+                            />
+                          ) : (
+                            getInitials(name)
+                          )}
                         </div>
                         <div className={styles.memberNameGroup}>
                           <span className={styles.memberName}>{name}</span>

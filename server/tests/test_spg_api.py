@@ -69,6 +69,14 @@ class SPGAPITestCase(unittest.TestCase):
         reports_service.uploads.store_pdf = self.storage.store
         self.addCleanup(setattr, reports_service.uploads, "store_pdf", real_report_store)
 
+        real_delete = uploads.delete_file
+        uploads.delete_file = self.storage.delete
+        self.addCleanup(setattr, uploads, "delete_file", real_delete)
+        real_report_delete = reports_service.uploads.delete_file
+        reports_service.uploads.delete_file = self.storage.delete
+        self.addCleanup(setattr, reports_service.uploads, "delete_file", real_report_delete)
+
+
         app = FastAPI()
         app.include_router(endpoints.router, prefix="/api/v1")
         app.dependency_overrides[get_db] = lambda: self.db
@@ -81,8 +89,8 @@ class SPGAPITestCase(unittest.TestCase):
     def create_spg(self, **overrides) -> str:
         """Seed an SPG through the service.
 
-        No HTTP route creates one: creation belongs to registration approval,
-        and the ticket domain that would drive it does not exist yet.
+        No direct SPG route creates one: production creation belongs to the
+        admin ticket-approval endpoint.
         """
         record, _created = service.create_spg(
             self.db,
@@ -661,6 +669,7 @@ class PDFReportListingFieldTests(SPGAPITestCase):
         )
         self.assertEqual(response.status_code, 422)
         self.assertEqual(self.db.documents("spg_reports"), {})
+        self.assertEqual(self.storage.objects, {})
 
 
 if __name__ == "__main__":

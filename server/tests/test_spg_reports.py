@@ -105,6 +105,13 @@ class SubmissionTests(unittest.TestCase):
         self.db = database()
         self.storage = FakeStorage()
 
+        real_delete = uploads.delete_file
+        uploads.delete_file = self.storage.delete
+        self.addCleanup(setattr, uploads, "delete_file", real_delete)
+        real_service_delete = service.uploads.delete_file
+        service.uploads.delete_file = self.storage.delete
+        self.addCleanup(setattr, service.uploads, "delete_file", real_service_delete)
+
     def submit(self, **overrides):
         return service.submit_pdf_report(
             self.db,
@@ -180,6 +187,8 @@ class SubmissionTests(unittest.TestCase):
                 runner=failing_runner, now=NOW, store=self.storage.store,
             )
         self.assertEqual(self.db.documents("spg_reports"), {})
+        self.assertEqual(self.storage.objects, {})
+        self.assertEqual(len(self.storage.deleted), 1)
 
     def test_a_failed_upload_writes_nothing(self):
         broken = FakeStorage(fail=True)

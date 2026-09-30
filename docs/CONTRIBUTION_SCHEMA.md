@@ -1,8 +1,9 @@
-> ## STATUS: PROPOSED SCHEMA — NOT YET PART OF THE FIRESTORE DATA CONTRACT
+> ## Historical design note (September 2026)
 >
-> The Pydantic contract in `server/app/schemas/contributions.py`. No collection holds
-> contributions and no code reads or writes one. [`DATA_CONTRACT.md`](DATA_CONTRACT.md)
-> is unchanged; persistence is a separate team decision.
+> This is the original proposal. Contributions are now persisted and served by
+> `server/app/services/contributions.py`. For current collection and API behavior,
+> use [`DATA_CONTRACT.md`](DATA_CONTRACT.md) and the current code. Routes and
+> implementation status described below are historical.
 
 # Contribution Schema
 

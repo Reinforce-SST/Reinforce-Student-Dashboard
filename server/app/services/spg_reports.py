@@ -117,6 +117,7 @@ def submit_pdf_report(
     runner: Optional[Callable[[Any, Callable[[Any], Any]], Any]] = None,
     now: Optional[datetime] = None,
     store: Optional[Callable[[bytes, str], str]] = None,
+    discard: Optional[Callable[[str], None]] = None,
 ) -> SPGReportRecord:
     """File a report as an uploaded PDF.
 
@@ -150,7 +151,7 @@ def submit_pdf_report(
             runner=runner,
         )
     except Exception:
-        _discard(destination)
+        _discard(destination, discard_fn=discard)
         raise
 
 
@@ -189,12 +190,16 @@ def submit_form_report(
     )
 
 
-def _discard(destination_path: str) -> None:
+def _discard(
+    destination_path: str,
+    discard_fn: Optional[Callable[[str], None]] = None,
+) -> None:
     """Best effort removal of an object whose record was never written."""
     try:
-        from app.services.firebase import get_bucket
-
-        get_bucket().blob(destination_path).delete()
+        if discard_fn is not None:
+            discard_fn(destination_path)
+        else:
+            uploads.delete_file(destination_path)
     except Exception:
         # The upload is orphaned rather than the request failing twice; the
         # caller is already raising the real error.

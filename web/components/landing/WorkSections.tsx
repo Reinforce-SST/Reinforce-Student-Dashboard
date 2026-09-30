@@ -52,7 +52,7 @@ export default function WorkSections() {
             <h2 className={`${styles.h2} ${styles.botTitle}`} id="bot-heading">Onboarding starts with <MarkerText>one command</MarkerText></h2>
             <p>The bot sends you a private link to the site. Sign in with your college email to connect your Discord identity to your club record.</p>
             <ul className={styles.ticks}>
-              <li>Google sign-in pinned to @sst.scaler.com</li>
+              <li>Google sign-in for @sst.scaler.com & @scaler.com</li>
               <li>One linked identity across Discord and the web</li>
               <li>Project groups and resource requests through the club bot</li>
             </ul>

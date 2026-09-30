@@ -1,0 +1,90 @@
+/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+............Unhandled API error
+Traceback (most recent call last):
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/main.py", line 43, in __call__
+    await self.inner(scope, receive, tracked_send)
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/starlette/routing.py", line 670, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 1281, in handle
+    await super().handle(scope, receive, send)
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/starlette/routing.py", line 280, in handle
+    await self.app(scope, receive, send)
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 354, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/starlette/concurrency.py", line 34, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 354, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/starlette/concurrency.py", line 34, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/anyio/to_thread.py", line 65, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2706, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 1100, in run
+    result = context.run(func, *args)
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/tests/test_app_routes.py", line 106, in fail_for_cors_probe
+    raise RuntimeError("test-only failure")
+RuntimeError: test-only failure
+..E.......................................................................................s........................................................................................................../home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py:1100: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  result = context.run(func, *args)
+..................................................................................................................................................................................................................................................................................................
+======================================================================
+ERROR: test_legacy_client_uses_supported_user_routes (tests.test_app_routes.ApplicationImportTests.test_legacy_client_uses_supported_user_routes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/server/tests/test_app_routes.py", line 147, in test_legacy_client_uses_supported_user_routes
+    ).read_text(encoding="utf-8")
+      ~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/_temp/uv-python-dir/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/pathlib/_local.py", line 546, in read_text
+    return PathBase.read_text(self, encoding, errors, newline)
+           ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/_temp/uv-python-dir/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/pathlib/_abc.py", line 632, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/_temp/uv-python-dir/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/pathlib/_local.py", line 537, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/runner/work/Reinforce-Student-Dashboard/Reinforce-Student-Dashboard/client/src/App.jsx'
+
+----------------------------------------------------------------------
+Ran 499 tests in 4.807s
+
+FAILED (errors=1, skipped=1)
+Error: Process completed with exit code 1.

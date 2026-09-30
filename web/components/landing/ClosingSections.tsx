@@ -14,7 +14,7 @@ export default function ClosingSections() {
         <ol className={styles.three}>
           <li className={`${styles.tile} ${styles.rise}`} data-animate="rise" style={stagger(2)}>
             <p className={styles.n}>01</p><h3>Sign in</h3>
-            <p>Google, with your @sst.scaler.com address. Your college account is your way in.</p>
+            <p>Google, with your @sst.scaler.com or @scaler.com address. Your official account is your way in.</p>
           </li>
           <li className={`${styles.tile} ${styles.rise}`} data-animate="rise" style={stagger(3)}>
             <p className={styles.n}>02</p><h3>Link Discord</h3>

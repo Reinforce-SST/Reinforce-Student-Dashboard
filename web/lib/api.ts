@@ -1,12 +1,12 @@
 /**
  * Client for the Reinforce API.
  *
- * Every call is authenticated with the caller's Firebase ID token. The browser
- * never talks to Firestore directly — the Admin SDK is server-side only.
+ * Member and admin calls use the caller's Firebase ID token. Public reads do
+ * not require one. The browser never talks to Firestore directly.
  */
 
 import type { SPGRecord, SPGReportRecord } from "./spgData";
-import type { ContributionRecord } from "./contributionData";
+import type { ContributionRecord, PublicContributionRecord } from "./contributionData";
 
 const BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080/api/v1";
@@ -17,6 +17,23 @@ export class ApiError extends Error {
     this.name = "ApiError";
   }
 }
+
+export type ArticleSummary = {
+  id: string; slug: string; title: string; summary: string;
+  cover_image_url?: string | null; tags: string[];
+  reading_time_minutes: number; published_at?: string | null;
+  stats: { upvote_count: number; comment_count: number; view_count: number };
+};
+export type ArticleDetail = ArticleSummary & { content: string };
+export type IdeaSummary = {
+  id: string; title: string; description: string;
+  track: string; difficulty?: string | null; is_verified: boolean;
+  stats: { upvote_count: number; views_count: number; claims_count: number };
+  created_at?: string | null;
+};
+export type IdeaDetail = IdeaSummary & {
+  prerequisites: string[]; rough_roadmap: string[]; learning_outcomes: string[];
+};
 
 /** Nothing should hang the UI forever. Render cold starts are slow but finite. */
 const TIMEOUT_MS = 20_000;
@@ -30,7 +47,7 @@ async function request<T>(path: string, token?: string | null, init?: RequestIni
     res = await fetch(`${BASE}${path}`, {
       ...init,
       headers: {
-        "Content-Type": "application/json",
+        ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...init?.headers,
       },
@@ -88,6 +105,9 @@ export type EventSummaryItem = {
     average_rating: number;
   };
   banner_url?: string | null;
+  banner_badge_text?: string | null;
+  banner_cta_text?: string | null;
+  banner_cta_url?: string | null;
   status: string;
 };
 
@@ -144,6 +164,9 @@ export type EventDocument = {
     average_rating: number;
   };
   banner_url?: string | null;
+  banner_badge_text?: string | null;
+  banner_cta_text?: string | null;
+  banner_cta_url?: string | null;
   status: string;
   created_by?: string;
   created_at?: string;
@@ -169,8 +192,8 @@ export type TrackPoints = {
 export type MemberTier = "beginner" | "advanced";
 
 export type StudentProfile = {
-  id?: string;
-  email: string;
+  id: string;
+  email?: string;
   full_name: string;
   avatar_url?: string | null;
   discord_id?: string | null;
@@ -180,6 +203,7 @@ export type StudentProfile = {
   is_admin?: boolean;
   is_member?: boolean;
   tier?: MemberTier;
+  role_label?: string | null;
   batch_year?: number | null;
   bio?: string | null;
   points?: TrackPoints;
@@ -228,10 +252,13 @@ export type TicketSummary = {
   status: TicketStatus;
   priority?: "low" | "medium" | "high" | "urgent";
   created_by_uid?: string;
+  assigned_to_uid?: string | null;
   spg_id?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
   thread_url?: string | null;
+  created_by_name?: string | null;
+  assigned_to_name?: string | null;
 };
 
 export type TicketListResponse = {
@@ -245,7 +272,16 @@ export type ApiTicketDetail = TicketSummary & {
   fields?: Record<string, unknown>;
   close_reason?: string | null;
   closed_at?: string | null;
-  discord_meta?: { thread_url?: string | null } | null;
+  discord_meta?: {
+    thread_url?: string | null;
+    guild_id?: string | null;
+    channel_id?: string | null;
+    thread_id?: string | null;
+  } | null;
+  created_by_email?: string | null;
+  created_by_avatar?: string | null;
+  assigned_to_email?: string | null;
+  assigned_to_avatar?: string | null;
 };
 
 export type TicketCreateRequest = {
@@ -267,36 +303,143 @@ type ApiTicketMessage = {
 };
 
 const FIELD_ORDER: Partial<Record<TicketCategory, string[]>> = {
-  spg_registration: ["Project Name & Track", "Team Members", "Duration & Frequency", "Summary & Goals"],
+  spg_registration: [
+    "Project Name",
+    "Track",
+    "Team Leader",
+    "Team Members",
+    "Duration (Days)",
+    "Report Frequency (Days)",
+    "Summary & Goals",
+    "Duration & Frequency",
+    "Project Name & Track",
+  ],
   compute_resource_request: ["SPG Name", "Resources Requested", "Progress Proof", "Justification"],
   learning_resource_request: ["Topic / Subject Area", "Resource Format", "Target Audience / Track", "Description & Suggested Links"],
   resource_request: ["SPG Name", "Resources Requested", "Progress Proof", "Justification"],
-  idea_jar: ["Idea Title", "Track", "Overview"],
+  idea_jar: [
+    "Idea Title",
+    "Track",
+    "Difficulty",
+    "Overview",
+    "Prerequisites",
+    "Rough Roadmap",
+    "Learning Outcomes",
+    "Track & Difficulty",
+    "Roadmap & Outcomes",
+  ],
   support: ["Subject", "Details"],
-  feedback: ["Feedback Topic", "Comments"],
+  feedback: ["Feedback Topic", "Feedback Details", "Comments", "Topic"],
   misc: ["Subject", "Details"],
   report: ["Incident Summary", "Report Details"],
 };
 
 function ticketFields(category: TicketCategory, fields: Record<string, unknown>) {
   const order = FIELD_ORDER[category] ?? [];
-  return Object.entries(fields)
-    .sort(([left], [right]) => {
-      const leftIndex = order.indexOf(left);
-      const rightIndex = order.indexOf(right);
-      if (leftIndex !== -1 || rightIndex !== -1) {
-        if (leftIndex === -1) return 1;
-        if (rightIndex === -1) return -1;
-        return leftIndex - rightIndex;
+  const internalKeysToSkip = new Set([
+    "leader_uid",
+    "member_uids",
+    "duration_days",
+    "frequency_days",
+    "prerequisites",
+    "rough_roadmap",
+    "learning_outcomes",
+    "topic",
+  ]);
+
+  const rawEntries: [string, unknown][] = [];
+  for (const [key, val] of Object.entries(fields)) {
+    if (val === undefined || val === null) continue;
+    const strVal = String(val).trim();
+    if (!strVal || strVal === "None specified" || strVal === "None") continue;
+
+    // Skip redundant raw snake_case keys if Title Case key exists
+    if (
+      internalKeysToSkip.has(key.toLowerCase()) &&
+      Object.keys(fields).some(
+        (k) => k !== key && k.toLowerCase().replace(/[^a-z0-9]/g, "") === key.replace(/[^a-z0-9]/g, "")
+      )
+    ) {
+      continue;
+    }
+    rawEntries.push([key, strVal]);
+  }
+
+  // Sort according to preferred order
+  rawEntries.sort(([left], [right]) => {
+    const leftIndex = order.indexOf(left);
+    const rightIndex = order.indexOf(right);
+    if (leftIndex !== -1 || rightIndex !== -1) {
+      if (leftIndex === -1) return 1;
+      if (rightIndex === -1) return -1;
+      return leftIndex - rightIndex;
+    }
+    return left.localeCompare(right);
+  });
+
+  // Deduplicate synonym labels or duplicate values
+  const seenValues = new Map<string, string>();
+  const deduped: { label: string; value: string }[] = [];
+
+  for (const [label, val] of rawEntries) {
+    const strVal = String(val).trim();
+    // Synonym mapping:
+    // Suggestion Topic <-> Feedback Topic
+    // Feedback Details <-> Comments
+    if (label === "Suggestion Topic" && fields["Feedback Topic"] !== undefined && String(fields["Feedback Topic"]).trim() === strVal) {
+      continue;
+    }
+    if (label === "Comments" && fields["Feedback Details"] !== undefined && String(fields["Feedback Details"]).trim() === strVal) {
+      continue;
+    }
+    if (label === "Feedback Topic" && fields["Suggestion Topic"] !== undefined && String(fields["Suggestion Topic"]).trim() === strVal && deduped.some((d) => d.label === "Suggestion Topic")) {
+      continue;
+    }
+
+    if (seenValues.has(strVal)) {
+      const prevLabel = seenValues.get(strVal)!;
+      if (
+        (prevLabel.includes("Topic") && label.includes("Topic")) ||
+        (prevLabel.includes("Comment") && label.includes("Detail")) ||
+        (prevLabel.includes("Detail") && label.includes("Comment")) ||
+        prevLabel.toLowerCase() === label.toLowerCase()
+      ) {
+        continue;
       }
-      return left.localeCompare(right);
-    })
-    .map(([label, value]) => ({ label, value: String(value) }));
+    }
+
+    seenValues.set(strVal, label);
+    deduped.push({ label, value: strVal });
+  }
+
+  return deduped;
 }
 
 /* --------------------------------------------------------------- requests */
 
 export const api = {
+  listArticles: (search = "", page = 1) => {
+    const query = new URLSearchParams({ page: String(page), page_size: "20" });
+    if (search.trim()) query.set("search", search.trim());
+    return request<{ items: ArticleSummary[]; has_more: boolean; total: number }>(`/blogs?${query}`);
+  },
+  getArticle: (slug: string) => request<ArticleDetail>(`/blogs/${encodeURIComponent(slug)}`),
+  publishArticle: (token: string, body: { title: string; summary: string; content: string; tags: string[] }) =>
+    request<ArticleDetail>("/blogs", token, { method: "POST", body: JSON.stringify({ ...body, status: "published" }) }),
+  listIdeas: (search = "", page = 1) => {
+    const query = new URLSearchParams({ page: String(page), page_size: "20" });
+    if (search.trim()) query.set("search", search.trim());
+    return request<{ items: IdeaSummary[]; has_more: boolean; total: number }>(`/ideas?${query}`);
+  },
+  getIdea: (id: string, token?: string) => request<IdeaDetail>(`/ideas/${encodeURIComponent(id)}`, token),
+  myIdeas: (token: string) => request<{ items: IdeaSummary[] }>("/ideas/my", token),
+  createIdea: (token: string, body: { title: string; description: string; track: string }) =>
+    request<IdeaDetail>("/ideas", token, { method: "POST", body: JSON.stringify(body) }),
+  upvoteIdea: (token: string, id: string) =>
+    request<{ upvoted: boolean; upvote_count: number }>(`/ideas/${encodeURIComponent(id)}/upvote`, token, { method: "POST" }),
+  pendingIdeas: (token: string) => request<{ items: IdeaSummary[] }>("/ideas/pending", token),
+  approveIdea: (token: string, id: string) =>
+    request<IdeaDetail>(`/ideas/${encodeURIComponent(id)}/approve`, token, { method: "POST" }),
   syncUser: (token: string) =>
     request<StudentProfile>("/users/sync", token, {
       method: "POST",
@@ -328,17 +471,25 @@ export const api = {
         ...detail,
         description: detail.description ?? "",
         fields: ticketFields(detail.category, detail.fields ?? {}),
+        created_by_name: detail.created_by_name ?? null,
+        created_by_email: detail.created_by_email ?? null,
+        created_by_avatar: detail.created_by_avatar ?? null,
+        assigned_to_name: detail.assigned_to_name ?? null,
+        assigned_to_email: detail.assigned_to_email ?? null,
+        assigned_to_avatar: detail.assigned_to_avatar ?? null,
       },
-      messages: messages.map(message => ({
+      messages: messages.map((message) => ({
         ...message,
-        sender_name: message.sender_name?.trim() || (message.sender_role === "admin" || message.sender_role === "lead" ? "Club team" : "Member"),
+        sender_name:
+          message.sender_name?.trim() ||
+          (message.sender_role === "admin" || message.sender_role === "lead" ? "Club team" : "Member"),
       })),
     };
   },
 
   myTickets: async (token: string) => {
     const data = await request<{ total: number; items: TicketSummary[] }>("/tickets/my", token);
-    return data.items.filter(ticket => ticket.category !== "report").slice(0, 100);
+    return data.items.slice(0, 100);
   },
 
   updateProfile: (token: string, body: ProfileUpdate) =>
@@ -507,7 +658,7 @@ export const api = {
     if (params?.tier && params.tier !== "all") query.set("tier", params.tier);
     if (params?.is_member !== undefined) query.set("is_member", String(params.is_member));
     if (params?.page) query.set("page", String(params.page));
-    if (params?.page_size) query.set("page_size", String(params.page_size));
+    if (params?.page_size) query.set("page_size", String(Math.min(params.page_size, 50)));
 
     const qs = query.toString();
     return request<{ items: StudentProfile[]; total: number; page: number; page_size: number; has_more: boolean }>(
@@ -544,6 +695,16 @@ export const api = {
     const query = qs.toString();
     return request<{ items: T[]; next_cursor?: string | null }>(
       `/contributions/user/${encodeURIComponent(userId)}${query ? `?${query}` : ""}`,
+      token
+    );
+  },
+
+  getPublicUserContributions: (token: string, userId: string, limit: number = 50, cursor?: string | null) => {
+    const qs = new URLSearchParams();
+    qs.set("limit", String(limit));
+    if (cursor) qs.set("cursor", cursor);
+    return request<{ items: PublicContributionRecord[]; next_cursor?: string | null }>(
+      `/contributions/public/user/${encodeURIComponent(userId)}?${qs}`,
       token
     );
   },
@@ -607,6 +768,33 @@ export const api = {
   }),
 
   /* ----------------------------------------------------------- Admin APIs */
+  adminUploadEventMedia: async (token: string, file: File): Promise<{ url: string }> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const response = await fetch(`${BASE}/events/media`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new ApiError(typeof body?.detail === "string" ? body.detail : `Image upload failed (${response.status}).`, response.status);
+      }
+      return response.json() as Promise<{ url: string }>;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new ApiError("Image upload timed out. Try again.", 504);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+
   adminCreateEvent: (token: string, payload: Record<string, unknown>) =>
     request<EventSummaryItem>("/events", token, {
       method: "POST",
@@ -637,12 +825,30 @@ export const api = {
   adminUpdateUserStatus: (
     token: string,
     userId: string,
-    payload: { is_admin?: boolean; is_member?: boolean; tier?: string }
+    payload: { is_admin?: boolean; is_member?: boolean; tier?: MemberTier; role_label?: string | null }
   ) =>
     request<StudentProfile>(`/users/${encodeURIComponent(userId)}/status`, token, {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+
+  adminDirectory: async (token: string, params: { search?: string; page?: number; page_size?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.search) query.set("search", params.search);
+    if (params.page) query.set("page", String(params.page));
+    if (params.page_size) query.set("page_size", String(params.page_size));
+    try {
+      return await request<{ items: StudentProfile[]; total: number; page: number; page_size: number; has_more: boolean }>(
+        `/users/admin-directory?${query.toString()}`,
+        token
+      );
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        return api.browseUsers(token, params);
+      }
+      throw err;
+    }
+  },
 
   adminAwardContribution: (token: string, userId: string, payload: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/contributions/award/user/${encodeURIComponent(userId)}`, token, {
@@ -650,25 +856,47 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  adminRecalculateUserPoints: (token: string, userId: string) =>
+    request<Record<string, unknown>>(`/contributions/recalculate/${encodeURIComponent(userId)}`, token, { method: "POST" }),
+
   adminReviewContribution: (token: string, contribId: string, action: "approve" | "reject" | "revoke", reason?: string) =>
     request<Record<string, unknown>>(`/contributions/${encodeURIComponent(contribId)}/review`, token, {
       method: "PATCH",
       body: JSON.stringify({ action, reason }),
     }),
 
-  adminGetAllTickets: (token: string) =>
-    request<TicketSummary[]>("/tickets", token),
-
-  adminUpdateTicket: (token: string, ticketId: string, payload: Record<string, unknown>) =>
-    request<TicketSummary>(`/tickets/${encodeURIComponent(ticketId)}`, token, {
+  adminGetAllTickets: (token: string, page = 1, category?: TicketCategory) => {
+    const query = new URLSearchParams({ page: String(page), page_size: "20" });
+    if (category) query.set("category", category);
+    return request<{ total: number; items: TicketSummary[] }>(`/tickets?${query}`, token);
+  },
+  adminUpdateTicketStatus: (token: string, ticketId: string, nextStatus: TicketStatus, closeReason?: string) =>
+    request<TicketSummary>(`/tickets/${encodeURIComponent(ticketId)}/status`, token, {
       method: "PATCH",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ status: nextStatus, ...(closeReason ? { close_reason: closeReason } : {}) }),
     }),
-
-  adminReviewSpgProposal: (token: string, requestId: string, decision: "approved" | "rejected", notes?: string) =>
-    request<Record<string, unknown>>(`/spg/registrations/${encodeURIComponent(requestId)}/review`, token, {
+  adminApproveSpgTicket: (token: string, ticketId: string, approval: { type: string; track: string; visibility: string; proposition?: File | null }) => {
+    const body = new FormData();
+    body.set("spg_type", approval.type);
+    body.set("track", approval.track);
+    body.set("visibility", approval.visibility);
+    if (approval.proposition) body.set("proposition", approval.proposition);
+    return request<ApiTicketDetail>(`/tickets/${encodeURIComponent(ticketId)}/approve-spg`, token, { method: "POST", body });
+  },
+  postTicketMessage: (token: string, ticketId: string, content: string, attachments: string[] = []) =>
+    request<ApiTicketMessage>(`/tickets/${encodeURIComponent(ticketId)}/messages`, token, {
       method: "POST",
-      body: JSON.stringify({ decision, notes }),
+      body: JSON.stringify({ content, attachments }),
+    }),
+  adminAssignTicket: (token: string, ticketId: string, assignedToUid: string) =>
+    request<ApiTicketDetail>(`/tickets/${encodeURIComponent(ticketId)}/assign`, token, {
+      method: "PATCH",
+      body: JSON.stringify({ assigned_to_uid: assignedToUid }),
+    }),
+  closeTicket: (token: string, ticketId: string, closeReason?: string) =>
+    request<ApiTicketDetail>(`/tickets/${encodeURIComponent(ticketId)}/close`, token, {
+      method: "POST",
+      body: JSON.stringify({ close_reason: closeReason || null }),
     }),
 };
 
@@ -692,8 +920,8 @@ export const CATEGORY_LABEL: Record<TicketCategory, string> = {
   learning_resource_request: "Learning resource request",
   resource_request: "Resource request",
   support: "Support",
-  idea_jar: "Idea Jar",
-  feedback: "Feedback",
+  idea_jar: "Idea Jar Proposal",
+  feedback: "Suggestions & Feedback",
   report: "Confidential report",
   misc: "General",
 };
@@ -706,6 +934,26 @@ export const STATUS_LABEL: Record<TicketStatus, string> = {
 };
 
 export type TicketThread = {
-  ticket: TicketSummary & { description: string; fields: { label: string; value: string }[]; close_reason?: string | null; closed_at?: string | null };
-  messages: { id: string; sender_name: string; sender_role: string; content: string; attachments: string[]; timestamp?: string | null }[];
+  ticket: TicketSummary & {
+    description: string;
+    fields: { label: string; value: string }[];
+    close_reason?: string | null;
+    closed_at?: string | null;
+    created_by_name?: string | null;
+    created_by_email?: string | null;
+    created_by_avatar?: string | null;
+    assigned_to_name?: string | null;
+    assigned_to_email?: string | null;
+    assigned_to_avatar?: string | null;
+    discord_meta?: ApiTicketDetail["discord_meta"];
+  };
+  messages: {
+    id: string;
+    sender_name: string;
+    sender_role: string;
+    content: string;
+    attachments: string[];
+    timestamp?: string | null;
+    source?: string;
+  }[];
 };

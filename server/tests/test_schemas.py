@@ -14,7 +14,7 @@ from app.schemas.users import UserDocument
 # The `users/{doc_id}` keys matching the current UserDocument contract (keyed by `id`).
 CONTRACT_USER_KEYS = {
     "id", "email", "full_name", "avatar_url", "discord_id", "is_admin", "is_member",
-    "tier", "batch_year", "is_verified", "verified_at", "points", "bio", "skills",
+    "tier", "role_label", "batch_year", "is_verified", "verified_at", "points", "bio", "skills",
     "social_links", "created_at", "updated_at", "last_login",
 }
 CONTRACT_SOCIAL_LINK_KEYS = {"github", "kaggle", "discord", "linkedin"}

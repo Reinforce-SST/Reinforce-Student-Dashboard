@@ -4,12 +4,50 @@ import { useState, useEffect, useCallback } from "react";
 
 import Link from "next/link";
 import MemberIcon from "@/components/dashboard/MemberIcon";
-import MemberLoading from "@/components/dashboard/MemberLoading";
+import LoadingBar from "@/components/dashboard/LoadingBar";
+import PaginationBar from "@/components/dashboard/PaginationBar";
 import { useMember } from "@/lib/useMember";
+import { useDebounce } from "@/lib/useDebounce";
 
 import { api, type StudentProfile, type TrackPoints } from "@/lib/api";
 import { type LeaderboardEntry } from "@/lib/leaderboardData";
 import styles from "./Leaderboard.module.css";
+
+function getInitials(name?: string) {
+  if (!name) return "MB";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function UserAvatar({
+  src,
+  name,
+  className,
+}: {
+  src?: string | null;
+  name?: string;
+  className?: string;
+}) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const initials = getInitials(name);
+
+  return (
+    <div className={className}>
+      {src && src !== failedSrc ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src}
+          alt={name || "Member avatar"}
+          className={styles.avatarImg}
+          onError={() => setFailedSrc(src)}
+        />
+      ) : (
+        initials
+      )}
+    </div>
+  );
+}
 
 export default function LeaderboardClient() {
   const { token } = useMember();
@@ -17,10 +55,22 @@ export default function LeaderboardClient() {
   const [selectedTrack, setSelectedTrack] = useState<"total" | "research" | "product" | "kaggle">("total");
   const [selectedTier, setSelectedTier] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedMember, setSelectedMember] = useState<StudentProfile | null>(null);
+  const debouncedSearch = useDebounce(searchQuery, 350);
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [totalCount, setTotalCount] = useState(0);
+
+  const [selectedMember, setSelectedMember] = useState<StudentProfile | null>(null);
   const [members, setMembers] = useState<StudentProfile[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const isSearching = searchQuery !== debouncedSearch || (loading && Boolean(searchQuery.trim()));
+
+  // Reset page to 1 when search, filters, or view mode change
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, viewMode, selectedTrack, selectedTier]);
 
   // Fetch live members/leaderboard from backend API
   const fetchDirectoryData = useCallback(async () => {
@@ -28,23 +78,27 @@ export default function LeaderboardClient() {
     try {
       setLoading(true);
       const res = await api.browseUsers(token, {
-        search: searchQuery.trim() || undefined,
-        track: selectedTrack !== "total" ? selectedTrack : undefined,
+        search: debouncedSearch.trim() || undefined,
+        track: viewMode === "LEADERBOARD" && selectedTrack !== "total" ? selectedTrack : undefined,
         tier: selectedTier !== "all" ? selectedTier : undefined,
+        page,
+        page_size: pageSize,
       }).catch(() => null);
 
       if (res && res.items) {
         setMembers(res.items);
+        setTotalCount(res.total ?? res.items.length);
       } else {
         setMembers([]);
+        setTotalCount(0);
       }
     } catch {
       setMembers([]);
+      setTotalCount(0);
     } finally {
       setLoading(false);
     }
-  }, [token, searchQuery, selectedTrack, selectedTier]);
-
+  }, [token, debouncedSearch, viewMode, selectedTrack, selectedTier, page, pageSize]);
 
   useEffect(() => {
     void Promise.resolve().then(fetchDirectoryData);
@@ -55,7 +109,7 @@ export default function LeaderboardClient() {
     .map((m) => {
       const points: TrackPoints = m.points || { total: 0, research: 0, product: 0, kaggle: 0, misc: 0 };
       return {
-        id: m.id || m.email,
+        id: m.id || m.email || "",
         full_name: m.full_name || "Club Member",
         avatar_url: m.avatar_url,
         is_member: Boolean(m.is_member),
@@ -64,50 +118,15 @@ export default function LeaderboardClient() {
         rank: 1,
       };
     })
-    .filter((entry) => {
-      // Tier filter
-      if (selectedTier !== "all" && entry.tier !== selectedTier) return false;
-      // Search filter
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchName = entry.full_name.toLowerCase().includes(q);
-        const originalMember = members.find((m) => m.id === entry.id);
-        const matchSkills = originalMember?.skills?.some((s) => s.toLowerCase().includes(q));
-        const matchBio = (originalMember?.bio || "").toLowerCase().includes(q);
-        if (!matchName && !matchSkills && !matchBio) return false;
-      }
-      return true;
-    })
     .sort((a, b) => {
       const scoreA = a.points[selectedTrack] ?? a.points.total;
       const scoreB = b.points[selectedTrack] ?? b.points.total;
       return scoreB - scoreA;
     })
-    .map((entry, idx) => ({ ...entry, rank: idx + 1 }));
+    .map((entry, idx) => ({ ...entry, rank: (page - 1) * pageSize + idx + 1 }));
 
   // Directory filtered list
-  const filteredDirectory = members.filter((m) => {
-    if (selectedTier !== "all" && m.tier !== selectedTier) return false;
-    if (selectedTrack !== "total") {
-      const trackScore = m.points?.[selectedTrack] || 0;
-      if (trackScore <= 0) return false;
-    }
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const matchName = m.full_name.toLowerCase().includes(q);
-      const matchSkills = m.skills?.some((s) => s.toLowerCase().includes(q));
-      const matchBio = (m.bio || "").toLowerCase().includes(q);
-      if (!matchName && !matchSkills && !matchBio) return false;
-    }
-    return true;
-  });
-
-  const getInitials = (name?: string) => {
-    if (!name) return "MB";
-    const parts = name.trim().split(/\s+/);
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  };
+  const filteredDirectory = members;
 
   const getDominantTrackClass = (points?: TrackPoints) => {
     if (!points) return styles.trackPillRes;
@@ -121,15 +140,6 @@ export default function LeaderboardClient() {
     const found = members.find((m) => m.id === memberId || m.email === memberId);
     if (found) setSelectedMember(found);
   };
-
-  // Top 3 Podium
-  const top1 = sortedLeaderboard[0];
-  const top2 = sortedLeaderboard[1];
-  const top3 = sortedLeaderboard[2];
-
-  if (loading && members.length === 0) {
-    return <MemberLoading message="Loading student leaderboard & rankings…" />;
-  }
 
   return (
     <div className={styles.pageContainer}>
@@ -172,46 +182,63 @@ export default function LeaderboardClient() {
       </div>
 
       {/* Filter Row: Track Tabs & Search Box */}
-      <div className={styles.filterRow}>
-        {/* Track Pills */}
-        <div className={styles.trackTabs}>
-          <button
-            type="button"
-            onClick={() => setSelectedTrack("total")}
-            className={`${styles.trackBtn} ${selectedTrack === "total" ? styles.trackBtnActiveTotal : ""}`}
-          >
-            OVERALL SCORE
-          </button>
+      <div
+        className={styles.filterRow}
+        style={{ justifyContent: viewMode === "DIRECTORY" ? "flex-end" : "space-between" }}
+      >
+        {/* Track Pills (shown only on Leaderboard rankings) */}
+        {viewMode === "LEADERBOARD" && (
+          <div className={styles.trackTabs}>
+            <button
+              type="button"
+              onClick={() => setSelectedTrack("total")}
+              className={`${styles.trackBtn} ${selectedTrack === "total" ? styles.trackBtnActiveTotal : ""}`}
+            >
+              OVERALL SCORE
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setSelectedTrack("research")}
-            className={`${styles.trackBtn} ${selectedTrack === "research" ? styles.trackBtnActiveResearch : ""}`}
-          >
-            RESEARCH TRACK
-          </button>
+            <button
+              type="button"
+              onClick={() => setSelectedTrack("research")}
+              className={`${styles.trackBtn} ${selectedTrack === "research" ? styles.trackBtnActiveResearch : ""}`}
+            >
+              RESEARCH TRACK
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setSelectedTrack("product")}
-            className={`${styles.trackBtn} ${selectedTrack === "product" ? styles.trackBtnActiveProduct : ""}`}
-          >
-            PRODUCT TRACK
-          </button>
+            <button
+              type="button"
+              onClick={() => setSelectedTrack("product")}
+              className={`${styles.trackBtn} ${selectedTrack === "product" ? styles.trackBtnActiveProduct : ""}`}
+            >
+              PRODUCT TRACK
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setSelectedTrack("kaggle")}
-            className={`${styles.trackBtn} ${selectedTrack === "kaggle" ? styles.trackBtnActiveKaggle : ""}`}
-          >
-            KAGGLE TRACK
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => setSelectedTrack("kaggle")}
+              className={`${styles.trackBtn} ${selectedTrack === "kaggle" ? styles.trackBtnActiveKaggle : ""}`}
+            >
+              KAGGLE TRACK
+            </button>
+          </div>
+        )}
 
         {/* Search & Tier Controls */}
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            flexWrap: "wrap",
+            marginLeft: viewMode === "DIRECTORY" ? "auto" : undefined,
+          }}
+        >
           <div className={styles.searchBox}>
-            <MemberIcon name="filter" size={14} />
+            {isSearching ? (
+              <div className={styles.searchSpinner} />
+            ) : (
+              <MemberIcon name="filter" size={14} />
+            )}
             <input
               type="text"
               placeholder="Search by name, skill, or bio..."
@@ -219,6 +246,24 @@ export default function LeaderboardClient() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className={styles.searchInput}
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#656570",
+                  cursor: "pointer",
+                  padding: "0 4px",
+                  fontSize: "12px",
+                  lineHeight: 1,
+                }}
+                title="Clear search"
+              >
+                ✕
+              </button>
+            )}
           </div>
 
           <select
@@ -238,109 +283,9 @@ export default function LeaderboardClient() {
       {/* VIEW MODE 1: LEADERBOARD RANKINGS */}
       {viewMode === "LEADERBOARD" && (
         <>
-          {/* Top 3 Podium Cards */}
-          {sortedLeaderboard.length >= 3 && !searchQuery.trim() && (
-            <section className={styles.podiumSection} aria-label="Top 3 Contributors Podium">
-              {/* Rank 2 (Silver) */}
-              {top2 && (
-                <article
-                  className={`${styles.podiumCard} ${styles.podiumSecond}`}
-                  onClick={() => openProfileModal(top2.id)}
-                >
-                  <span className={`${styles.podiumRankBadge} ${styles.rankSecondBadge}`}>#2</span>
-                  <div className={styles.podiumAvatar}>
-                    {getInitials(top2.full_name)}
-                  </div>
-                  <h2 className={styles.podiumName}>
-                    {top2.full_name}
-                    <MemberIcon name="check" size={14} />
-                  </h2>
-                  <span className={styles.podiumScore}>
-                    {top2.points[selectedTrack] ?? top2.points.total} PTS
-                  </span>
-                  <div className={styles.podiumPointsMeta}>
-                    <span style={{ color: "#f87171" }}>R: {top2.points.research}</span>
-                    <span style={{ color: "#4ade80" }}>P: {top2.points.product}</span>
-                    <span style={{ color: "#38c8ff" }}>K: {top2.points.kaggle}</span>
-                  </div>
-                  <Link
-                    href={`/dashboard/profile?id=${encodeURIComponent(top2.id)}`}
-                    className={styles.podiumViewProfileBtn}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    View Profile →
-                  </Link>
-                </article>
-              )}
-
-              {/* Rank 1 (Gold - Center) */}
-              {top1 && (
-                <article
-                  className={`${styles.podiumCard} ${styles.podiumFirst}`}
-                  onClick={() => openProfileModal(top1.id)}
-                >
-                  <span className={`${styles.podiumRankBadge} ${styles.rankFirstBadge}`}>👑 #1</span>
-                  <div className={styles.podiumAvatar}>
-                    {getInitials(top1.full_name)}
-                  </div>
-                  <h2 className={styles.podiumName}>
-                    {top1.full_name}
-                    <MemberIcon name="check" size={14} />
-                  </h2>
-                  <span className={styles.podiumScore}>
-                    {top1.points[selectedTrack] ?? top1.points.total} PTS
-                  </span>
-                  <div className={styles.podiumPointsMeta}>
-                    <span style={{ color: "#f87171" }}>R: {top1.points.research}</span>
-                    <span style={{ color: "#4ade80" }}>P: {top1.points.product}</span>
-                    <span style={{ color: "#38c8ff" }}>K: {top1.points.kaggle}</span>
-                  </div>
-                  <Link
-                    href={`/dashboard/profile?id=${encodeURIComponent(top1.id)}`}
-                    className={styles.podiumViewProfileBtn}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    View Profile →
-                  </Link>
-                </article>
-              )}
-
-              {/* Rank 3 (Bronze) */}
-              {top3 && (
-                <article
-                  className={`${styles.podiumCard} ${styles.podiumThird}`}
-                  onClick={() => openProfileModal(top3.id)}
-                >
-                  <span className={`${styles.podiumRankBadge} ${styles.rankThirdBadge}`}>#3</span>
-                  <div className={styles.podiumAvatar}>
-                    {getInitials(top3.full_name)}
-                  </div>
-                  <h2 className={styles.podiumName}>
-                    {top3.full_name}
-                    <MemberIcon name="check" size={14} />
-                  </h2>
-                  <span className={styles.podiumScore}>
-                    {top3.points[selectedTrack] ?? top3.points.total} PTS
-                  </span>
-                  <div className={styles.podiumPointsMeta}>
-                    <span style={{ color: "#f87171" }}>R: {top3.points.research}</span>
-                    <span style={{ color: "#4ade80" }}>P: {top3.points.product}</span>
-                    <span style={{ color: "#38c8ff" }}>K: {top3.points.kaggle}</span>
-                  </div>
-                  <Link
-                    href={`/dashboard/profile?id=${encodeURIComponent(top3.id)}`}
-                    className={styles.podiumViewProfileBtn}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    View Profile →
-                  </Link>
-                </article>
-              )}
-            </section>
-          )}
-
           {/* Full Rankings Table */}
           <section className={styles.tableCard} aria-label="Ecosystem Rankings List">
+            <LoadingBar loading={loading} />
             <div className={styles.tableHeader}>
               <span>RANK</span>
               <span>MEMBER</span>
@@ -350,8 +295,19 @@ export default function LeaderboardClient() {
               <span style={{ textAlign: "right" }}>PROFILE</span>
             </div>
 
-            <div className={styles.tableBody}>
-              {sortedLeaderboard.length === 0 ? (
+            <div
+              className={styles.tableBody}
+              style={{
+                opacity: loading && members.length > 0 ? 0.65 : 1,
+                transition: "opacity 0.2s ease",
+              }}
+            >
+              {loading && members.length === 0 ? (
+                <div style={{ padding: "48px 24px", textAlign: "center", color: "#8c8c98", fontSize: "0.85rem" }}>
+                  <div className={styles.searchSpinner} style={{ margin: "0 auto 12px" }} />
+                  <span>Loading leaderboard rankings…</span>
+                </div>
+              ) : sortedLeaderboard.length === 0 ? (
                 <div style={{ padding: "48px 24px", textAlign: "center", color: "#8c8c98", fontSize: "0.85rem" }}>
                   No members found on the leaderboard matching your search or filters.
                 </div>
@@ -371,9 +327,11 @@ export default function LeaderboardClient() {
 
                       {/* Member Details */}
                       <div className={styles.memberCol}>
-                        <div className={styles.tableAvatar}>
-                          {getInitials(entry.full_name)}
-                        </div>
+                        <UserAvatar
+                          src={entry.avatar_url}
+                          name={entry.full_name}
+                          className={styles.tableAvatar}
+                        />
                         <div className={styles.memberNameGroup}>
                           <span className={styles.memberNameText}>
                             {entry.full_name}
@@ -426,104 +384,151 @@ export default function LeaderboardClient() {
               )}
             </div>
           </section>
+
+          {/* Reusable Pagination */}
+          <PaginationBar
+            currentPage={page}
+            totalItems={totalCount}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(newSize) => {
+              setPageSize(newSize);
+              setPage(1);
+            }}
+            pageSizeOptions={[20, 50]}
+            itemLabel="members"
+            disabled={loading}
+          />
         </>
       )}
 
       {/* VIEW MODE 2: BROWSE DIRECTORY */}
       {viewMode === "DIRECTORY" && (
-        <section className={styles.directoryGrid} aria-label="Student Member Directory">
-          {filteredDirectory.length === 0 ? (
-            <div className={styles.tableCard} style={{ gridColumn: "1 / -1", padding: "48px 24px", textAlign: "center", color: "#8c8c98", fontSize: "0.85rem" }}>
-              No student profiles found matching your search or filters.
-            </div>
-          ) : (
-            filteredDirectory.map((member) => (
-              <article
-                key={member.id || member.email}
-                className={styles.memberCard}
-                onClick={() => setSelectedMember(member)}
-              >
-                {/* Card Top: Avatar & Name */}
-                <div className={styles.memberCardTop}>
-                  <div className={styles.memberCardHeader}>
-                    <div className={styles.cardAvatar}>
-                      {getInitials(member.full_name)}
-                    </div>
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                        <h2 style={{ fontSize: "0.96rem", fontWeight: "800", color: "#ffffff", margin: 0 }}>
-                          {member.full_name}
-                        </h2>
-                        {member.is_verified && (
-                          <span style={{ color: "#5865F2", fontSize: "0.8rem" }} title="Verified Discord Member">
-                            ✓
-                          </span>
-                        )}
+        <>
+          <LoadingBar loading={loading} />
+          <section
+            className={styles.directoryGrid}
+            aria-label="Student Member Directory"
+            style={{
+              opacity: loading && members.length > 0 ? 0.65 : 1,
+              transition: "opacity 0.2s ease",
+            }}
+          >
+            {loading && members.length === 0 ? (
+              <div className={styles.tableCard} style={{ gridColumn: "1 / -1", padding: "48px 24px", textAlign: "center", color: "#8c8c98", fontSize: "0.85rem" }}>
+                <div className={styles.searchSpinner} style={{ margin: "0 auto 12px" }} />
+                <span>Searching student member directory…</span>
+              </div>
+            ) : filteredDirectory.length === 0 ? (
+              <div className={styles.tableCard} style={{ gridColumn: "1 / -1", padding: "48px 24px", textAlign: "center", color: "#8c8c98", fontSize: "0.85rem" }}>
+                No student profiles found matching your search or filters.
+              </div>
+            ) : (
+              filteredDirectory.map((member) => (
+                <article
+                  key={member.id || member.email}
+                  className={styles.memberCard}
+                  onClick={() => setSelectedMember(member)}
+                >
+                  {/* Card Top: Avatar & Name */}
+                  <div className={styles.memberCardTop}>
+                    <div className={styles.memberCardHeader}>
+                      <UserAvatar
+                        src={member.avatar_url}
+                        name={member.full_name}
+                        className={styles.cardAvatar}
+                      />
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <h2 style={{ fontSize: "0.96rem", fontWeight: "800", color: "#ffffff", margin: 0 }}>
+                            {member.full_name}
+                          </h2>
+                          {member.is_verified && (
+                            <span style={{ color: "#5865F2", fontSize: "0.8rem" }} title="Verified Discord Member">
+                              ✓
+                            </span>
+                          )}
+                        </div>
+                        <span style={{ fontSize: "0.68rem", color: "#8c8c98" }}>
+                          Batch &apos;{member.batch_year ? String(member.batch_year).slice(-2) : "24"} • {member.tier?.toUpperCase() || "MEMBER"}
+                        </span>
                       </div>
-                      <span style={{ fontSize: "0.68rem", color: "#8c8c98" }}>
-                        Batch &apos;{member.batch_year ? String(member.batch_year).slice(-2) : "24"} • {member.tier?.toUpperCase() || "MEMBER"}
-                      </span>
                     </div>
+
+                    <span className={getDominantTrackClass(member.points)}>
+                      {member.points?.total || 0} PTS
+                    </span>
                   </div>
 
-                  <span className={getDominantTrackClass(member.points)}>
-                    {member.points?.total || 0} PTS
-                  </span>
-                </div>
+                  {/* Bio */}
+                  <p className={styles.cardBio}>
+                    {member.bio || "Active contributor and project builder in Reinforce SST guild."}
+                  </p>
 
-                {/* Bio */}
-                <p className={styles.cardBio}>
-                  {member.bio || "Active contributor and project builder in Reinforce SST guild."}
-                </p>
-
-                {/* Skills Tags */}
-                <div className={styles.skillsRow}>
-                  {member.skills?.slice(0, 4).map((skill, idx) => (
-                    <span key={idx} className={styles.skillPill}>
-                      {skill}
-                    </span>
-                  ))}
-                  {(member.skills?.length || 0) > 4 && (
-                    <span className={styles.skillPill}>
-                      +{(member.skills?.length || 0) - 4}
-                    </span>
-                  )}
-                </div>
-
-                {/* Card Footer: Social Links & Action */}
-                <div className={styles.cardFooter}>
-                  <div className={styles.cardSocialLinks}>
-                    {member.social_links?.github && (
-                      <a
-                        href={member.social_links.github}
-                        target="_blank"
-                        rel="noreferrer"
-                        className={styles.socialIconBtn}
-                        onClick={(e) => e.stopPropagation()}
-                        title="GitHub Profile"
-                      >
-                        <MemberIcon name="github" size={14} />
-                      </a>
-                    )}
-                    {member.social_links?.discord && (
-                      <span className={styles.socialIconBtn} title={`Discord: ${member.social_links.discord}`}>
-                        <MemberIcon name="discord" size={14} />
+                  {/* Skills Tags */}
+                  <div className={styles.skillsRow}>
+                    {member.skills?.slice(0, 4).map((skill, idx) => (
+                      <span key={idx} className={styles.skillPill}>
+                        {skill}
+                      </span>
+                    ))}
+                    {(member.skills?.length || 0) > 4 && (
+                      <span className={styles.skillPill}>
+                        +{(member.skills?.length || 0) - 4}
                       </span>
                     )}
                   </div>
 
-                  <Link
-                    href={`/dashboard/profile?id=${encodeURIComponent(member.id || member.email)}`}
-                    className={styles.rowViewProfileBtn}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    VIEW PROFILE →
-                  </Link>
-                </div>
-              </article>
-            ))
-          )}
-        </section>
+                  {/* Card Footer: Social Links & Action */}
+                  <div className={styles.cardFooter}>
+                    <div className={styles.cardSocialLinks}>
+                      {member.social_links?.github && (
+                        <a
+                          href={member.social_links.github}
+                          target="_blank"
+                          rel="noreferrer"
+                          className={styles.socialIconBtn}
+                          onClick={(e) => e.stopPropagation()}
+                          title="GitHub Profile"
+                        >
+                          <MemberIcon name="github" size={14} />
+                        </a>
+                      )}
+                      {Boolean(member.is_verified && member.discord_id && (member.social_links?.discord || member.discord_id)) && (
+                        <span className={styles.socialIconBtn} title={`Discord: ${member.social_links?.discord || member.discord_id}`}>
+                          <MemberIcon name="discord" size={14} />
+                        </span>
+                      )}
+                    </div>
+
+                    <Link
+                      href={`/dashboard/profile?id=${encodeURIComponent(member.id || member.email || "")}`}
+                      className={styles.rowViewProfileBtn}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      VIEW PROFILE →
+                    </Link>
+                  </div>
+                </article>
+              ))
+            )}
+          </section>
+
+          {/* Reusable Pagination */}
+          <PaginationBar
+            currentPage={page}
+            totalItems={totalCount}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(newSize) => {
+              setPageSize(newSize);
+              setPage(1);
+            }}
+            pageSizeOptions={[20, 50]}
+            itemLabel="profiles"
+            disabled={loading}
+          />
+        </>
       )}
 
 
@@ -547,9 +552,11 @@ export default function LeaderboardClient() {
 
             {/* Profile Hero Header */}
             <div className={styles.profileHero}>
-              <div className={styles.profileAvatarLarge}>
-                {getInitials(selectedMember.full_name)}
-              </div>
+              <UserAvatar
+                src={selectedMember.avatar_url}
+                name={selectedMember.full_name}
+                className={styles.profileAvatarLarge}
+              />
               <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                   <h2 id="profile-modal-title" style={{ fontSize: "1.25rem", fontWeight: "900", color: "#ffffff", margin: 0 }}>
@@ -652,16 +659,16 @@ export default function LeaderboardClient() {
                     LinkedIn
                   </a>
                 )}
-                {selectedMember.social_links?.discord && (
+                {Boolean(selectedMember.is_verified && selectedMember.discord_id && (selectedMember.social_links?.discord || selectedMember.discord_id)) && (
                   <span style={{ color: "#9da3ae", fontSize: "0.78rem", display: "inline-flex", alignItems: "center", gap: "6px" }}>
                     <MemberIcon name="discord" size={14} />
-                    {selectedMember.social_links.discord}
+                    {selectedMember.social_links?.discord || selectedMember.discord_id}
                   </span>
                 )}
               </div>
 
               <Link
-                href={`/dashboard/profile?id=${encodeURIComponent(selectedMember.id || selectedMember.email)}`}
+                href={`/dashboard/profile?id=${encodeURIComponent(selectedMember.id || selectedMember.email || "")}`}
                 style={{
                   display: "inline-flex",
                   alignItems: "center",

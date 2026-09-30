@@ -9,14 +9,16 @@ Strictly follows zero user denormalization (pure UID references).
 
 from datetime import datetime, timezone
 import hashlib
+import io
 from typing import Any, Dict, List, Optional
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from google.cloud import firestore
 
 from app.api.security import get_admin_user, get_current_user, get_optional_current_user
-from app.services.firebase import db
+from app.services.firebase import db, upload_file_to_storage
+from app.services.images import ImageRejected, read_image
 from app.services import contributions as contribution_service
 from app.services.contributions import ContributionError
 from app.utils import get_user_uid, is_admin_user, now_iso, resolve_batch_year, slugify
@@ -840,6 +842,25 @@ def event_spg_decision(
 # --- Admin Management Endpoints ---
 
 
+@router.post("/media", summary="Upload a public event banner or poster (Admin only)")
+def upload_event_media(
+    file: UploadFile = File(...),
+    current_user: Dict[str, Any] = Depends(get_admin_user),
+):
+    try:
+        payload, extension = read_image(file.file, file.content_type)
+    except ImageRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    destination_path = f"events/media/{uuid.uuid4().hex}.{extension}"
+    try:
+        url = upload_file_to_storage(
+            io.BytesIO(payload), destination_path, f"image/{'jpeg' if extension == 'jpg' else extension}", shareable=True
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Image storage is unavailable. Try again later.") from exc
+    return {"url": url}
+
+
 @router.post("", response_model=EventDocument, status_code=status.HTTP_201_CREATED)
 def create_event(
     payload: EventCreate,
@@ -871,6 +892,9 @@ def create_event(
         "resources": (payload.resources or EventResources()).model_dump(),
         "stats": EventStats().model_dump(),
         "banner_url": payload.banner_url,
+        "banner_badge_text": payload.banner_badge_text,
+        "banner_cta_text": payload.banner_cta_text,
+        "banner_cta_url": payload.banner_cta_url,
         "winners": None,
         "status": payload.status.value,
         "created_by": admin_uid,

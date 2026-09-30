@@ -122,6 +122,13 @@ class AdminUserUpdateRequestTests(unittest.TestCase):
         self.assertTrue(update.is_admin)
         self.assertEqual(update.tier, MemberTier.ADVANCED)
 
+    def test_custom_role_is_display_only_and_cannot_impersonate_admin(self):
+        update = AdminUserUpdateRequest.model_validate({"role_label": "  core  "})
+        self.assertEqual(update.role_label, "core")
+        for label in ("", "  ", "Admin", "beginner", "advanced"):
+            with self.subTest(label=label), self.assertRaises(ValidationError):
+                AdminUserUpdateRequest.model_validate({"role_label": label})
+
 
 class DiscordVerifyRequestTests(unittest.TestCase):
     def test_valid_private_token(self):

@@ -50,6 +50,12 @@ export interface ContributionRecord {
   deduplication_key?: string | null;
 }
 
+export type PublicContributionRecord = Pick<
+  ContributionRecord,
+  "id" | "track" | "category" | "title" | "description" | "points" |
+  "spg_id" | "event_id" | "occurred_at" | "status"
+>;
+
 export interface ContributionPage {
   items: ContributionRecord[];
   next_cursor?: string | null;

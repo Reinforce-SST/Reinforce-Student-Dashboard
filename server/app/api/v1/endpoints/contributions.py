@@ -28,6 +28,8 @@ from app.schemas.contributions import (
     ContributionStatus,
     ContributionTrack,
     LeaderboardEntry,
+    PublicContributionPage,
+    PublicContributionRecord,
     SPGAwardResponse,
 )
 from app.services import contributions as service
@@ -233,6 +235,36 @@ def list_user_contributions(
     except service.ContributionError as error:
         raise _handle(error) from None
     return ContributionPage(items=items, next_cursor=next_cursor)
+
+
+@router.get(
+    "/public/user/{user_id}",
+    response_model=PublicContributionPage,
+    summary="Approved contributions visible on a member profile",
+)
+def public_user_contributions(
+    user_id: str,
+    limit: int = Query(service.DEFAULT_PAGE_SIZE, ge=1, le=service.MAX_PAGE_SIZE),
+    cursor: Optional[str] = Query(None),
+    user: dict = Depends(get_current_user),
+    db: Any = Depends(get_db),
+) -> PublicContributionPage:
+    try:
+        items, next_cursor = service.list_contributions(
+            db, user_id=user_id, status=ContributionStatus.APPROVED,
+            limit=limit, cursor=cursor,
+        )
+    except service.ContributionError as error:
+        raise _handle(error) from None
+    return PublicContributionPage(
+        items=[
+            PublicContributionRecord.model_validate(
+                record.model_dump(include=set(PublicContributionRecord.model_fields))
+            )
+            for record in items
+        ],
+        next_cursor=next_cursor,
+    )
 
 
 @router.get(

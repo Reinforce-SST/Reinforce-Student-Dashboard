@@ -201,6 +201,8 @@ class TicketSummary(BaseModel):
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     thread_url: Optional[str] = None
+    created_by_name: Optional[str] = None
+    assigned_to_name: Optional[str] = None
 
 
 class TicketDetail(TicketSummary):
@@ -211,6 +213,10 @@ class TicketDetail(TicketSummary):
     close_reason: Optional[str] = None
     closed_at: Optional[str] = None
     discord_meta: Optional[DiscordMeta] = None
+    created_by_email: Optional[str] = None
+    created_by_avatar: Optional[str] = None
+    assigned_to_email: Optional[str] = None
+    assigned_to_avatar: Optional[str] = None
 
 
 class TicketThread(BaseModel):

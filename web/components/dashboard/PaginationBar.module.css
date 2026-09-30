@@ -1,0 +1,150 @@
+.paginationContainer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 20px;
+  background: #111113;
+  border: 1px solid #1e1e24;
+  border-radius: 12px;
+  margin-top: 18px;
+  box-sizing: border-box;
+}
+
+.infoSection {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.8rem;
+  color: #8c8c98;
+}
+
+.infoHighlight {
+  color: #ffffff;
+  font-weight: 750;
+  font-family: var(--font-mono, monospace);
+}
+
+.controlsSection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.navButton {
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 6px 12px;
+  background: #17171c;
+  color: #d1d1db;
+  border: 1px solid #262630;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  text-transform: uppercase;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.navButton:hover:not(:disabled) {
+  background: #23232c;
+  border-color: var(--brand, #E5B731);
+  color: #ffffff;
+}
+
+.navButton:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  border-color: #1e1e24;
+}
+
+.pageList {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pageButton {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.78rem;
+  font-weight: 750;
+  font-family: var(--font-mono, monospace);
+  background: #151518;
+  color: #9c9ca8;
+  border: 1px solid #232328;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.pageButton:hover:not(:disabled) {
+  background: #202026;
+  color: #ffffff;
+  border-color: #383844;
+}
+
+.pageButtonActive {
+  background: var(--brand, #E5B731) !important;
+  color: #0c0c0e !important;
+  border-color: var(--brand, #E5B731) !important;
+  font-weight: 900;
+}
+
+.ellipsis {
+  padding: 0 4px;
+  font-size: 0.78rem;
+  color: #5c5c68;
+  user-select: none;
+}
+
+.pageSizeSelect {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #9c9ca8;
+  background: #17171c;
+  border: 1px solid #262630;
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.pageSizeSelect:hover,
+.pageSizeSelect:focus {
+  border-color: #3e3e4c;
+  color: #ffffff;
+}
+
+@media (max-width: 640px) {
+  .paginationContainer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 12px 14px;
+  }
+
+  .infoSection {
+    justify-content: space-between;
+  }
+
+  .controlsSection {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .pageList {
+    display: none;
+  }
+}

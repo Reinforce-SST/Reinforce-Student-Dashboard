@@ -1,4 +1,4 @@
 {
   "compilerOptions": { "target": "ES2022", "module": "commonjs", "strict": true, "skipLibCheck": true, "outDir": ".test-build", "esModuleInterop": true, "jsx": "react-jsx", "paths": { "@/*": ["./*"] } },
-  "include": ["lib/auth-flow.ts", "lib/api.ts", "lib/eventsData.ts", "lib/dashboardData.ts", "lib/memberData.ts", "lib/batchYear.ts"]
+  "include": ["lib/auth-flow.ts", "lib/api.ts", "lib/eventsData.ts", "lib/dashboardData.ts", "lib/memberData.ts", "lib/batchYear.ts", "lib/notifications.ts"]
 }

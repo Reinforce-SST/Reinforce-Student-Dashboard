@@ -1,12 +1,9 @@
-> ## STATUS: PROPOSAL — NOT YET PART OF THE FIRESTORE DATA CONTRACT
+> ## Historical proposal (22 September 2026)
 >
-> Nothing proposed here exists. No proposed collection or field has been created in
-> Firestore, and no code reads or writes one. [`DATA_CONTRACT.md`](DATA_CONTRACT.md)
-> remains the only description of what is stored today.
->
-> A proposal becomes real only after a team decision, a coordinated change in the
-> [YUVI](https://github.com/Reinforce-SST/YUVI) bot, and an update to
-> `DATA_CONTRACT.md` — in the same change window.
+> Parts of this proposal have since been implemented. Its observations refer to
+> the commits named below and should not be treated as the current system. Use
+> [`DATA_CONTRACT.md`](DATA_CONTRACT.md) and the current API/bot code for live
+> field shapes and behavior.
 
 # Backend Data Model Proposal
 

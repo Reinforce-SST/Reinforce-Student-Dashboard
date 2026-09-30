@@ -216,17 +216,20 @@
 /* Banner Manager Grid */
 .managerGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 24px;
+  min-width: 0;
 }
+.meritGrid { grid-template-columns: minmax(0, 760px); justify-content: center; }
 
 @media (max-width: 1024px) {
   .managerGrid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
 .card {
+  min-width: 0;
   background: #18181b;
   border: 1px solid #282830;
   border-radius: 14px;
@@ -323,6 +326,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
 }
 
 .formLabel {
@@ -332,6 +336,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .formLabelHint {
@@ -366,6 +372,8 @@
 .formInput,
 .formTextarea,
 .formSelect {
+  width: 100%;
+  min-width: 0;
   background: #121214;
   border: 1px solid #2e2e36;
   color: #ffffff;
@@ -399,8 +407,14 @@
 
 .formRow {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+
+@media (max-width: 600px) {
+  .formRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .formTextarea {
@@ -500,6 +514,7 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
 }
 
 .livePreviewCard {
@@ -514,6 +529,7 @@
 
 .livePreviewContent {
   flex: 1.3;
+  min-width: 0;
   padding: 24px;
   display: flex;
   flex-direction: column;
@@ -529,6 +545,7 @@
 }
 
 .livePreviewBadge {
+  max-width: 150px;
   background: #e5b731;
   color: #141416;
   font-size: 10.5px;
@@ -537,6 +554,11 @@
   border-radius: 4px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .livePreviewDate {
@@ -576,6 +598,9 @@
   padding: 7px 14px;
   border-radius: 6px;
   width: fit-content;
+  max-width: 100%;
+  text-align: center;
+  overflow-wrap: anywhere;
   margin-top: 14px;
   text-decoration: none;
 }
@@ -630,6 +655,27 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.memberList { display: flex; flex-direction: column; gap: 10px; margin: 14px 0; }
+.memberRow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px; border: 1px solid #31343a; border-radius: 10px; background: #121214; }
+.memberIdentity { display: flex; flex: 1 1 210px; min-width: 0; flex-direction: column; gap: 3px; color: #fff; font-size: 13px; }
+.memberIdentity span { color: #9e9ea4; font-size: 12px; overflow-wrap: anywhere; }
+.memberToggle { display: inline-flex; align-items: center; gap: 6px; color: #cfcfd4; font-size: 12px; }
+.memberToggle input, .candidateRow input { accent-color: #e5b731; }
+.memberMessage { flex-basis: 100%; color: #e5b731; font-size: 12px; margin: 0; }
+.smallAction { border: 1px solid #5d4d20; border-radius: 8px; background: #2a2518; color: #e5b731; padding: 9px 12px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.smallAction:disabled { opacity: .5; cursor: default; }
+.directoryPager { display: flex; align-items: center; justify-content: flex-end; gap: 8px; color: #9e9ea4; font-size: 12px; }
+.directoryPager span { margin-right: auto; }
+.candidateList { display: flex; flex-direction: column; max-height: 240px; overflow-y: auto; border: 1px solid #31343a; border-radius: 8px; }
+.candidateRow { display: flex; align-items: center; gap: 8px; padding: 8px 10px; color: #eee; font-size: 12px; cursor: pointer; }
+.candidateRow + .candidateRow { border-top: 1px solid #31343a; }
+.candidateRow:hover { background: #242427; }
+.selectedMembers { color: #e5b731; font-size: 12px; }
+.selectedRecipientList { display: flex; flex-wrap: wrap; gap: 6px; max-height: 120px; overflow-y: auto; }
+.selectedRecipient { display: inline-flex; align-items: center; gap: 8px; border: 1px solid #5d4d20; border-radius: 999px; background: #2a2518; color: #f2d574; padding: 5px 9px; font: inherit; font-size: 12px; cursor: pointer; }
+.selectedRecipient:hover { background: #403418; }
+.selectedRecipient:focus-visible { outline: 2px solid #e5b731; outline-offset: 2px; }
 
 .secondaryBtn {
   background: #212121;
@@ -740,4 +786,359 @@
   font-size: 12.5px;
   color: #8e8e93;
   font-weight: 500;
+}
+
+/* Recipient Search & Bulk Selection for Merit Awards */
+.recipientSearchContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.recipientSearchBox {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.recipientSearchIcon {
+  position: absolute;
+  left: 12px;
+  color: #71717a;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.recipientSearchInput {
+  width: 100%;
+  background: #141416;
+  border: 1px solid #282830;
+  border-radius: 8px;
+  padding: 10px 36px 10px 36px;
+  color: #ffffff;
+  font-size: 13.5px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.recipientSearchInput:focus {
+  border-color: #e5b731;
+}
+
+.clearSearchBtn {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  color: #8e8e93;
+  cursor: pointer;
+  padding: 4px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.clearSearchBtn:hover {
+  color: #ffffff;
+}
+
+.bulkActionBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.bulkActionBtns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bulkActionBtn {
+  background: #202026;
+  border: 1px solid #30303a;
+  color: #d1d1d6;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bulkActionBtn:hover:not(:disabled) {
+  background: #2c2c34;
+  color: #ffffff;
+  border-color: #444452;
+}
+
+.bulkActionBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.selectedCountBadge {
+  font-size: 12px;
+  font-weight: 700;
+  color: #e5b731;
+  background: rgba(229, 183, 49, 0.12);
+  border: 1px solid rgba(229, 183, 49, 0.25);
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.selectedChipsTray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 110px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  background: #121214;
+  border: 1px solid #23232a;
+  border-radius: 8px;
+}
+
+.recipientChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #222228;
+  border: 1px solid #363642;
+  color: #e4e4e7;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 8px 3px 4px;
+  border-radius: 999px;
+  animation: fadeIn 0.15s ease;
+}
+
+.chipAvatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #e5b731;
+  color: #121214;
+  font-size: 9px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.chipAvatarImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.chipRemoveBtn {
+  background: none;
+  border: none;
+  color: #a1a1aa;
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 13px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+}
+
+.chipRemoveBtn:hover {
+  color: #ef4444;
+}
+
+.candidateListContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: #121214;
+  border: 1px solid #23232a;
+  border-radius: 8px;
+  padding: 6px;
+}
+
+.candidateRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  user-select: none;
+}
+
+.candidateRow:hover {
+  background: #1c1c22;
+}
+.candidateRow:focus-visible { outline: 2px solid #e5b731; outline-offset: -2px; }
+
+.candidateRowSelected {
+  background: rgba(229, 183, 49, 0.08);
+  border: 1px solid rgba(229, 183, 49, 0.22);
+}
+.candidateCheckboxVisual { display: inline-grid; place-items: center; width: 16px; height: 16px; border: 1px solid #77777e; border-radius: 3px; flex-shrink: 0; }
+.candidateRowSelected .candidateCheckboxVisual { border-color: #e5b731; background: #e5b731; color: #121214; }
+.candidateRowSelected .candidateCheckboxVisual::after { content: "✓"; font-size: 12px; font-weight: 800; }
+
+.candidateCheckbox {
+  accent-color: #e5b731;
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.candidateAvatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #2a2a32;
+  color: #e5b731;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.candidateAvatarImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.candidateInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.candidateNameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.candidateName {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.candidateEmail {
+  font-size: 11.5px;
+  color: #8e8e93;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.candidateBadges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.candidateBadge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #24242c;
+  color: #a1a1aa;
+}
+
+.candidateBadgeAdmin {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.candidateBadgeCore {
+  background: rgba(229, 183, 49, 0.15);
+  color: #e5b731;
+  border: 1px solid rgba(229, 183, 49, 0.3);
+}
+
+.manualAddBox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #202026;
+}
+
+.manualAddRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.manualAddInput {
+  flex: 1;
+  min-width: 0;
+  background: #141416;
+  border: 1px solid #282830;
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: #ffffff;
+  font-size: 12.5px;
+  outline: none;
+}
+
+.manualAddInput:focus {
+  border-color: #e5b731;
+}
+
+.manualAddBtn {
+  background: #202026;
+  border: 1px solid #30303a;
+  color: #d1d1d6;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.manualAddBtn:hover:not(:disabled) {
+  background: #2a2a34;
+  color: #ffffff;
+  border-color: #e5b731;
+}
+
+.emptyCandidatesText {
+  text-align: center;
+  color: #71717a;
+  font-size: 12.5px;
+  padding: 24px 10px;
 }

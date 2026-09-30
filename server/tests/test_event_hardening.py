@@ -74,9 +74,9 @@ class EventHardeningTests(unittest.TestCase):
         self.db = NestedFirestore(
             {
                 "events/event-one": event_doc(),
-                "users/uid-one": user(),
-                "users/uid-two": user(),
-                "users/uid-admin": user(),
+                "users/uid-one": user(id="uid-one"),
+                "users/uid-two": user(id="uid-two"),
+                "users/uid-admin": user(id="uid-admin"),
             }
         )
         self.real_db = events.db
@@ -319,6 +319,42 @@ class EventHardeningTests(unittest.TestCase):
             409,
         )
         self.assertIsInstance(self.db.store["events/event-one"]["schedule"], dict)
+
+    def test_banner_content_round_trips_through_create_list_and_update(self):
+        self.sign_in_admin()
+        response = self.client.post("/api/v1/events", json={
+            "title": "New club announcement",
+            "description": "Join the opening session.",
+            "event_type": "Featured Banner",
+            "schedule": {"start_time": "2030-01-01T10:00:00+00:00"},
+            "status": "published",
+            "banner_badge_text": "Orientation",
+            "banner_cta_text": "See the schedule →",
+            "banner_cta_url": "/dashboard/events",
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        event_id = response.json()["id"]
+        self.assertEqual(response.json()["banner_badge_text"], "Orientation")
+        self.assertEqual(self.db.store[f"events/{event_id}"]["banner_badge_text"], "Orientation")
+        listed = self.client.get("/api/v1/events").json()["events"]
+        self.assertEqual(next(item for item in listed if item["id"] == event_id)["banner_cta_url"], "/dashboard/events")
+        self.assertIsNone(next(item for item in listed if item["id"] == "event-one")["banner_cta_text"])
+
+        updated = self.client.put(f"/api/v1/events/{event_id}", json={
+            "banner_cta_text": "Register now",
+            "banner_cta_url": "https://reinforce-sst.com/events",
+        })
+        self.assertEqual(updated.status_code, 200, updated.text)
+        self.assertEqual(updated.json()["banner_cta_text"], "Register now")
+        self.assertEqual(self.db.store[f"events/{event_id}"]["banner_cta_url"], "https://reinforce-sst.com/events")
+
+    def test_banner_destination_rejects_unsafe_links(self):
+        self.sign_in_admin()
+        for destination in ("javascript:alert(1)", "//other.example/path", "http://other.example", "https://other.example:bad", "/\\other.example", "  "):
+            with self.subTest(destination=destination):
+                result = self.client.put("/api/v1/events/event-one", json={"banner_cta_url": destination})
+                self.assertEqual(result.status_code, 422)
+        self.assertNotIn("banner_cta_url", self.db.store["events/event-one"])
 
     def test_roll_calls_are_cumulative_valid_and_idempotent(self):
         self.sign_in_admin()

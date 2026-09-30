@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import MemberIcon, { type IconName } from "@/components/dashboard/MemberIcon";
+import PaginationBar from "@/components/dashboard/PaginationBar";
+import LoadingBar from "@/components/dashboard/LoadingBar";
 import { useMember } from "@/lib/useMember";
-import { api, type ApiTicketDetail, type TicketSummary } from "@/lib/api";
+import { api, type ApiTicketDetail, type TicketSummary, type StudentProfile } from "@/lib/api";
 import { loadAllSpgs } from "@/lib/memberData";
 import type { SPGRecord } from "@/lib/spgData";
 import styles from "./TicketManagement.module.css";
@@ -88,13 +91,23 @@ const ticketTypeOptions: TicketTypeOption[] = [
   },
   {
     id: "idea_jar",
-    title: "Idea Jar & Suggestions",
-    subtitle: "Submit project ideas & feedback",
-    description: "Propose new concepts, features, or workshops for the club",
+    title: "Idea Jar Proposal",
+    subtitle: "Structured project ideas & roadmaps",
+    description: "Submit project proposals with difficulty, prerequisites, roadmap and learning outcomes",
     icon: "ideas",
     iconClass: styles.iconIdea,
     badgeClass: styles.catIdea,
     tabActiveClass: styles.modalCatTabActiveIdea,
+  },
+  {
+    id: "feedback",
+    title: "Suggestions & Feedback",
+    subtitle: "General suggestions & club feedback",
+    description: "Propose club improvements, events, workshop topics, or general feedback",
+    icon: "message",
+    iconClass: styles.iconFeedback,
+    badgeClass: styles.catFeedback,
+    tabActiveClass: styles.modalCatTabActiveFeedback,
   },
   {
     id: "report",
@@ -147,6 +160,12 @@ export default function TicketManagementClient() {
   const [retryCount, setRetryCount] = useState(0);
   const [filterStatus, setFilterStatus] = useState<"all" | "open" | "in_progress" | "resolved">("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filterStatus, searchQuery]);
 
   useEffect(() => {
     let active = true;
@@ -192,6 +211,7 @@ export default function TicketManagementClient() {
     "resource_request",
     "support",
     "idea_jar",
+    "feedback",
     "report",
   ];
 
@@ -210,8 +230,24 @@ export default function TicketManagementClient() {
   const [memberSpgsError, setMemberSpgsError] = useState("");
 
   const [spgTrack, setSpgTrack] = useState<"research" | "product" | "kaggle" | "general">("research");
-  const [spgMembers, setSpgMembers] = useState("");
-  const [spgDuration, setSpgDuration] = useState("");
+  const [spgLeader, setSpgLeader] = useState<StudentProfile | null>(null);
+  const [isChangingLeader, setIsChangingLeader] = useState(false);
+  const [leaderSearch, setLeaderSearch] = useState("");
+  const [leaderCandidates, setLeaderCandidates] = useState<StudentProfile[]>([]);
+  const [leaderLoading, setLeaderLoading] = useState(false);
+  const [leaderSearchError, setLeaderSearchError] = useState("");
+
+  const [selectedTeamMembers, setSelectedTeamMembers] = useState<Record<string, StudentProfile>>({});
+  const [memberSearch, setMemberSearch] = useState("");
+  const [memberCandidates, setMemberCandidates] = useState<StudentProfile[]>([]);
+  const [memberCandidatesLoading, setMemberCandidatesLoading] = useState(false);
+  const [memberSearchError, setMemberSearchError] = useState("");
+  const [manualMemberInput, setManualMemberInput] = useState("");
+  const [manualMemberLoading, setManualMemberLoading] = useState(false);
+  const [manualMemberError, setManualMemberError] = useState("");
+
+  const [spgDurationDays, setSpgDurationDays] = useState<number | "">("");
+  const [spgFrequencyDays, setSpgFrequencyDays] = useState<number | "">("");
   const [spgGoals, setSpgGoals] = useState("");
 
   const [resSpgName, setResSpgName] = useState("");
@@ -224,10 +260,18 @@ export default function TicketManagementClient() {
   const [discordHandle, setDiscordHandle] = useState("");
 
   const [ideaTrack, setIdeaTrack] = useState<"research" | "product" | "kaggle" | "general">("product");
+  const [ideaDifficulty, setIdeaDifficulty] = useState<"beginner" | "intermediate" | "advanced">("intermediate");
   const [ideaOverview, setIdeaOverview] = useState("");
+  const [ideaPrerequisites, setIdeaPrerequisites] = useState<string[]>([]);
+  const [newPrereq, setNewPrereq] = useState("");
+  const [ideaRoadmap, setIdeaRoadmap] = useState<string[]>([]);
+  const [newRoadmapStep, setNewRoadmapStep] = useState("");
+  const [ideaLearningOutcomes, setIdeaLearningOutcomes] = useState<string[]>([]);
+  const [newOutcome, setNewOutcome] = useState("");
 
-  const [reportIncident, setReportIncident] = useState("");
-  const [reportDetails, setReportDetails] = useState("");
+  const [feedbackTopic, setFeedbackTopic] = useState("");
+  const [feedbackComments, setFeedbackComments] = useState("");
+
   const [partiesInvolved, setPartiesInvolved] = useState("");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -256,6 +300,184 @@ export default function TicketManagementClient() {
     return () => { active = false; };
   }, [isModalOpen, selectedCategory, token, profile.id]);
 
+  // Set default team leader to current user once profile is ready
+  useEffect(() => {
+    if (profile?.id && !spgLeader) {
+      setSpgLeader(profile);
+    }
+  }, [profile, spgLeader]);
+
+  // Leader candidate search (strictly club members)
+  useEffect(() => {
+    if (!isModalOpen || selectedCategory !== "spg_registration" || !isChangingLeader || !token) return;
+    let active = true;
+    setLeaderLoading(true);
+    setLeaderSearchError("");
+    const timer = setTimeout(() => {
+      api.browseUsers(token, {
+        search: leaderSearch.trim() || undefined,
+        is_member: true,
+        page_size: 50,
+      })
+        .then((res) => {
+          if (active) {
+            setLeaderCandidates(res.items || []);
+            setLeaderLoading(false);
+          }
+        })
+        .catch((error) => {
+          if (active) {
+            setLeaderCandidates([]);
+            setLeaderSearchError(error instanceof Error ? error.message : "Could not search club members.");
+            setLeaderLoading(false);
+          }
+        });
+    }, 250);
+    return () => { active = false; clearTimeout(timer); };
+  }, [isModalOpen, selectedCategory, isChangingLeader, leaderSearch, token]);
+
+  // Team member candidate search
+  useEffect(() => {
+    if (!isModalOpen || selectedCategory !== "spg_registration" || !token) return;
+    let active = true;
+    setMemberCandidatesLoading(true);
+    setMemberSearchError("");
+    const timer = setTimeout(() => {
+      api.browseUsers(token, {
+        search: memberSearch.trim() || undefined,
+        page_size: 50,
+      })
+        .then((res) => {
+          if (active) {
+            setMemberCandidates(res.items || []);
+            setMemberCandidatesLoading(false);
+          }
+        })
+        .catch((error) => {
+          if (active) {
+            setMemberCandidates([]);
+            setMemberSearchError(error instanceof Error ? error.message : "Could not search members.");
+            setMemberCandidatesLoading(false);
+          }
+        });
+    }, 250);
+    return () => { active = false; clearTimeout(timer); };
+  }, [isModalOpen, selectedCategory, memberSearch, token]);
+
+  const selectSpgLeader = (member: StudentProfile) => {
+    setSpgLeader(member);
+    setSelectedTeamMembers((current) => {
+      const next = { ...current };
+      delete next[member.id];
+      return next;
+    });
+    setIsChangingLeader(false);
+    setLeaderSearch("");
+    setSubmitError("");
+  };
+
+  const handleToggleMember = (m: StudentProfile) => {
+    const uid = m.id;
+    if (!uid) return;
+    if (spgLeader?.id === uid) {
+      setSubmitError("The designated team leader cannot also be added as a team member.");
+      return;
+    }
+    if (!selectedTeamMembers[uid] && Object.keys(selectedTeamMembers).length >= 6) {
+      setSubmitError("An SPG can have at most 6 team members.");
+      return;
+    }
+    setSubmitError("");
+    setSelectedTeamMembers((prev) => {
+      const next = { ...prev };
+      if (next[uid]) {
+        delete next[uid];
+      } else {
+        next[uid] = m;
+      }
+      return next;
+    });
+  };
+
+  const handleRemoveMember = (uid: string) => {
+    setSelectedTeamMembers((prev) => {
+      const next = { ...prev };
+      delete next[uid];
+      return next;
+    });
+  };
+
+  const handleAddManualMember = async () => {
+    if (!manualMemberInput.trim() || !token) return;
+    setManualMemberLoading(true);
+    setManualMemberError("");
+    try {
+      const res = await api.getUserProfile(token, manualMemberInput.trim());
+      const uid = res.id;
+      if (!uid || uid.includes("@")) throw new Error("Could not resolve a canonical member UID.");
+      if (spgLeader?.id === uid) {
+        throw new Error("This user is already designated as the team leader.");
+      }
+      if (Object.keys(selectedTeamMembers).length >= 6 && !selectedTeamMembers[uid]) {
+        throw new Error("Maximum 6 team members allowed.");
+      }
+      setSelectedTeamMembers((prev) => ({ ...prev, [uid]: res }));
+      setManualMemberInput("");
+    } catch (err) {
+      setManualMemberError(err instanceof Error ? err.message : "Member not found.");
+    } finally {
+      setManualMemberLoading(false);
+    }
+  };
+
+  const handleAddPrereq = () => {
+    const raw = newPrereq.trim();
+    if (!raw) return;
+    const lines = raw.split(/\r?\n/).map((l) => l.trim().replace(/^[-*•0-9.]+\s*/, "")).filter(Boolean);
+    setIdeaPrerequisites((prev) => {
+      const next = [...prev];
+      for (const line of lines) {
+        if (!next.includes(line)) next.push(line);
+      }
+      return next;
+    });
+    setNewPrereq("");
+  };
+
+  const handleRemovePrereq = (index: number) => {
+    setIdeaPrerequisites((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddRoadmapStep = () => {
+    const raw = newRoadmapStep.trim();
+    if (!raw) return;
+    const lines = raw.split(/\r?\n/).map((l) => l.trim().replace(/^[-*•0-9.]+\s*/, "")).filter(Boolean);
+    setIdeaRoadmap((prev) => [...prev, ...lines]);
+    setNewRoadmapStep("");
+  };
+
+  const handleRemoveRoadmapStep = (index: number) => {
+    setIdeaRoadmap((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddOutcome = () => {
+    const raw = newOutcome.trim();
+    if (!raw) return;
+    const lines = raw.split(/\r?\n/).map((l) => l.trim().replace(/^[-*•0-9.]+\s*/, "")).filter(Boolean);
+    setIdeaLearningOutcomes((prev) => {
+      const next = [...prev];
+      for (const line of lines) {
+        if (!next.includes(line)) next.push(line);
+      }
+      return next;
+    });
+    setNewOutcome("");
+  };
+
+  const handleRemoveOutcome = (index: number) => {
+    setIdeaLearningOutcomes((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const closeModal = () => {
     router.push(pathname, { scroll: false });
   };
@@ -282,11 +504,29 @@ export default function TicketManagementClient() {
     let fieldsObj: Record<string, unknown> = {};
 
     if (selectedCategory === "spg_registration") {
+      const leaderUid = spgLeader?.id || profile.id || "";
+      const memberUids = Object.keys(selectedTeamMembers).filter((id) => id !== leaderUid);
+      const trackLabel = spgTrack === "research" ? "Research Track" : spgTrack === "product" ? "Product Track" : spgTrack === "kaggle" ? "Kaggle Track" : "General Track";
+      const leaderName = spgLeader?.full_name || profile.full_name || "Member";
+
       fieldsObj = {
-        "Project Name & Track": `${formTitle || "Untitled Project"} (${spgTrack.toUpperCase()} Track)`,
-        "Team Members": spgMembers,
-        "Duration & Frequency": spgDuration,
-        "Summary & Goals": spgGoals,
+        "Project Name": formTitle.trim() || "Untitled Project",
+        "Track": trackLabel,
+        "track": spgTrack,
+        "Team Leader UID": leaderUid,
+        "leader_uid": leaderUid,
+        "Team Leader": `${leaderName} (${leaderUid})`,
+        "Team Member UIDs": memberUids,
+        "member_uids": memberUids,
+        "Team Members": memberUids.length > 0
+          ? memberUids.map((id) => selectedTeamMembers[id]?.full_name ? `${selectedTeamMembers[id].full_name} (${id})` : id).join(", ")
+          : "None",
+        "Duration (Days)": Number(spgDurationDays),
+        "duration_days": Number(spgDurationDays),
+        "Report Frequency (Days)": Number(spgFrequencyDays),
+        "frequency_days": Number(spgFrequencyDays),
+        "Summary & Goals": spgGoals.trim(),
+        "Project Name & Track": `${formTitle.trim() || "Untitled Project"} (${trackLabel})`,
       };
     } else if (selectedCategory === "resource_request") {
       fieldsObj = {
@@ -302,16 +542,29 @@ export default function TicketManagementClient() {
         "Discord Handle": discordHandle,
       };
     } else if (selectedCategory === "idea_jar") {
+      const difficultyLabel = ideaDifficulty === "beginner" ? "Beginner" : ideaDifficulty === "advanced" ? "Advanced" : "Intermediate";
       fieldsObj = {
         "Idea Title": formTitle || "Untitled Idea",
         Track: `${ideaTrack.toUpperCase()} Track`,
+        track: ideaTrack,
+        Difficulty: difficultyLabel,
+        difficulty: ideaDifficulty,
         Overview: ideaOverview,
+        Prerequisites: ideaPrerequisites.length > 0 ? ideaPrerequisites.map((p) => `• ${p}`).join("\n") : "None specified",
+        "Rough Roadmap": ideaRoadmap.length > 0 ? ideaRoadmap.map((r, i) => `${i + 1}. ${r}`).join("\n") : "None specified",
+        "Learning Outcomes": ideaLearningOutcomes.length > 0 ? ideaLearningOutcomes.map((o) => `• ${o}`).join("\n") : "None specified",
+        prerequisites: ideaPrerequisites,
+        rough_roadmap: ideaRoadmap,
+        learning_outcomes: ideaLearningOutcomes,
+      };
+    } else if (selectedCategory === "feedback") {
+      fieldsObj = {
+        "Feedback Topic": feedbackTopic.trim() || formTitle.trim() || "General Feedback",
+        "Feedback Details": feedbackComments.trim() || formDescription.trim(),
       };
     } else if (selectedCategory === "report") {
       fieldsObj = {
-        "Incident Summary": reportIncident,
-        "Report Details": reportDetails,
-        "Parties Involved": partiesInvolved,
+        ...(partiesInvolved.trim() ? { "Parties Involved": partiesInvolved.trim() } : {}),
         "Is Confidential": true,
       };
     }
@@ -334,21 +587,61 @@ export default function TicketManagementClient() {
 
   const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formTitle.trim()) return;
+    if (!formTitle.trim()) {
+      setSubmitError("Please enter a ticket title.");
+      return;
+    }
+
+    if (selectedCategory === "spg_registration") {
+      if (!spgLeader?.id) {
+        setSubmitError("Team leader is mandatory.");
+        return;
+      }
+      if (!spgLeader.is_member) {
+        setSubmitError(`The team leader (${spgLeader.full_name || spgLeader.id}) needs active club membership. Choose an active member or ask a club admin to update their membership.`);
+        return;
+      }
+      if (spgDurationDays === "" || !Number.isInteger(spgDurationDays) || spgDurationDays <= 0 || spgDurationDays > 730) {
+        setSubmitError("Please enter a valid estimated duration in days (e.g. 60).");
+        return;
+      }
+      if (spgFrequencyDays === "" || !Number.isInteger(spgFrequencyDays) || spgFrequencyDays <= 0 || spgFrequencyDays > 180) {
+        setSubmitError("Please enter a valid reporting frequency in days (e.g. 14).");
+        return;
+      }
+      if (Object.keys(selectedTeamMembers).length > 6) {
+        setSubmitError("An SPG may have at most 6 team members.");
+        return;
+      }
+    }
 
     setIsSubmitting(true);
     setSubmitError("");
     try {
       const payload = buildTicketCreatePayload();
       const created = await api.createTicket(token, payload);
-      if (created.category !== "report") {
-        setTickets((items) => [toTicketItem(created, created), ...items]);
-        setSelectedTicketId(created.id);
-      }
+      setTickets((items) => [toTicketItem(created, created), ...items]);
+      setSelectedTicketId(created.id);
       setFormTitle("");
       setFormDescription("");
       setFormSpgId("");
       setResSpgName("");
+      setSpgDurationDays("");
+      setSpgFrequencyDays("");
+      setSpgGoals("");
+      setSelectedTeamMembers({});
+      setSpgLeader(profile);
+      setIsChangingLeader(false);
+      setIdeaOverview("");
+      setIdeaPrerequisites([]);
+      setNewPrereq("");
+      setIdeaRoadmap([]);
+      setNewRoadmapStep("");
+      setIdeaLearningOutcomes([]);
+      setNewOutcome("");
+      setFeedbackTopic("");
+      setFeedbackComments("");
+      setPartiesInvolved("");
       closeModal();
       setSuccessMessage(created.category === "report" ? "Confidential report submitted to the club team." : `Ticket created successfully (${created.id})!`);
       setTimeout(() => setSuccessMessage(""), 4500);
@@ -360,13 +653,22 @@ export default function TicketManagementClient() {
   };
 
   const filteredTickets = tickets.filter((t) => {
-    const matchesStatus = filterStatus === "all" || t.status === filterStatus;
+    const matchesStatus =
+      filterStatus === "all" ||
+      (filterStatus === "resolved"
+        ? t.status === "resolved" || t.status === "closed"
+        : t.status === filterStatus);
     const matchesSearch =
       t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       t.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       t.description.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesStatus && matchesSearch;
   });
+
+  const paginatedTickets = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredTickets.slice(start, start + pageSize);
+  }, [filteredTickets, page, pageSize]);
 
   const getCategoryBadgeClass = (category: TicketCategory) => {
     const opt = ticketTypeOptions.find((t) => t.id === category);
@@ -410,7 +712,7 @@ export default function TicketManagementClient() {
             onClick={() => openModalWithCategory("spg_registration")}
           >
             <MemberIcon name="plus" size={16} />
-            + New Ticket
+            New Ticket
           </button>
         </div>
       </div>
@@ -463,7 +765,7 @@ export default function TicketManagementClient() {
         <div className={styles.statCard}>
           <span className={styles.statLabel}>Resolved</span>
           <span className={`${styles.statValue} ${styles.statResolved}`}>
-            {tickets.filter((t) => t.status === "resolved").length.toString().padStart(2, "0")}
+            {tickets.filter((t) => t.status === "resolved" || t.status === "closed").length.toString().padStart(2, "0")}
           </span>
         </div>
 
@@ -517,8 +819,9 @@ export default function TicketManagementClient() {
             </div>
           </div>
 
+          <LoadingBar loading={loadingTickets} />
           <div className={styles.ticketsList}>
-            {filteredTickets.map((ticket) => (
+            {paginatedTickets.map((ticket) => (
               <article
                 key={ticket.id}
                 onClick={() => setSelectedTicketId(ticket.id)}
@@ -552,6 +855,8 @@ export default function TicketManagementClient() {
                           ? styles.dotOpen
                           : ticket.status === "in_progress"
                           ? styles.dotInProgress
+                          : ticket.status === "closed"
+                          ? styles.dotClosed
                           : styles.dotResolved
                       }`}
                     />
@@ -559,6 +864,8 @@ export default function TicketManagementClient() {
                       ? "Pending Review"
                       : ticket.status === "in_progress"
                       ? "In Progress"
+                      : ticket.status === "closed"
+                      ? "Closed"
                       : "Resolved"}
                   </span>
                   <span>{ticket.updatedAt}</span>
@@ -580,6 +887,22 @@ export default function TicketManagementClient() {
               >
                 {loadingTickets ? "Loading your tickets…" : "No tickets matching your filter criteria."}
               </div>
+            )}
+
+            {!loadingTickets && filteredTickets.length > 0 && (
+              <PaginationBar
+                currentPage={page}
+                totalItems={filteredTickets.length}
+                pageSize={pageSize}
+                onPageChange={setPage}
+                onPageSizeChange={(sz) => {
+                  setPageSize(sz);
+                  setPage(1);
+                }}
+                pageSizeOptions={[10, 20, 50]}
+                itemLabel="tickets"
+                disabled={loadingTickets}
+              />
             )}
           </div>
         </section>
@@ -627,6 +950,8 @@ export default function TicketManagementClient() {
                             ? styles.dotOpen
                             : selectedTicket.status === "in_progress"
                             ? styles.dotInProgress
+                            : selectedTicket.status === "closed"
+                            ? styles.dotClosed
                             : styles.dotResolved
                         }`}
                       />
@@ -634,6 +959,8 @@ export default function TicketManagementClient() {
                         ? "Open"
                         : selectedTicket.status === "in_progress"
                         ? "In Progress"
+                        : selectedTicket.status === "closed"
+                        ? "Closed"
                         : "Resolved"}
                     </span>
                   </div>
@@ -653,12 +980,19 @@ export default function TicketManagementClient() {
                     Ticket Details & Specifications
                   </span>
                   <div className={styles.fieldsTable}>
-                    {Object.entries(selectedTicket.fields).map(([key, value]) => (
-                      <div key={key} className={styles.fieldRow}>
-                        <span className={styles.fieldKey}>{key}:</span>
-                        <span className={styles.fieldVal}>{String(value)}</span>
-                      </div>
-                    ))}
+                    {Object.entries(selectedTicket.fields)
+                      .filter(([key, val]) => {
+                        if (!val) return false;
+                        if (key === "Incident Summary" && val === selectedTicket.title) return false;
+                        if (key === "Report Details" && val === selectedTicket.description) return false;
+                        return true;
+                      })
+                      .map(([key, value]) => (
+                        <div key={key} className={styles.fieldRow}>
+                          <span className={styles.fieldKey}>{key}:</span>
+                          <span className={styles.fieldVal}>{String(value)}</span>
+                        </div>
+                      ))}
                   </div>
                 </div>
               )}
@@ -713,7 +1047,15 @@ export default function TicketManagementClient() {
             </div>
 
             {/* Category Switcher Tabs inside Modal */}
-            <div className={styles.modalCatSwitcher} role="tablist">
+            <div
+              className={styles.modalCatSwitcher}
+              role="tablist"
+              onWheel={(e) => {
+                if (e.deltaY !== 0) {
+                  e.currentTarget.scrollLeft += e.deltaY;
+                }
+              }}
+            >
               {ticketTypeOptions.map((opt) => (
                 <button
                   key={opt.id}
@@ -738,7 +1080,7 @@ export default function TicketManagementClient() {
               <div className={styles.formGroup}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <label className={styles.inputLabel} htmlFor="ticket-modal-title">
-                    Title
+                    {selectedCategory === "report" ? "Incident Summary / Title" : "Title"}
                   </label>
                   <span
                     style={{
@@ -762,9 +1104,11 @@ export default function TicketManagementClient() {
                       : selectedCategory === "resource_request"
                       ? "e.g., Request for 4x A100 GPU Cluster Allocation"
                       : selectedCategory === "report"
-                      ? "e.g., Confidential Code of Conduct Incident Report"
+                      ? "e.g., Incident Summary: Harassment or Code of Conduct concern"
                       : selectedCategory === "idea_jar"
                       ? "e.g., Decentralized GPU pooling platform"
+                      : selectedCategory === "feedback"
+                      ? "e.g., Suggestion for weekly paper reading groups"
                       : "e.g., Summary of request or inquiry"
                   }
                   value={formTitle}
@@ -776,7 +1120,7 @@ export default function TicketManagementClient() {
               <div className={styles.formGroup}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <label className={styles.inputLabel} htmlFor="ticket-modal-desc">
-                    Description
+                    {selectedCategory === "report" ? "Detailed Incident Report" : "Description"}
                   </label>
                   <span
                     style={{
@@ -792,7 +1136,11 @@ export default function TicketManagementClient() {
                   id="ticket-modal-desc"
                   maxLength={2000}
                   className={styles.textareaInput}
-                  placeholder="Detailed context and rationale for this ticket."
+                  placeholder={
+                    selectedCategory === "report"
+                      ? "Provide all relevant details, timeline, context, and impact. This report is strictly confidential and visible only to club executive leads."
+                      : "Detailed context and rationale for this ticket."
+                  }
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
                 />
@@ -801,51 +1149,375 @@ export default function TicketManagementClient() {
               {/* Category-Specific Form Fields */}
               {selectedCategory === "spg_registration" && (
                 <>
-                  <div className={styles.fieldsRow}>
-                    <div className={styles.formGroup}>
-                      <label className={styles.inputLabel} htmlFor="modal-spg-track">
-                        Track
+                  <div className={styles.formGroup}>
+                    <label className={styles.inputLabel} htmlFor="modal-spg-track">
+                      Track
+                    </label>
+                    <select
+                      id="modal-spg-track"
+                      className={styles.selectInput}
+                      value={spgTrack}
+                      onChange={(e) => setSpgTrack(e.target.value as typeof spgTrack)}
+                    >
+                      <option value="research">Research Track</option>
+                      <option value="product">Product Track</option>
+                      <option value="kaggle">Kaggle Track</option>
+                      <option value="general">General Track</option>
+                    </select>
+                  </div>
+
+                  {/* Team Leader Section */}
+                  <div className={styles.formGroup}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <label className={styles.inputLabel} style={{ marginBottom: 0 }}>
+                        Team Leader <span style={{ color: "#e5b731" }}>*</span>
                       </label>
-                      <select
-                        id="modal-spg-track"
-                        className={styles.selectInput}
-                        value={spgTrack}
-                        onChange={(e) => setSpgTrack(e.target.value as typeof spgTrack)}
-                      >
-                        <option value="research">Research Track (Red)</option>
-                        <option value="product">Product Track (Green)</option>
-                        <option value="kaggle">Kaggle Track (Blue)</option>
-                        <option value="general">General Track</option>
-                      </select>
+                      <span style={{ fontSize: "11px", color: "#8e8e93" }}>
+                        Mandatory (Club Member)
+                      </span>
                     </div>
 
-                    <div className={styles.formGroup}>
-                      <label className={styles.inputLabel} htmlFor="modal-spg-duration">
-                        Duration & Frequency
+                    {/* Selected Leader Display Card */}
+                    {spgLeader && !isChangingLeader && (
+                      <div className={`${styles.leaderCard} ${!spgLeader.is_member ? styles.leaderCardWarning : ""}`}>
+                        <div className={styles.leaderInfo}>
+                          <div className={styles.leaderAvatar}>
+                            {spgLeader.avatar_url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={spgLeader.avatar_url} alt={spgLeader.full_name} className={styles.leaderAvatarImg} />
+                            ) : (
+                              spgLeader.full_name?.split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "LD"
+                            )}
+                          </div>
+                          <div className={styles.leaderMeta}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                              <span className={styles.leaderName}>{spgLeader.full_name || "Unknown"}</span>
+                              {spgLeader.id === profile.id && (
+                                <span className={styles.candidateBadge} style={{ color: "#e5b731", background: "rgba(229, 183, 49, 0.15)" }}>You</span>
+                              )}
+                            </div>
+                            <span className={styles.leaderEmail}>{spgLeader.email || spgLeader.id}</span>
+                            <div className={styles.leaderBadges}>
+                              {spgLeader.is_member ? (
+                                <span className={`${styles.candidateBadge} ${styles.candidateBadgeMember}`}>✓ Club Member</span>
+                              ) : (
+                                <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Membership pending</span>
+                              )}
+                              {spgLeader.is_admin && <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Admin</span>}
+                              {spgLeader.tier && spgLeader.tier !== "beginner" && <span className={styles.candidateBadge}>{spgLeader.tier}</span>}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className={styles.leaderActionBtns}>
+                          {spgLeader.id !== profile.id && (
+                            <button
+                              type="button"
+                              onClick={() => selectSpgLeader(profile)}
+                              className={styles.leaderResetBtn}
+                              title="Reset to myself"
+                            >
+                              Reset to Me
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setIsChangingLeader(true)}
+                            className={styles.leaderChangeBtn}
+                          >
+                            Change Leader
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {!spgLeader?.is_member && spgLeader && (
+                      <div className={styles.nonMemberWarning}>
+                        <MemberIcon name="alert-circle" size={14} />
+                        <span>The leader needs active club membership. Choose an active member or <Link href="/dashboard/tickets?category=support">request activation through a support ticket</Link>.</span>
+                      </div>
+                    )}
+
+                    {/* Changing Leader Search Picker */}
+                    {isChangingLeader && (
+                      <div className={styles.recipientSearchContainer}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: "12px", fontWeight: 700, color: "#ffffff" }}>
+                            Search & Select New Team Leader
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setIsChangingLeader(false)}
+                            style={{ background: "none", border: "none", color: "#8e8e93", cursor: "pointer", fontSize: "12px" }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+
+                        <div className={styles.recipientSearchBox}>
+                          <span className={styles.recipientSearchIcon}>
+                            <MemberIcon name="search" size={14} />
+                          </span>
+                          <input
+                            type="search"
+                            aria-label="Search for a team leader"
+                            value={leaderSearch}
+                            onChange={(e) => setLeaderSearch(e.target.value)}
+                            placeholder="Search club members by name or email..."
+                            className={styles.recipientSearchInput}
+                            autoFocus
+                          />
+                          {leaderSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setLeaderSearch("")}
+                              className={styles.clearSearchBtn}
+                              aria-label="Clear leader search"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+
+                        <div className={styles.candidateListContainer}>
+                          {leaderLoading ? (
+                            <div className={styles.emptyCandidatesText}>Searching club members…</div>
+                          ) : leaderSearchError ? (
+                            <div className={styles.emptyCandidatesText} role="alert">{leaderSearchError}</div>
+                          ) : leaderCandidates.length === 0 ? (
+                            <div className={styles.emptyCandidatesText}>
+                              {leaderSearch ? `No members found matching "${leaderSearch}".` : "No members found."}
+                            </div>
+                          ) : (
+                            leaderCandidates.map((m) => {
+                              const initials = m.full_name
+                                ? m.full_name.split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase()
+                                : "MB";
+                              return (
+                                <button
+                                  key={m.id}
+                                  type="button"
+                                  onClick={() => selectSpgLeader(m)}
+                                  className={styles.candidateRow}
+                                >
+                                  <div className={styles.candidateAvatar}>
+                                    {m.avatar_url ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img src={m.avatar_url} alt={m.full_name} className={styles.candidateAvatarImg} />
+                                    ) : (
+                                      initials
+                                    )}
+                                  </div>
+                                  <div className={styles.candidateInfo}>
+                                    <div className={styles.candidateNameRow}>
+                                      <span className={styles.candidateName}>{m.full_name}</span>
+                                      <div className={styles.candidateBadges}>
+                                        {m.is_member && <span className={`${styles.candidateBadge} ${styles.candidateBadgeMember}`}>Member</span>}
+                                        {m.is_admin && <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Admin</span>}
+                                        {m.tier && m.tier !== "beginner" && <span className={styles.candidateBadge}>{m.tier}</span>}
+                                      </div>
+                                    </div>
+                                    <span className={styles.candidateEmail}>{m.email || m.id}</span>
+                                  </div>
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Team Members Section */}
+                  <div className={styles.formGroup}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <label className={styles.inputLabel} style={{ marginBottom: 0 }}>
+                        Team Members (Optional, up to 6)
                       </label>
-                      <input
-                        id="modal-spg-duration"
-                        type="text"
-                        className={styles.textInput}
-                        value={spgDuration}
-                        onChange={(e) => setSpgDuration(e.target.value)}
-                        placeholder="e.g. 8 Weeks, Weekly syncs"
-                      />
+                      <span style={{ fontSize: "11px", color: Object.keys(selectedTeamMembers).length >= 6 ? "#e5b731" : "#8e8e93" }}>
+                        {Object.keys(selectedTeamMembers).length} / 6 selected
+                      </span>
+                    </div>
+
+                    <div className={styles.recipientSearchContainer}>
+                      {/* Selected Chips */}
+                      {Object.keys(selectedTeamMembers).length > 0 && (
+                        <div className={styles.selectedChipsTray}>
+                          {Object.values(selectedTeamMembers).map((m) => {
+                            const initials = m.full_name
+                              ? m.full_name.split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase()
+                              : "MB";
+                            return (
+                              <div key={m.id} className={styles.recipientChip}>
+                                <div className={styles.chipAvatar}>
+                                  {m.avatar_url ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={m.avatar_url} alt={m.full_name} className={styles.chipAvatarImg} />
+                                  ) : (
+                                    initials
+                                  )}
+                                </div>
+                                <span>{m.full_name}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveMember(m.id || "")}
+                                  className={styles.chipRemoveBtn}
+                                  aria-label={`Remove ${m.full_name}`}
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Search Input */}
+                      <div className={styles.recipientSearchBox}>
+                        <span className={styles.recipientSearchIcon}>
+                          <MemberIcon name="search" size={14} />
+                        </span>
+                        <input
+                          type="search"
+                          aria-label="Search for team members"
+                          value={memberSearch}
+                          onChange={(e) => setMemberSearch(e.target.value)}
+                          placeholder="Search collaborators by name or email..."
+                          className={styles.recipientSearchInput}
+                        />
+                        {memberSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setMemberSearch("")}
+                            className={styles.clearSearchBtn}
+                            aria-label="Clear member search"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Candidate List */}
+                      <div className={styles.candidateListContainer}>
+                        {memberCandidatesLoading ? (
+                          <div className={styles.emptyCandidatesText}>Searching members…</div>
+                        ) : memberSearchError ? (
+                          <div className={styles.emptyCandidatesText} role="alert">{memberSearchError}</div>
+                        ) : memberCandidates.length === 0 ? (
+                          <div className={styles.emptyCandidatesText}>
+                            {memberSearch ? `No members found matching "${memberSearch}".` : "No members found."}
+                          </div>
+                        ) : (
+                          memberCandidates
+                            .filter((m) => m.id !== spgLeader?.id)
+                            .map((m) => {
+                              const isSelected = Boolean(m.id && selectedTeamMembers[m.id]);
+                              const initials = m.full_name
+                                ? m.full_name.split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase()
+                                : "MB";
+                              return (
+                                <button
+                                  key={m.id}
+                                  type="button"
+                                  role="checkbox"
+                                  aria-checked={isSelected}
+                                  aria-label={`Select ${m.full_name}`}
+                                  onClick={() => handleToggleMember(m)}
+                                  className={`${styles.candidateRow} ${isSelected ? styles.candidateRowSelected : ""}`}
+                                >
+                                  <span className={styles.candidateCheckboxVisual} aria-hidden="true" />
+                                  <div className={styles.candidateAvatar}>
+                                    {m.avatar_url ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img src={m.avatar_url} alt={m.full_name} className={styles.candidateAvatarImg} />
+                                    ) : (
+                                      initials
+                                    )}
+                                  </div>
+                                  <div className={styles.candidateInfo}>
+                                    <div className={styles.candidateNameRow}>
+                                      <span className={styles.candidateName}>{m.full_name}</span>
+                                      <div className={styles.candidateBadges}>
+                                        {m.is_member && <span className={`${styles.candidateBadge} ${styles.candidateBadgeMember}`}>Member</span>}
+                                        {m.is_admin && <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Admin</span>}
+                                        {m.tier && m.tier !== "beginner" && <span className={styles.candidateBadge}>{m.tier}</span>}
+                                      </div>
+                                    </div>
+                                    <span className={styles.candidateEmail}>{m.email || m.id}</span>
+                                  </div>
+                                </button>
+                              );
+                            })
+                        )}
+                      </div>
+
+                      {/* Manual Add by UID or Email */}
+                      <div className={styles.manualAddBox}>
+                        <span style={{ fontSize: "11px", color: "#8e8e93" }}>
+                          Can&apos;t find a teammate? Add directly by email or Firebase UID:
+                        </span>
+                        <div className={styles.manualAddRow}>
+                          <input
+                            type="text"
+                            value={manualMemberInput}
+                            onChange={(e) => { setManualMemberInput(e.target.value); setManualMemberError(""); }}
+                            placeholder="student@sst.scaler.com or UID"
+                            className={styles.manualAddInput}
+                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddManualMember(); } }}
+                          />
+                          <button
+                            type="button"
+                            onClick={handleAddManualMember}
+                            disabled={manualMemberLoading || !manualMemberInput.trim()}
+                            className={styles.manualAddBtn}
+                          >
+                            {manualMemberLoading ? "Finding..." : "+ Add"}
+                          </button>
+                        </div>
+                        {manualMemberError && <span style={{ color: "#ef4444", fontSize: "11px" }}>{manualMemberError}</span>}
+                      </div>
                     </div>
                   </div>
 
-                  <div className={styles.formGroup}>
-                    <label className={styles.inputLabel} htmlFor="modal-spg-members">
-                      Team Members
-                    </label>
-                    <input
-                      id="modal-spg-members"
-                      type="text"
-                      className={styles.textInput}
-                      placeholder="e.g. Julian Chen (@julian), Aryan K (@aryan)"
-                      value={spgMembers}
-                      onChange={(e) => setSpgMembers(e.target.value)}
-                    />
+                  {/* Duration & Frequency (Separated Fields) */}
+                  <div className={styles.fieldsRow}>
+                    <div className={styles.formGroup}>
+                      <label className={styles.inputLabel} htmlFor="modal-spg-duration">
+                        Estimated Duration (Days) <span style={{ color: "#e5b731" }}>*</span>
+                      </label>
+                      <input
+                        id="modal-spg-duration"
+                        type="number"
+                        min={1}
+                        max={730}
+                        step={1}
+                        className={styles.textInput}
+                        value={spgDurationDays}
+                        onChange={(e) => setSpgDurationDays(e.target.value === "" ? "" : Number(e.target.value))}
+                        placeholder="e.g. 60"
+                        required
+                      />
+                      <span className={styles.fieldHelper}>Total expected run time in days.</span>
+                    </div>
+
+                    <div className={styles.formGroup}>
+                      <label className={styles.inputLabel} htmlFor="modal-spg-frequency">
+                        Report Frequency (Days) <span style={{ color: "#e5b731" }}>*</span>
+                      </label>
+                      <input
+                        id="modal-spg-frequency"
+                        type="number"
+                        min={1}
+                        max={180}
+                        step={1}
+                        className={styles.textInput}
+                        value={spgFrequencyDays}
+                        onChange={(e) => setSpgFrequencyDays(e.target.value === "" ? "" : Number(e.target.value))}
+                        placeholder="e.g. 14"
+                        required
+                      />
+                      <span className={styles.fieldHelper}>Submit progress reports every N days.</span>
+                    </div>
                   </div>
 
                   <div className={styles.formGroup}>
@@ -995,33 +1667,246 @@ export default function TicketManagementClient() {
 
               {selectedCategory === "idea_jar" && (
                 <>
-                  <div className={styles.formGroup}>
-                    <label className={styles.inputLabel} htmlFor="modal-idea-track">
-                      Domain Track
-                    </label>
-                    <select
-                      id="modal-idea-track"
-                      className={styles.selectInput}
-                      value={ideaTrack}
-                      onChange={(e) => setIdeaTrack(e.target.value as typeof ideaTrack)}
-                    >
-                      <option value="research">Research Track</option>
-                      <option value="product">Product Track</option>
-                      <option value="kaggle">Kaggle Track</option>
-                      <option value="general">General Club Idea</option>
-                    </select>
+                  <div className={styles.fieldsRow}>
+                    <div className={styles.formGroup}>
+                      <label className={styles.inputLabel} htmlFor="modal-idea-track">
+                        Domain Track
+                      </label>
+                      <select
+                        id="modal-idea-track"
+                        className={styles.selectInput}
+                        value={ideaTrack}
+                        onChange={(e) => setIdeaTrack(e.target.value as typeof ideaTrack)}
+                      >
+                        <option value="research">Research Track</option>
+                        <option value="product">Product Track</option>
+                        <option value="kaggle">Kaggle Track</option>
+                        <option value="general">General Club Idea</option>
+                      </select>
+                    </div>
+
+                    <div className={styles.formGroup}>
+                      <label className={styles.inputLabel} htmlFor="modal-idea-difficulty">
+                        Difficulty Level
+                      </label>
+                      <select
+                        id="modal-idea-difficulty"
+                        className={styles.selectInput}
+                        value={ideaDifficulty}
+                        onChange={(e) => setIdeaDifficulty(e.target.value as typeof ideaDifficulty)}
+                      >
+                        <option value="beginner">Beginner (Introductory / Foundational)</option>
+                        <option value="intermediate">Intermediate (Standard SPG / Club)</option>
+                        <option value="advanced">Advanced (Cutting-Edge / Specialized)</option>
+                      </select>
+                    </div>
                   </div>
 
                   <div className={styles.formGroup}>
                     <label className={styles.inputLabel} htmlFor="modal-idea-overview">
-                      Project / Idea Overview
+                      Problem Statement / Concept Overview
                     </label>
                     <textarea
                       id="modal-idea-overview"
                       className={styles.textareaInput}
-                      placeholder="Describe your proposal, architecture concept, or community initiative"
+                      placeholder="Describe the problem, proposed solution or concept, and why it matters"
                       value={ideaOverview}
                       onChange={(e) => setIdeaOverview(e.target.value)}
+                    />
+                  </div>
+
+                  {/* Field: Prerequisites List Builder */}
+                  <div className={styles.formGroup}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <label className={styles.inputLabel} htmlFor="modal-idea-new-prereq">
+                        Prerequisites (Required skills, tools, or knowledge)
+                      </label>
+                      <span style={{ fontSize: "11px", color: ideaPrerequisites.length > 0 ? "#e5b731" : "#8e8e93" }}>
+                        {ideaPrerequisites.length} added
+                      </span>
+                    </div>
+                    <div className={styles.itemAddRow}>
+                      <input
+                        id="modal-idea-new-prereq"
+                        type="text"
+                        className={styles.textInput}
+                        placeholder="e.g. PyTorch basics, Linear Algebra, Docker (type and click +)"
+                        value={newPrereq}
+                        onChange={(e) => setNewPrereq(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleAddPrereq();
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className={styles.itemAddBtn}
+                        onClick={handleAddPrereq}
+                        disabled={!newPrereq.trim()}
+                        title="Add prerequisite"
+                      >
+                        <MemberIcon name="plus" size={15} />
+                      </button>
+                    </div>
+                    {ideaPrerequisites.length > 0 && (
+                      <div className={styles.itemListTray}>
+                        {ideaPrerequisites.map((p, idx) => (
+                          <div key={idx} className={styles.itemChip}>
+                            <span>{p}</span>
+                            <button
+                              type="button"
+                              className={styles.itemRemoveBtn}
+                              onClick={() => handleRemovePrereq(idx)}
+                              aria-label={`Remove ${p}`}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Field: Rough Roadmap Step-by-Step List Builder */}
+                  <div className={styles.formGroup}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <label className={styles.inputLabel} htmlFor="modal-idea-new-roadmap">
+                        Rough Roadmap (Key milestones / sequential phases)
+                      </label>
+                      <span style={{ fontSize: "11px", color: ideaRoadmap.length > 0 ? "#e5b731" : "#8e8e93" }}>
+                        {ideaRoadmap.length} steps added
+                      </span>
+                    </div>
+                    <div className={styles.itemAddRow}>
+                      <input
+                        id="modal-idea-new-roadmap"
+                        type="text"
+                        className={styles.textInput}
+                        placeholder="e.g. Phase 1: Literature review & baseline benchmarking (type and click +)"
+                        value={newRoadmapStep}
+                        onChange={(e) => setNewRoadmapStep(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleAddRoadmapStep();
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className={styles.itemAddBtn}
+                        onClick={handleAddRoadmapStep}
+                        disabled={!newRoadmapStep.trim()}
+                        title="Add roadmap step"
+                      >
+                        <MemberIcon name="plus" size={15} />
+                      </button>
+                    </div>
+                    {ideaRoadmap.length > 0 && (
+                      <div className={styles.roadmapListStack}>
+                        {ideaRoadmap.map((step, idx) => (
+                          <div key={idx} className={styles.roadmapStepRow}>
+                            <span className={styles.roadmapStepNumber}>{idx + 1}</span>
+                            <span className={styles.roadmapStepText}>{step}</span>
+                            <button
+                              type="button"
+                              className={styles.itemRemoveBtn}
+                              onClick={() => handleRemoveRoadmapStep(idx)}
+                              aria-label={`Remove step ${idx + 1}`}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Field: Learning Outcomes List Builder */}
+                  <div className={styles.formGroup}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <label className={styles.inputLabel} htmlFor="modal-idea-new-outcome">
+                        Learning Outcomes (Core takeaways & deliverables)
+                      </label>
+                      <span style={{ fontSize: "11px", color: ideaLearningOutcomes.length > 0 ? "#e5b731" : "#8e8e93" }}>
+                        {ideaLearningOutcomes.length} added
+                      </span>
+                    </div>
+                    <div className={styles.itemAddRow}>
+                      <input
+                        id="modal-idea-new-outcome"
+                        type="text"
+                        className={styles.textInput}
+                        placeholder="e.g. Distributed PyTorch training, ArXiv preprint (type and click +)"
+                        value={newOutcome}
+                        onChange={(e) => setNewOutcome(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleAddOutcome();
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className={styles.itemAddBtn}
+                        onClick={handleAddOutcome}
+                        disabled={!newOutcome.trim()}
+                        title="Add learning outcome"
+                      >
+                        <MemberIcon name="plus" size={15} />
+                      </button>
+                    </div>
+                    {ideaLearningOutcomes.length > 0 && (
+                      <div className={styles.itemListTray}>
+                        {ideaLearningOutcomes.map((o, idx) => (
+                          <div key={idx} className={styles.itemChip}>
+                            <span>{o}</span>
+                            <button
+                              type="button"
+                              className={styles.itemRemoveBtn}
+                              onClick={() => handleRemoveOutcome(idx)}
+                              aria-label={`Remove outcome ${o}`}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {selectedCategory === "feedback" && (
+                <>
+                  <div className={styles.formGroup}>
+                    <label className={styles.inputLabel} htmlFor="modal-feedback-topic">
+                      Suggestion / Feedback Topic
+                    </label>
+                    <input
+                      id="modal-feedback-topic"
+                      type="text"
+                      className={styles.textInput}
+                      placeholder="e.g. Hackathon timeline, Discord channel structure, Workshop suggestions"
+                      value={feedbackTopic}
+                      onChange={(e) => setFeedbackTopic(e.target.value)}
+                    />
+                  </div>
+
+                  <div className={styles.formGroup}>
+                    <label className={styles.inputLabel} htmlFor="modal-feedback-comments">
+                      Details & Constructive Suggestions
+                    </label>
+                    <textarea
+                      id="modal-feedback-comments"
+                      className={styles.textareaInput}
+                      placeholder="Share your thoughts, suggestions for improvement, or recommendations for the club leadership"
+                      value={feedbackComments}
+                      onChange={(e) => setFeedbackComments(e.target.value)}
+                      rows={5}
                     />
                   </div>
                 </>
@@ -1030,33 +1915,8 @@ export default function TicketManagementClient() {
               {selectedCategory === "report" && (
                 <>
                   <div className={styles.formGroup}>
-                    <label className={styles.inputLabel} htmlFor="modal-report-incident">
-                      Incident Summary
-                    </label>
-                    <input
-                      id="modal-report-incident"
-                      type="text"
-                      className={styles.textInput}
-                      value={reportIncident}
-                      onChange={(e) => setReportIncident(e.target.value)}
-                    />
-                  </div>
-
-                  <div className={styles.formGroup}>
-                    <label className={styles.inputLabel} htmlFor="modal-report-details">
-                      Report Details
-                    </label>
-                    <textarea
-                      id="modal-report-details"
-                      className={styles.textareaInput}
-                      value={reportDetails}
-                      onChange={(e) => setReportDetails(e.target.value)}
-                    />
-                  </div>
-
-                  <div className={styles.formGroup}>
                     <label className={styles.inputLabel} htmlFor="modal-report-parties">
-                      Parties Involved
+                      Parties Involved (Optional)
                     </label>
                     <input
                       id="modal-report-parties"

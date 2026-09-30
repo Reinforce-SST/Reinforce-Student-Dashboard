@@ -101,6 +101,61 @@ class IdentityTests(unittest.TestCase):
         self.assertFalse(service.user_exists(db, "  One@SST.scaler.com "))
 
 
+class ContributionListingTests(unittest.TestCase):
+    def test_member_history_needs_no_composite_firestore_index(self):
+        db = database()
+        award(db, award=user_award(title="First", points=10))
+        award(db, award=user_award(title="Second", points=20))
+
+        original_collection = db.collection
+
+        class SingleIndexQuery:
+            def __init__(self, query, filtered=False):
+                self.query = query
+                self.filtered = filtered
+
+            def where(self, field, op, value):
+                if self.filtered:
+                    raise AssertionError("composite index required")
+                return SingleIndexQuery(self.query.where(field, op, value), True)
+
+            def order_by(self, *args, **kwargs):
+                if self.filtered:
+                    raise AssertionError("composite index required")
+                return self.query.order_by(*args, **kwargs)
+
+            def stream(self):
+                return self.query.stream()
+
+            def document(self, doc_id):
+                return self.query.document(doc_id)
+
+        db.collection = lambda name: SingleIndexQuery(original_collection(name))
+        records, cursor = service.list_contributions(
+            db, user_id="uid_one", status=ContributionStatus.APPROVED, limit=1
+        )
+        self.assertEqual(len(records), 1)
+        self.assertIsNotNone(cursor)
+
+    def test_cursor_must_belong_to_filtered_history(self):
+        db = database()
+        own, _ = award(db, user_id="uid_one")
+        other, _ = award(db, user_id="uid_two")
+        with self.assertRaises(service.ContributionError) as caught:
+            service.list_contributions(db, user_id="uid_one", cursor=other.id)
+        self.assertEqual(caught.exception.status_code, 400)
+        records, cursor = service.list_contributions(db, user_id="uid_one", cursor=own.id)
+        self.assertEqual(records, [])
+        self.assertIsNone(cursor)
+
+    def test_existing_email_alias_is_not_an_award_recipient(self):
+        db = database(users={
+            **USERS,
+            "one@sst.scaler.com": {"firebase_uid": "uid_one", "email": "one@sst.scaler.com"},
+        })
+        self.assertFalse(service.user_exists(db, "one@sst.scaler.com"))
+
+
 class DeduplicationKeyTests(unittest.TestCase):
     def key(self, **overrides):
         return service.deduplication_key(

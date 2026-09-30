@@ -28,13 +28,11 @@ class TicketTests(unittest.TestCase):
         }
 
     def test_newest_visible_tickets_are_selected_after_filtering(self):
-        for index in range(110): self.ticket(f"report-{index:03}", category="report")
         for index in range(105): self.ticket(f"own-{index:03}")
         self.ticket("newest", updated="2026-09-24T00:00:00+00:00")
         result = tickets.list_my_tickets(USER)
         self.assertEqual(len(result.items), 100)
         self.assertEqual(result.items[0].id, "newest")
-        self.assertNotIn("report", [item.category for item in result.items])
 
     def test_thread_shows_latest_messages_in_chronological_order(self):
         self.ticket("own")
@@ -48,11 +46,19 @@ class TicketTests(unittest.TestCase):
 
     def test_foreign_and_confidential_tickets_return_404(self):
         self.ticket("foreign", owner="999999999999999999")
-        self.ticket("confidential", category="report")
-        for ticket_id in ("foreign", "confidential"):
+        self.ticket("foreign_confidential", category="report", owner="999999999999999999")
+        for ticket_id in ("foreign", "foreign_confidential"):
             with self.subTest(ticket_id=ticket_id), self.assertRaises(HTTPException) as error:
                 tickets.get_ticket(ticket_id, USER)
             self.assertEqual(error.exception.status_code, 404)
+
+    def test_own_confidential_ticket_is_accessible_to_creator(self):
+        self.ticket("own_report", category="report", owner=DID)
+        detail = tickets.get_ticket("own_report", USER)
+        self.assertEqual(detail.id, "own_report")
+        self.assertEqual(detail.category, "report")
+        my_tickets = tickets.list_my_tickets(USER)
+        self.assertIn("own_report", [item.id for item in my_tickets.items])
 
     def test_one_sided_link_cannot_list_or_open_old_ticket(self):
         self.ticket("own")
@@ -61,3 +67,29 @@ class TicketTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as error:
             tickets.get_ticket("own", USER)
         self.assertEqual(error.exception.status_code, 404)
+
+    def test_spg_registration_requires_canonical_uids(self):
+        self.db.store["users/uid-1"].update({"id": "uid-1", "is_member": True, "full_name": "Leader"})
+        self.db.store["users/uid-2"] = {"id": "uid-2", "full_name": "Member"}
+        self.db.store["users/member@sst.scaler.com"] = {
+            "firebase_uid": "uid-2", "full_name": "Member", "is_member": True,
+        }
+        fields = {"leader_uid": "uid-1", "member_uids": ["uid-2"], "duration_days": 60, "frequency_days": 14}
+        result = tickets._validate_spg_registration_fields(fields, "uid-1")
+        self.assertEqual(result["member_uids"], ["uid-2"])
+
+        for changed in (
+            {**fields, "leader_uid": "member@sst.scaler.com"},
+            {**fields, "member_uids": ["member@sst.scaler.com"]},
+        ):
+            with self.subTest(changed=changed), self.assertRaises(HTTPException) as error:
+                tickets._validate_spg_registration_fields(changed, "uid-1")
+            self.assertEqual(error.exception.status_code, 400)
+
+    def test_spg_registration_rejects_fractional_and_boolean_days(self):
+        self.db.store["users/uid-1"].update({"id": "uid-1", "is_member": True})
+        fields = {"leader_uid": "uid-1", "member_uids": [], "duration_days": 60, "frequency_days": 14}
+        for bad in (1.5, True, "2.5"):
+            with self.subTest(value=bad), self.assertRaises(HTTPException) as error:
+                tickets._validate_spg_registration_fields({**fields, "duration_days": bad}, "uid-1")
+            self.assertEqual(error.exception.status_code, 400)

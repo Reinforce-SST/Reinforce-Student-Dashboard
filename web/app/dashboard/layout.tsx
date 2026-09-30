@@ -2,8 +2,9 @@ import React from "react";
 import DashboardShell from "@/components/dashboard/DashboardShell";
 
 export const metadata = {
-  title: "Dashboard · Reinforce",
+  title: "Dashboard",
   description: "Reinforce AI/ML Club member dashboard",
+  robots: { index: false, follow: false },
 };
 
 export default function DashboardLayout({

@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useMember } from "@/lib/useMember";
 import MemberIcon from "./MemberIcon";
+import MemberNotifications from "./MemberNotifications";
 import styles from "./Header.module.css";
 
 const titles: Record<string, string> = {
@@ -16,6 +17,7 @@ const titles: Record<string, string> = {
   "/dashboard/ideas": "Idea Jar",
   "/dashboard/leaderboard": "Club Leaderboard",
   "/dashboard/admin": "Admin Command Center",
+  "/dashboard/search": "Search",
   "/profile": "Member Profile",
 };
 
@@ -28,6 +30,7 @@ const mobileTitles: Record<string, string> = {
   ideas: "Ideas",
   leaderboard: "Leaderboard",
   admin: "Admin",
+  search: "Search",
   profile: "Profile",
 };
 
@@ -40,10 +43,13 @@ export default function Header({
 }) {
   const { profile } = useMember();
   const pathname = usePathname();
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
 
-  const pageTitle = titles[pathname] || "Dashboard Overview";
   const section = pathname === "/profile" ? "profile" : pathname.split("/")[2] || "";
+  const pageTitle = titles[pathname] || titles[`/dashboard/${section}`] || "Dashboard Overview";
   const mobileTitle = mobileTitles[section] || "Dashboard";
 
   const initials = profile?.full_name
@@ -77,29 +83,22 @@ export default function Header({
       </div>
 
       <div className={styles.right}>
-        {/* Search Bar */}
-        <div className={styles.searchWrapper}>
+        <button type="button" className={styles.mobileSearchButton} aria-label="Search" aria-expanded={searchOpen} onClick={() => setSearchOpen((value) => !value)}><MemberIcon name="search" size={18} /></button>
+        <form role="search" className={`${styles.searchWrapper} ${searchOpen ? styles.searchOpen : ""}`} onSubmit={(event) => { event.preventDefault(); if (!searchQuery.trim()) return; router.push(`/dashboard/search?q=${encodeURIComponent(searchQuery.trim())}`); setSearchOpen(false); }}>
           <span className={styles.searchIcon}>
             <MemberIcon name="search" size={16} />
           </span>
           <input
-            type="text"
+            type="search"
+            aria-label="Search projects, tickets, ideas, and articles"
             placeholder="Search projects, tickets, ideas..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className={styles.searchInput}
           />
-        </div>
+        </form>
 
-        {/* Notifications Icon Button */}
-        <button
-          className={styles.iconButton}
-          aria-label="Notifications"
-          title="Notifications"
-        >
-          <MemberIcon name="bell" size={18} />
-          <span className={styles.badgeDot} />
-        </button>
+        <MemberNotifications />
 
         {/* User Profile Pill */}
         <Link
@@ -109,9 +108,20 @@ export default function Header({
         >
           <div className={styles.userText}>
             <span className={styles.userName}>{displayName}</span>
-            <span className={styles.userTrack}>{profile.tier ? `${profile.tier.toUpperCase()} MEMBER` : "MEMBER"}</span>
+            <span className={styles.userTrack}>{profile?.is_admin ? "ADMIN" : !profile?.is_member ? "MEMBERSHIP PENDING" : profile.role_label?.toUpperCase() || `${(profile.tier || "beginner").toUpperCase()} MEMBER`}</span>
           </div>
-          <div className={styles.userAvatar}>{initials}</div>
+          <div className={styles.userAvatar}>
+            {profile?.avatar_url && profile.avatar_url !== failedAvatarUrl ? (
+              <img
+                src={profile.avatar_url}
+                alt={displayName}
+                className={styles.avatarImg}
+                onError={() => setFailedAvatarUrl(profile.avatar_url || null)}
+              />
+            ) : (
+              initials
+            )}
+          </div>
         </Link>
       </div>
     </header>

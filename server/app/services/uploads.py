@@ -71,3 +71,11 @@ def store_pdf(payload: bytes, destination_path: str) -> str:
         destination_path=destination_path,
         content_type=PDF_CONTENT_TYPE,
     )
+
+
+def delete_file(destination_path: str) -> None:
+    """Delete an uploaded object from Firebase Storage."""
+    from app.services.firebase import get_bucket
+
+    get_bucket().blob(destination_path).delete()
+

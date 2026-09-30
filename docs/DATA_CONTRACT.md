@@ -10,9 +10,9 @@ This document is the boundary between two repositories that share one database:
 Firestore enforces no schema. A renamed field does not raise — it reads back as
 `None` and renders as a blank cell. **This file is the contract. Derive from it.**
 
-Every shape below was read out of the bot's source (`models/ticket.py`,
-`utils/ticket_manager.py`, `views/ticket_modals.py`, `utils/user_manager.py`), not
-inferred from the UI.
+The YUVI shapes below were checked against its source (`models/ticket.py`,
+`utils/ticket_manager.py`, `views/ticket_modals.py`, `utils/user_manager.py`).
+The dashboard event fields are defined by this repository's API schemas.
 
 ---
 
@@ -49,10 +49,13 @@ Timestamps here are **ISO-8601 strings**, written by the API with
 `datetime.now(timezone.utc).isoformat()`. This differs from the tickets collection —
 see the warning below.
 
-The UID-keyed profile also stores `is_member`, `tier`, `batch_year`, and
+The UID-keyed profile also stores `is_member`, `tier`, optional `role_label`, `batch_year`, and
 the cached per-track `points` map. `is_admin` in this profile is display metadata
 only; API authorization comes exclusively from the verified Firebase
 `admin == true` custom claim.
+`role_label` is a display-only string for core or custom club roles. It does not
+grant API privileges; only the separate Admin control updates the Firebase claim.
+Existing member documents without `role_label` remain valid.
 
 `batch_year` is the four-digit graduation year. New event records keep the legacy
 field name `eligibility.allowed_years`, but its values are graduation years. The
@@ -65,6 +68,27 @@ have not signed in again. If the email cannot identify a graduation batch, the
 old value is retained rather than guessed and cannot satisfy a new batch rule.
 Members cannot change `batch_year` through profile edits; the server owns this
 value. An unresolvable profile requires an admin-confirmed correction.
+
+---
+
+## `events/{event_id}` — dashboard banner presentation
+
+The API owns event writes. Published events whose `event_type` contains
+`banner` appear in the dashboard hero. Alongside the normal event title,
+description, schedule, status, and `banner_url`, an event may store:
+
+| Field | Meaning | Default for older events |
+|---|---|---|
+| `banner_badge_text` | Short badge above the title (max 40 characters) | Uppercase `event_type` |
+| `banner_cta_text` | Button label (max 40 characters) | `Explore Event →` |
+| `banner_cta_url` | Button target: site path or HTTPS URL | `/dashboard/events/{slug or id}` |
+
+All three fields are optional and nullable. Create, update, detail, and list
+endpoints preserve them. YUVI does not read these fields. Deploy the API before
+using custom banner fields in the web admin form; an older API rejects unknown
+event fields.
+
+---
 
 ## `discord_link_tokens/{sha256(token)}`
 
@@ -103,6 +127,7 @@ omitted from the member list and detail responses.
   "title":        "string",
   "description":  "string",
   "fields":       { "...": "..." },     // category-specific, see below
+  "spg_id":       "string | null",       // filled by admin approval for SPG registrations
   "status":       "open",               // enum, see below
   "priority":     "medium",             // low | medium | high | urgent
   "created_by":   { /* TicketUser */ },
@@ -214,12 +239,11 @@ not read this collection directly.
 
 ## `fields` — the category-specific payload
 
-`fields` is a free-form map. **Its keys are human-readable strings with spaces and
-ampersands**, not snake_case identifiers. They come from the Discord modal labels.
+`fields` is a free-form map. **Its keys include human-readable strings for UI display**, alongside normalized machine identifiers (`leader_uid`, `member_uids`, `duration_days`, `frequency_days`). They come from the dashboard and Discord ticket modals.
 
 | Category | Keys, in intended order |
 |---|---|
-| `spg_registration` | `Project Name & Track`, `Team Members`, `Duration & Frequency`, `Summary & Goals` |
+| `spg_registration` | `Project Name & Track`, `Track`, `Team Leader`, `Team Members`, `Duration (Days)`, `Report Frequency (Days)`, `Summary & Goals` |
 | `compute_resource_request` | `SPG Name`, `Resources Requested`, `Progress Proof`, `Justification` |
 | `learning_resource_request` | `Topic / Subject Area`, `Resource Format`, `Target Audience / Track`, `Description & Suggested Links` |
 | `resource_request` | `SPG Name`, `Resources Requested`, `Progress Proof`, `Justification` |
@@ -229,17 +253,41 @@ ampersands**, not snake_case identifiers. They come from the Discord modal label
 | `misc` | `Subject`, `Details` |
 | `report` | `Incident Summary`, `Report Details` |
 
+### `spg_registration` Validation & Field Rules
+
+An SPG registration ticket enforces strict validation on submission (`POST /api/v1/tickets`):
+1. **Team Leader (`leader_uid` / `Team Leader`)**:
+   - Mandatory single Firebase UID.
+   - Defaults in the web frontend to the creator's UID (`profile.id`), but can be reassigned to any member.
+   - **Club Member Guard**: The leader UID **must** exist in the `users` collection with `is_member: true`. Non-members are rejected with HTTP 400.
+2. **Team Members (`member_uids` / `Team Members`)**:
+   - Optional list of collaborator Firebase UIDs.
+   - **Cap**: Maximum of 6 members (excluding the team leader). Submissions with > 6 members are rejected with HTTP 400.
+   - In Discord, entered as newline-separated UIDs.
+   - The team leader UID cannot be duplicated in the team members list.
+3. **Duration (`duration_days` / `Duration (Days)`)**:
+   - Mandatory positive integer specifying roughly how long the SPG is expected to run, in **days**.
+4. **Report Frequency (`frequency_days` / `Report Frequency (Days)`)**:
+   - Mandatory positive integer specifying how frequently progress reports must be submitted, in **days**.
+5. **Track (`track` / `Track`)**:
+   - One of: `Research Track`, `Product Track`, `Kaggle Track`, or `General Track`. Colors (Red, Green, Blue) are omitted.
+
+Admin approval reads the stored name and UID fields, then writes `spg_id`,
+`status: resolved`, `closed_by_uid`, `closed_at`, and `updated_at` on the ticket
+in the same transaction that creates `spgs/{spg_id}`. YUVI-created tickets use
+`project_name` and may omit `track`; an admin selects a track during review.
+`spg_type` and visibility are reviewer choices, not fields inferred from a
+Discord title. A project type also requires a validated proposition PDF.
+
 > ### ⚠️ Firestore does not preserve map key order
 >
 > The bot builds `fields` as an ordered Python dict, but Firestore stores maps with
 > keys sorted **lexicographically**. Reading `fields` back and rendering
 > `Object.entries()` in order produces, for an SPG registration:
 >
-> `Duration & Frequency → Project Name & Track → Summary & Goals → Team Members`
+> `Duration (Days) → Project Name & Track → Report Frequency (Days) → ...`
 >
-> which is not the order the member filled it in, and reads as nonsense.
->
-> **The frontend must hold an explicit display-order list per category** and render
+> **The frontend must hold an explicit display-order list per category** (`FIELD_ORDER` in `web/lib/api.ts`) and render
 > against that, falling back to alphabetical for unknown keys so a new bot category
 > degrades gracefully instead of disappearing.
 
@@ -361,7 +409,7 @@ Timestamps here are ISO-8601 strings, matching `users` rather than `tickets`.
 
 ```
 spgs/{spg_id}/reports/{report_id}.pdf
-spgs/registrations/{request_id}/proposition.pdf
+spgs/registrations/{server_generated_upload_id}/proposition.pdf
 ```
 
 Server-generated from IDs the server created. A client filename never reaches
@@ -373,9 +421,10 @@ SPG registration is meant to raise an `spg_registration` ticket (see the
 `tickets` category table above) that a reviewer approves, and the approval
 creates the `spgs` document, recording the ticket in `source_ticket_id`.
 
-The dashboard ticket write path now exists. There is still no HTTP route that
-approves an SPG registration ticket into an SPG; `create_spg()` remains the
-internal service that approval will call once that workflow is implemented.
+The admin-only `POST /api/v1/tickets/{ticket_id}/approve-spg` route implements
+approval. Generic ticket status changes cannot resolve an SPG registration.
+The Discord bot may close a ticket directly; closing it is not approval and
+creates no SPG.
 
 ---
 

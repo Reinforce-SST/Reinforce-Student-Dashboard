@@ -27,5 +27,3 @@ export interface UserListResponse {
   page_size: number;
   has_more: boolean;
 }
-
-export const fallbackMembers: StudentProfile[] = [];

@@ -5,9 +5,15 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useMember } from "@/lib/useMember";
 import { useAdminMode } from "@/lib/useAdminMode";
-import { api } from "@/lib/api";
+import { api, type StudentProfile } from "@/lib/api";
 import { getEventGraduationBatches } from "@/lib/eventsData";
+import { getBannerPresentation, isBannerDestination } from "@/lib/dashboardData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
+import PaginationBar from "@/components/dashboard/PaginationBar";
+import LoadingBar from "@/components/dashboard/LoadingBar";
+import AdminTicketsPanel from "./AdminTicketsPanel";
+import AdminContentPanel from "./AdminContentPanel";
+import MemberRoleRow from "./MemberRoleRow";
 import styles from "./Admin.module.css";
 
 type AdminTab =
@@ -20,45 +26,18 @@ type AdminTab =
   | "articles"
   | "ideas";
 
-function formatScheduleDisplay(startStr: string, endStr?: string): string {
-  if (!startStr) return "UPCOMING";
-  try {
-    const start = new Date(startStr);
-    if (isNaN(start.getTime())) return startStr;
-    const startMonth = start.toLocaleString("en-US", { month: "short" }).toUpperCase();
-    const startDay = start.getDate();
-    const startYear = start.getFullYear();
-    const startTime = start.toLocaleString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-
-    if (!endStr) {
-      return `${startMonth} ${startDay}, ${startYear} · ${startTime}`;
-    }
-
-    const end = new Date(endStr);
-    if (isNaN(end.getTime())) {
-      return `${startMonth} ${startDay}, ${startYear} · ${startTime}`;
-    }
-
-    const endMonth = end.toLocaleString("en-US", { month: "short" }).toUpperCase();
-    const endDay = end.getDate();
-    const endYear = end.getFullYear();
-    const endTime = end.toLocaleString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-
-    if (startDay === endDay && startMonth === endMonth && startYear === endYear) {
-      return `${startMonth} ${startDay}, ${startYear} · ${startTime} – ${endTime}`;
-    } else {
-      return `${startMonth} ${startDay} – ${endMonth} ${endDay}, ${endYear}`;
-    }
-  } catch {
-    return startStr;
-  }
+function formatBannerDate(startStr: string): string {
+  const start = new Date(startStr);
+  return startStr && Number.isFinite(start.getTime())
+    ? start.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" })
+    : "Date not set";
 }
 
 export default function AdminClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { profile, token } = useMember();
-  const { isAdminMode, setAdminMode } = useAdminMode();
+  const { setAdminMode } = useAdminMode();
 
   const tabParam = (searchParams.get("tab") as AdminTab) || "banners";
   const [activeTab, setActiveTab] = useState<AdminTab>(tabParam);
@@ -71,27 +50,37 @@ export default function AdminClient() {
 
   const handleTabChange = (tab: AdminTab) => {
     setActiveTab(tab);
+    setSubmitSuccess(null);
+    setSubmitError(null);
+    setDirectoryMessage("");
     router.push(`/dashboard/admin?tab=${tab}`);
   };
 
   // --- TAB 1: Dashboard Hero Banner State ---
-  const [bannerBadge, setBannerBadge] = useState("");
   const [bannerStartDateTime, setBannerStartDateTime] = useState("");
   const [bannerEndDateTime, setBannerEndDateTime] = useState("");
-  const bannerDateDisplay = formatScheduleDisplay(bannerStartDateTime, bannerEndDateTime);
+  const bannerDateDisplay = formatBannerDate(bannerStartDateTime);
   const [bannerTitle, setBannerTitle] = useState("");
   const [bannerDescription, setBannerDescription] = useState("");
+  const [bannerBadgeText, setBannerBadgeText] = useState("");
   const [bannerCtaText, setBannerCtaText] = useState("");
-  const [bannerCtaLink, setBannerCtaLink] = useState("");
-  const [bannerTrack, setBannerTrack] = useState("all");
-  const [bannerFormat, setBannerFormat] = useState("offline");
+  const [bannerCtaUrl, setBannerCtaUrl] = useState("");
+  const bannerPresentation = getBannerPresentation({
+    id: "", slug: "", event_type: "Featured Banner",
+    banner_badge_text: bannerBadgeText,
+    banner_cta_text: bannerCtaText,
+    banner_cta_url: bannerCtaUrl,
+  });
+  const bannerTrack = "all";
+  const bannerFormat = "offline";
   const [bannerUrl, setBannerUrl] = useState("");
   const [bannerFilePreview, setBannerFilePreview] = useState<string | null>(null);
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
 
   // --- TAB 2: Full Club Event Publisher State ---
   const [eventTitle, setEventTitle] = useState("");
   const [eventSlug, setEventSlug] = useState("");
-  const [eventType, setEventType] = useState("Workshop");
+  const [eventType, setEventType] = useState("");
   const [eventTrack, setEventTrack] = useState("research");
   const [eventFormat, setEventFormat] = useState("offline");
   const [eventSummary, setEventSummary] = useState("");
@@ -114,6 +103,7 @@ export default function AdminClient() {
   const [eventDiscordThread, setEventDiscordThread] = useState("");
   const [eventBannerUrl, setEventBannerUrl] = useState("");
   const [eventFilePreview, setEventFilePreview] = useState<string | null>(null);
+  const [eventFile, setEventFile] = useState<File | null>(null);
   const [eventStatus, setEventStatus] = useState("published");
 
   // Status & Refs
@@ -124,11 +114,136 @@ export default function AdminClient() {
   const eventFileInputRef = useRef<HTMLInputElement>(null);
 
   // Merit Award State
-  const [awardEmail, setAwardEmail] = useState("");
   const [awardPoints, setAwardPoints] = useState<number | "">(25);
   const [awardReason, setAwardReason] = useState("");
   const [awardType, setAwardType] = useState("project_milestone");
+  const [awardTrack, setAwardTrack] = useState<"misc" | "research" | "product" | "kaggle">("misc");
   const [awardLoading, setAwardLoading] = useState(false);
+  const [awardSearch, setAwardSearch] = useState("");
+  const [awardCandidates, setAwardCandidates] = useState<StudentProfile[]>([]);
+  const [awardSearchError, setAwardSearchError] = useState("");
+  const [awardCandidateTotal, setAwardCandidateTotal] = useState(0);
+  const [candidatesLoading, setCandidatesLoading] = useState(false);
+  const [selectedRecipients, setSelectedRecipients] = useState<Record<string, StudentProfile>>({});
+  const [awardCustomType, setAwardCustomType] = useState("");
+  const [manualAddInput, setManualAddInput] = useState("");
+  const [manualAddLoading, setManualAddLoading] = useState(false);
+  const [manualAddError, setManualAddError] = useState("");
+  const awardOccurredAtRef = useRef<string | null>(null);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [memberPage, setMemberPage] = useState(1);
+  const [memberPageSize, setMemberPageSize] = useState(20);
+  const [memberDirectory, setMemberDirectory] = useState<{ items: StudentProfile[]; total: number; has_more: boolean } | null>(null);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
+  const [directoryError, setDirectoryError] = useState("");
+  const [directoryMessage, setDirectoryMessage] = useState("");
+  const [directoryRevision, setDirectoryRevision] = useState(0);
+
+  useEffect(() => {
+    if (activeTab !== "members" || !token) return;
+    let active = true;
+    setDirectoryLoading(true);
+    const timer = setTimeout(() => {
+      api.adminDirectory(token, { search: memberSearch.trim(), page: memberPage, page_size: memberPageSize })
+        .then((result) => { if (active) { setMemberDirectory(result); setDirectoryError(""); } })
+        .catch((error) => { if (active) setDirectoryError(error instanceof Error ? error.message : "Could not load members."); })
+        .finally(() => { if (active) setDirectoryLoading(false); });
+    }, 250);
+    return () => { active = false; clearTimeout(timer); };
+  }, [activeTab, token, memberSearch, memberPage, memberPageSize, directoryRevision]);
+
+  useEffect(() => {
+    if (activeTab !== "contributions" || !token) {
+      return;
+    }
+    let active = true;
+    setCandidatesLoading(true);
+    setAwardSearchError("");
+    const timer = setTimeout(() => {
+      api.adminDirectory(token, { search: awardSearch.trim() || undefined, page_size: 50 })
+        .then((result) => {
+          if (active) {
+            setAwardCandidates(result.items || []);
+            setAwardCandidateTotal(result.total);
+            setCandidatesLoading(false);
+          }
+        })
+        .catch((error) => {
+          if (active) {
+            setAwardCandidates([]);
+            setAwardCandidateTotal(0);
+            setAwardSearchError(error instanceof Error ? error.message : "Could not load members.");
+            setCandidatesLoading(false);
+          }
+        });
+    }, 250);
+    return () => { active = false; clearTimeout(timer); };
+  }, [activeTab, token, awardSearch]);
+
+  const handleSelectAllVisible = () => {
+    setSelectedRecipients((prev) => {
+      const next = { ...prev };
+      for (const m of awardCandidates) {
+        const uid = m.id;
+        if (uid) next[uid] = m;
+      }
+      return next;
+    });
+  };
+
+  const handleDeselectAllVisible = () => {
+    setSelectedRecipients((prev) => {
+      const next = { ...prev };
+      for (const m of awardCandidates) {
+        const uid = m.id;
+        if (uid) delete next[uid];
+      }
+      return next;
+    });
+  };
+
+  const handleClearAllRecipients = () => {
+    setSelectedRecipients({});
+  };
+
+  const handleToggleRecipient = (m: StudentProfile) => {
+    const uid = m.id;
+    if (!uid) return;
+    setSelectedRecipients((prev) => {
+      const next = { ...prev };
+      if (next[uid]) {
+        delete next[uid];
+      } else {
+        next[uid] = m;
+      }
+      return next;
+    });
+  };
+
+  const handleRemoveRecipient = (uid: string) => {
+    setSelectedRecipients((prev) => {
+      const next = { ...prev };
+      delete next[uid];
+      return next;
+    });
+  };
+
+  const handleAddManualRecipient = async () => {
+    if (!manualAddInput.trim() || !token) return;
+    setManualAddLoading(true);
+    setManualAddError("");
+    try {
+      const resolved = await api.getUserProfile(token, manualAddInput.trim());
+      const uid = resolved.id;
+      if (!uid || uid.includes("@")) throw new Error("Could not resolve a canonical member UID.");
+      setSelectedRecipients((prev) => ({ ...prev, [uid]: resolved }));
+      setManualAddInput("");
+    } catch (err) {
+      setManualAddError(err instanceof Error ? err.message : "Member not found.");
+    } finally {
+      setManualAddLoading(false);
+    }
+  };
 
   // Banner File Upload Handler
   const handleBannerFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -136,7 +251,15 @@ export default function AdminClient() {
     if (!file) return;
 
     if (file.size > 5 * 1024 * 1024) {
+      setBannerFile(null);
+      setBannerFilePreview(null);
       setSubmitError("Image file size exceeds 5MB limit.");
+      return;
+    }
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      setBannerFile(null);
+      setBannerFilePreview(null);
+      setSubmitError("Use a PNG, JPG, or WebP image.");
       return;
     }
 
@@ -144,9 +267,11 @@ export default function AdminClient() {
     reader.onload = () => {
       const result = reader.result as string;
       setBannerFilePreview(result);
-      setBannerUrl(result);
+      setBannerFile(file);
+      setBannerUrl("");
       setSubmitError(null);
     };
+    reader.onerror = () => setSubmitError("Could not read this image. Try another file.");
     reader.readAsDataURL(file);
   };
 
@@ -156,7 +281,15 @@ export default function AdminClient() {
     if (!file) return;
 
     if (file.size > 5 * 1024 * 1024) {
+      setEventFile(null);
+      setEventFilePreview(null);
       setSubmitError("Image file size exceeds 5MB limit.");
+      return;
+    }
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      setEventFile(null);
+      setEventFilePreview(null);
+      setSubmitError("Use a PNG, JPG, or WebP image.");
       return;
     }
 
@@ -164,9 +297,11 @@ export default function AdminClient() {
     reader.onload = () => {
       const result = reader.result as string;
       setEventFilePreview(result);
-      setEventBannerUrl(result);
+      setEventFile(file);
+      setEventBannerUrl("");
       setSubmitError(null);
     };
+    reader.onerror = () => setSubmitError("Could not read this image. Try another file.");
     reader.readAsDataURL(file);
   };
 
@@ -177,15 +312,6 @@ export default function AdminClient() {
       setSubmitError("Title and description are required.");
       return;
     }
-    if (bannerBadge.trim() || bannerCtaText.trim() || bannerCtaLink.trim()) {
-      setSubmitError("Custom badge and CTA fields are preview-only until the backend supports them. Clear these fields to publish with the standard event link.");
-      return;
-    }
-    if (bannerUrl.startsWith("data:")) {
-      setSubmitError("Upload the banner to a hosted image URL first; this image is only a local preview.");
-      return;
-    }
-
     setIsSubmitting(true);
     setSubmitSuccess(null);
     setSubmitError(null);
@@ -193,6 +319,24 @@ export default function AdminClient() {
     try {
       const startDateObj = new Date(bannerStartDateTime);
       const endDateObj = bannerEndDateTime ? new Date(bannerEndDateTime) : null;
+      if (Number.isNaN(startDateObj.getTime()) || (endDateObj && Number.isNaN(endDateObj.getTime()))) {
+        throw new Error("Enter valid banner dates before publishing.");
+      }
+      if (endDateObj && endDateObj <= startDateObj) {
+        throw new Error("The banner end time must be after its start time.");
+      }
+      const ctaUrl = bannerCtaUrl.trim();
+      if (ctaUrl && !isBannerDestination(ctaUrl)) {
+        throw new Error("Use a site path starting with / or a full HTTPS URL for the button destination.");
+      }
+      const imageUrl = bannerFile
+        ? (await api.adminUploadEventMedia(token, bannerFile)).url
+        : bannerUrl.trim();
+      if (bannerFile) {
+        setBannerUrl(imageUrl);
+        setBannerFile(null);
+        setBannerFilePreview(null);
+      }
       const durationMinutes = endDateObj
         ? Math.max(1, Math.round((endDateObj.getTime() - startDateObj.getTime()) / 60000))
         : undefined;
@@ -208,7 +352,10 @@ export default function AdminClient() {
           end_time: endDateObj ? endDateObj.toISOString() : undefined,
           duration_minutes: durationMinutes,
         },
-        banner_url: bannerUrl || undefined,
+        banner_url: imageUrl || undefined,
+        banner_badge_text: bannerBadgeText.trim() || undefined,
+        banner_cta_text: bannerCtaText.trim() || undefined,
+        banner_cta_url: ctaUrl || undefined,
         status: "published" as const,
       };
 
@@ -226,8 +373,8 @@ export default function AdminClient() {
   // Submit 2: Full Club Event Publisher
   const handleSubmitClubEvent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!eventTitle.trim() || !eventSummary.trim()) {
-      setSubmitError("Event title and summary description are required.");
+    if (!eventTitle.trim() || !eventSummary.trim() || !eventType.trim()) {
+      setSubmitError("Event title, event type, and summary description are required.");
       return;
     }
     if (eventEligibleBatches.length === 0) {
@@ -238,12 +385,8 @@ export default function AdminClient() {
       setSubmitError("The eligible batches have changed. Reload this page and review your selection.");
       return;
     }
-    if (eventBannerUrl.startsWith("data:")) {
-      setSubmitError("Upload the poster to a hosted image URL first; this image is only a local preview.");
-      return;
-    }
     if (!["research", "product", "kaggle", "misc", "all"].includes(eventTrack)) {
-      setSubmitError("This event track is not supported by the backend yet. Choose Research, Product, Kaggle, or General Community.");
+      setSubmitError("This event track is not supported by the backend yet. Choose Research, Product, Kaggle, Misc, or All.");
       return;
     }
     if (!["open_to_all", "members_only"].includes(eventAccessScope)) {
@@ -258,6 +401,21 @@ export default function AdminClient() {
     try {
       const startDateObj = new Date(eventStartDateTime);
       const endDateObj = eventEndDateTime ? new Date(eventEndDateTime) : null;
+      const deadlineDateObj = eventRegDeadline ? new Date(eventRegDeadline) : null;
+      if (Number.isNaN(startDateObj.getTime()) || (endDateObj && Number.isNaN(endDateObj.getTime())) || (deadlineDateObj && Number.isNaN(deadlineDateObj.getTime()))) {
+        throw new Error("Enter valid event dates before publishing.");
+      }
+      if (endDateObj && endDateObj <= startDateObj) {
+        throw new Error("The event end time must be after its start time.");
+      }
+      const imageUrl = eventFile
+        ? (await api.adminUploadEventMedia(token, eventFile)).url
+        : eventBannerUrl.trim();
+      if (eventFile) {
+        setEventBannerUrl(imageUrl);
+        setEventFile(null);
+        setEventFilePreview(null);
+      }
       const durationMinutes = endDateObj
         ? Math.max(1, Math.round((endDateObj.getTime() - startDateObj.getTime()) / 60000))
         : undefined;
@@ -279,7 +437,7 @@ export default function AdminClient() {
           start_time: startDateObj.toISOString(),
           end_time: endDateObj ? endDateObj.toISOString() : undefined,
           duration_minutes: durationMinutes,
-          registration_deadline: eventRegDeadline ? new Date(eventRegDeadline).toISOString() : undefined,
+          registration_deadline: deadlineDateObj?.toISOString(),
         },
         eligibility: {
           access_scope: eventAccessScope,
@@ -304,7 +462,7 @@ export default function AdminClient() {
           slides_url: eventSlidesUrl.trim() || undefined,
           discord_thread_id: eventDiscordThread.trim() || undefined,
         },
-        banner_url: eventBannerUrl || undefined,
+        banner_url: imageUrl || undefined,
         status: eventStatus,
       };
 
@@ -322,16 +480,19 @@ export default function AdminClient() {
   // Submit Merit Award
   const handleAwardMerit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!awardEmail.trim()) {
-      setSubmitError("Student email or user ID is required.");
+    if (Object.keys(selectedRecipients).length === 0) {
+      setSubmitError("Select at least one member.");
+      return;
+    }
+    if (awardType === "other" && !awardCustomType.trim()) {
+      setSubmitError("Enter a name for the other contribution type.");
       return;
     }
     setAwardLoading(true);
     setSubmitSuccess(null);
     setSubmitError(null);
     try {
-      const recipient = await api.getUserProfile(token || "", awardEmail.trim());
-      if (!recipient.id) throw new Error("The member could not be resolved to a user ID.");
+      const recipients = { ...selectedRecipients };
       const category = {
         project_milestone: "project_work",
         open_source_pr: "project_work",
@@ -339,8 +500,10 @@ export default function AdminClient() {
         community_support: "service",
         attendance: "other",
       }[awardType] || "other";
-      await api.adminAwardContribution(token || "", recipient.id, {
-        track: "misc",
+      const occurredAt = awardOccurredAtRef.current || new Date().toISOString();
+      awardOccurredAtRef.current = occurredAt;
+      const payload = {
+        track: awardTrack,
         category,
         title: {
           project_milestone: "Project milestone",
@@ -348,14 +511,30 @@ export default function AdminClient() {
           workshop_lead: "Workshop speaker or lead",
           community_support: "Community support",
           attendance: "Event attendance",
-        }[awardType] || "Administrative merit award",
+        }[awardType] || awardCustomType.trim(),
         points: Number(awardPoints),
-        description: awardReason || "Administrative merit award",
-        occurred_at: new Date().toISOString(),
-      });
-      setSubmitSuccess(`Successfully awarded ${awardPoints} merits to ${awardEmail}!`);
-      setAwardEmail("");
-      setAwardReason("");
+        description: awardReason.trim() || (awardType === "other" ? awardCustomType.trim() : "Administrative merit award"),
+        occurred_at: occurredAt,
+      };
+      const entries = Object.entries(recipients);
+      const results: PromiseSettledResult<boolean>[] = [];
+      for (let start = 0; start < entries.length; start += 5) {
+        const batch = entries.slice(start, start + 5);
+        results.push(...await Promise.allSettled(batch.map(async ([uid]) => {
+          await api.adminAwardContribution(token, uid, payload);
+          return api.adminRecalculateUserPoints(token, uid).then(() => true).catch(() => false);
+        })));
+      }
+      const succeeded = entries.filter((_, index) => results[index].status === "fulfilled").map(([uid]) => uid);
+      const failed = entries.filter((_, index) => results[index].status === "rejected").map(([uid]) => uid);
+      const stale = results.filter((result) => result.status === "fulfilled" && !result.value).length;
+      setSelectedRecipients((current) => Object.fromEntries(Object.entries(current).filter(([uid]) => !succeeded.includes(uid))));
+      if (succeeded.length) setSubmitSuccess(`Awarded ${awardPoints} points to ${succeeded.length} member${succeeded.length === 1 ? "" : "s"}.${stale ? ` ${stale} leaderboard total${stale === 1 ? "" : "s"} could not refresh yet.` : ""}`);
+      if (failed.length) setSubmitError(`${failed.length} award${failed.length === 1 ? "" : "s"} failed. The failed recipients remain in the form for retry.`);
+      if (!failed.length) {
+        awardOccurredAtRef.current = null;
+        setAwardReason("");
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to award merit points.";
       setSubmitError(msg);
@@ -417,82 +596,6 @@ export default function AdminClient() {
         </div>
       </div>
 
-      {/* Tabs Navigation */}
-      <div className={styles.tabsNav} role="tablist">
-        <button
-          onClick={() => {
-            setSubmitSuccess(null);
-            setSubmitError(null);
-            handleTabChange("banners");
-          }}
-          className={`${styles.tabButton} ${activeTab === "banners" ? styles.tabButtonActive : ""}`}
-        >
-          <MemberIcon name="image" size={16} />
-          Dashboard Banners
-          <span className={styles.tabBadge}>Hero Slider</span>
-        </button>
-
-        <button
-          onClick={() => {
-            setSubmitSuccess(null);
-            setSubmitError(null);
-            handleTabChange("events");
-          }}
-          className={`${styles.tabButton} ${activeTab === "events" ? styles.tabButtonActive : ""}`}
-        >
-          <MemberIcon name="calendar" size={16} />
-          Club Events
-        </button>
-
-        <button
-          onClick={() => handleTabChange("spg")}
-          className={`${styles.tabButton} ${activeTab === "spg" ? styles.tabButtonActive : ""}`}
-        >
-          <MemberIcon name="spg" size={16} />
-          SPG Approvals
-        </button>
-
-        <button
-          onClick={() => handleTabChange("tickets")}
-          className={`${styles.tabButton} ${activeTab === "tickets" ? styles.tabButtonActive : ""}`}
-        >
-          <MemberIcon name="tickets" size={16} />
-          Ticket Console
-        </button>
-
-        <button
-          onClick={() => handleTabChange("contributions")}
-          className={`${styles.tabButton} ${activeTab === "contributions" ? styles.tabButtonActive : ""}`}
-        >
-          <MemberIcon name="award" size={16} />
-          Merit Auditing
-        </button>
-
-        <button
-          onClick={() => handleTabChange("members")}
-          className={`${styles.tabButton} ${activeTab === "members" ? styles.tabButtonActive : ""}`}
-        >
-          <MemberIcon name="users" size={16} />
-          Member Directory
-        </button>
-
-        <button
-          onClick={() => handleTabChange("articles")}
-          className={`${styles.tabButton} ${activeTab === "articles" ? styles.tabButtonActive : ""}`}
-        >
-          <MemberIcon name="articles" size={16} />
-          Articles
-        </button>
-
-        <button
-          onClick={() => handleTabChange("ideas")}
-          className={`${styles.tabButton} ${activeTab === "ideas" ? styles.tabButtonActive : ""}`}
-        >
-          <MemberIcon name="ideas" size={16} />
-          Idea Jar
-        </button>
-      </div>
-
       {submitSuccess && (
         <div className={styles.alertSuccess}>
           <MemberIcon name="check-circle" size={18} />
@@ -544,6 +647,7 @@ export default function AdminClient() {
                       type="button"
                       onClick={() => {
                         setBannerFilePreview(null);
+                        setBannerFile(null);
                         setBannerUrl("");
                         if (bannerFileInputRef.current) bannerFileInputRef.current.value = "";
                       }}
@@ -581,23 +685,18 @@ export default function AdminClient() {
                 <input
                   type="text"
                   value={bannerUrl}
-                  onChange={(e) => setBannerUrl(e.target.value)}
+                  onChange={(e) => {
+                    setBannerUrl(e.target.value);
+                    setBannerFile(null);
+                    setBannerFilePreview(null);
+                    if (bannerFileInputRef.current) bannerFileInputRef.current.value = "";
+                  }}
                   placeholder="/banners/reinforce-placeholder.png or https://..."
                   className={styles.formInput}
                 />
               </div>
 
               <div className={styles.formRow}>
-                <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>Badge Tag</label>
-                  <input
-                    type="text"
-                    value={bannerBadge}
-                    onChange={(e) => setBannerBadge(e.target.value)}
-                    placeholder="e.g. NEW EVENT, HACKATHON"
-                    className={styles.formInput}
-                  />
-                </div>
                 <div className={styles.formGroup}>
                   <label className={styles.formLabel}>Start Date & Time</label>
                   <input
@@ -608,9 +707,6 @@ export default function AdminClient() {
                     required
                   />
                 </div>
-              </div>
-
-              <div className={styles.formRow}>
                 <div className={styles.formGroup}>
                   <label className={styles.formLabel}>End Date & Time (Optional)</label>
                   <input
@@ -620,12 +716,12 @@ export default function AdminClient() {
                     className={styles.formInput}
                   />
                 </div>
-                <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>Calculated Display Date</label>
-                  <div className={styles.datetimeHelper}>
-                    <MemberIcon name="calendar" size={15} />
-                    <span>{bannerDateDisplay}</span>
-                  </div>
+              </div>
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Displayed Date</label>
+                <div className={styles.datetimeHelper}>
+                  <MemberIcon name="calendar" size={15} />
+                  <span>{bannerDateDisplay}</span>
                 </div>
               </div>
 
@@ -654,25 +750,25 @@ export default function AdminClient() {
 
               <div className={styles.formRow}>
                 <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>CTA Button Text</label>
-                  <input
-                    type="text"
-                    value={bannerCtaText}
-                    onChange={(e) => setBannerCtaText(e.target.value)}
-                    placeholder="Join Session →"
-                    className={styles.formInput}
-                  />
+                  <label className={styles.formLabel} htmlFor="banner-badge-text">Badge text (optional)</label>
+                  <input id="banner-badge-text" type="text" value={bannerBadgeText}
+                    onChange={(e) => setBannerBadgeText(e.target.value)} maxLength={40}
+                    placeholder="Featured Banner" className={styles.formInput} />
                 </div>
                 <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>CTA Destination Link</label>
-                  <input
-                    type="text"
-                    value={bannerCtaLink}
-                    onChange={(e) => setBannerCtaLink(e.target.value)}
-                    placeholder="/dashboard/events"
-                    className={styles.formInput}
-                  />
+                  <label className={styles.formLabel} htmlFor="banner-cta-text">Button text (optional)</label>
+                  <input id="banner-cta-text" type="text" value={bannerCtaText}
+                    onChange={(e) => setBannerCtaText(e.target.value)} maxLength={40}
+                    placeholder="Explore Event →" className={styles.formInput} />
                 </div>
+              </div>
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel} htmlFor="banner-cta-url">Button destination (optional)</label>
+                <input id="banner-cta-url" type="text" value={bannerCtaUrl}
+                  onChange={(e) => setBannerCtaUrl(e.target.value)} maxLength={2048}
+                  placeholder="/dashboard/events or https://example.com/event"
+                  className={styles.formInput} />
+                <span className={styles.formLabelHint}>Leave blank to open this banner&apos;s event page. Use a site path or HTTPS URL.</span>
               </div>
 
               <button type="submit" disabled={isSubmitting} className={styles.publishBtn}>
@@ -701,18 +797,18 @@ export default function AdminClient() {
                 <div className={styles.livePreviewContent}>
                   <div>
                     <div className={styles.livePreviewTop}>
-                      <span className={styles.livePreviewBadge}>{bannerBadge || "ANNOUNCEMENT"}</span>
+                      <span className={styles.livePreviewBadge}>{bannerPresentation.badge}</span>
                       <span className={styles.livePreviewDate}>{bannerDateDisplay}</span>
                     </div>
                     <h4 className={styles.livePreviewTitle}>{bannerTitle || "Untitled Announcement"}</h4>
                     <p className={styles.livePreviewDesc}>{bannerDescription || "Description preview..."}</p>
                   </div>
-                  <span className={styles.livePreviewCta}>{bannerCtaText || "Join →"}</span>
+                  <span className={styles.livePreviewCta}>{bannerPresentation.ctaText}</span>
                 </div>
 
                 <div className={styles.livePreviewImageSide}>
                   <img
-                    src={bannerUrl || "/banners/reinforce-placeholder.png"}
+                    src={bannerFilePreview || bannerUrl || "/banners/reinforce-placeholder.png"}
                     alt="Banner Preview"
                     onError={(e) => {
                       (e.target as HTMLImageElement).src = "/banners/reinforce-placeholder.png";
@@ -723,7 +819,7 @@ export default function AdminClient() {
 
               <div style={{ fontSize: "12px", color: "#8e8e93", lineHeight: 1.6, marginTop: "8px" }}>
                 <strong>Target Surface:</strong> Student Overview Hero Banner Carousel<br />
-                <strong>Stored Object:</strong> <code>title</code>, <code>description</code>, <code>banner_url</code>, <code>schedule</code>.
+                <strong>Button destination:</strong> {bannerCtaUrl.trim() || "This banner’s event page"}
               </div>
             </div>
           </div>
@@ -785,18 +881,13 @@ export default function AdminClient() {
             <div className={styles.formRowThree}>
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Event Type</label>
-                <select
+                <input
+                  type="text"
                   value={eventType}
                   onChange={(e) => setEventType(e.target.value)}
-                  className={styles.formSelect}
-                >
-                  <option value="Workshop">Workshop</option>
-                  <option value="Hackathon">Hackathon</option>
-                  <option value="Meetup">Meetup</option>
-                  <option value="Fireside Chat">Fireside Chat</option>
-                  <option value="AMA">AMA</option>
-                  <option value="Keynote">Keynote</option>
-                </select>
+                  placeholder="e.g. Workshop, Hackathon, Meetup"
+                  className={styles.formInput}
+                />
               </div>
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Track</label>
@@ -805,13 +896,11 @@ export default function AdminClient() {
                   onChange={(e) => setEventTrack(e.target.value)}
                   className={styles.formSelect}
                 >
-                  <option value="research">Research Track</option>
-                  <option value="ai_ml" disabled>AI / ML</option>
-                  <option value="kaggle">Kaggle Track</option>
-                  <option value="product">Product Track</option>
-                  <option value="systems" disabled>Systems Track</option>
-                  <option value="web3" disabled>Web3 Track</option>
-                  <option value="misc">General Community</option>
+                  <option value="research">Research</option>
+                  <option value="product">Product</option>
+                  <option value="kaggle">Kaggle</option>
+                  <option value="misc">Misc</option>
+                  <option value="all">All</option>
                 </select>
               </div>
               <div className={styles.formGroup}>
@@ -1036,6 +1125,7 @@ export default function AdminClient() {
                     type="button"
                     onClick={() => {
                       setEventFilePreview(null);
+                      setEventFile(null);
                       setEventBannerUrl("");
                       if (eventFileInputRef.current) eventFileInputRef.current.value = "";
                     }}
@@ -1072,7 +1162,12 @@ export default function AdminClient() {
                 <input
                   type="text"
                   value={eventBannerUrl}
-                  onChange={(e) => setEventBannerUrl(e.target.value)}
+                  onChange={(e) => {
+                    setEventBannerUrl(e.target.value);
+                    setEventFile(null);
+                    setEventFilePreview(null);
+                    if (eventFileInputRef.current) eventFileInputRef.current.value = "";
+                  }}
                   placeholder="/banners/reinforce-placeholder.png or https://..."
                   className={styles.formInput}
                 />
@@ -1121,63 +1216,13 @@ export default function AdminClient() {
         </div>
       )}
 
-      {/* TAB 3: SPG Approvals */}
-      {activeTab === "spg" && (
-        <div className={styles.card}>
-          <div className={styles.cardHeader}>
-            <div>
-              <h3 className={styles.cardTitle}>
-                <MemberIcon name="spg" size={18} />
-                Student Project Group (SPG) Proposal Approvals
-              </h3>
-              <div className={styles.cardSubtitle}>
-                Review incoming research and project proposals from students.
-              </div>
-            </div>
-          </div>
+      {activeTab === "spg" && <AdminTicketsPanel token={token} spgOnly />}
 
-          <div style={{ textAlign: "center", padding: "40px 20px", color: "#8e8e93" }}>
-            <MemberIcon name="spg" size={36} />
-            <p style={{ marginTop: "12px", fontSize: "14px", color: "#ffffff" }}>
-              No pending SPG proposals awaiting approval.
-            </p>
-            <p style={{ fontSize: "12.5px", maxWidth: "440px", margin: "0 auto" }}>
-              New student research proposals submitted via the SPG module will automatically appear here for review and compute allocation.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 4: Ticket Console */}
-      {activeTab === "tickets" && (
-        <div className={styles.card}>
-          <div className={styles.cardHeader}>
-            <div>
-              <h3 className={styles.cardTitle}>
-                <MemberIcon name="tickets" size={18} />
-                Ticket Support & Resolution Console
-              </h3>
-              <div className={styles.cardSubtitle}>
-                Track and resolve student tickets for compute access, club questions, and verification.
-              </div>
-            </div>
-          </div>
-
-          <div style={{ textAlign: "center", padding: "40px 20px", color: "#8e8e93" }}>
-            <MemberIcon name="tickets" size={36} />
-            <p style={{ marginTop: "12px", fontSize: "14px", color: "#ffffff" }}>
-              No open student support tickets.
-            </p>
-            <p style={{ fontSize: "12.5px", maxWidth: "440px", margin: "0 auto" }}>
-              Student queries and compute access requests submitted to the ticket console will appear here in real-time.
-            </p>
-          </div>
-        </div>
-      )}
+      {activeTab === "tickets" && <AdminTicketsPanel token={token} />}
 
       {/* TAB 5: Merit Auditing */}
       {activeTab === "contributions" && (
-        <div className={styles.managerGrid}>
+        <div className={`${styles.managerGrid} ${styles.meritGrid}`}>
           <div className={styles.card}>
             <div className={styles.cardHeader}>
               <div>
@@ -1191,22 +1236,195 @@ export default function AdminClient() {
               </div>
             </div>
 
-            <form onSubmit={handleAwardMerit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-              <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Student Email / User ID</label>
-                <input
-                  type="text"
-                  value={awardEmail}
-                  onChange={(e) => setAwardEmail(e.target.value)}
-                  placeholder="student@sst.scaler.com"
-                  className={styles.formInput}
-                  required
-                />
+            <form onSubmit={handleAwardMerit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              {/* Member Selection & Search */}
+              <div className={styles.recipientSearchContainer}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <label className={styles.formLabel} style={{ marginBottom: 0 }}>
+                    Select Recipients ({Object.keys(selectedRecipients).length} Selected)
+                  </label>
+                  {Object.keys(selectedRecipients).length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearAllRecipients}
+                      className={styles.bulkActionBtn}
+                      style={{ color: "#f87171", borderColor: "rgba(239, 68, 68, 0.3)" }}
+                    >
+                      Clear Selection ({Object.keys(selectedRecipients).length})
+                    </button>
+                  )}
+                </div>
+
+                {/* Selected Recipients Chip Tray */}
+                {Object.keys(selectedRecipients).length > 0 && (
+                  <div className={styles.selectedChipsTray}>
+                    {Object.values(selectedRecipients).map((m) => {
+                      const uid = m.id;
+                      const initials = m.full_name
+                        ? m.full_name.split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase()
+                        : "MB";
+                      return (
+                        <div key={uid} className={styles.recipientChip}>
+                          <div className={styles.chipAvatar}>
+                            {m.avatar_url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={m.avatar_url} alt={m.full_name} className={styles.chipAvatarImg} />
+                            ) : (
+                              initials
+                            )}
+                          </div>
+                          <span>{m.full_name}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveRecipient(uid)}
+                            className={styles.chipRemoveBtn}
+                            aria-label={`Remove ${m.full_name}`}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Search Bar */}
+                <div className={styles.recipientSearchBox}>
+                  <span className={styles.recipientSearchIcon}>
+                    <MemberIcon name="search" size={16} />
+                  </span>
+                  <input
+                    type="search"
+                    aria-label="Search members to award"
+                    value={awardSearch}
+                    onChange={(e) => setAwardSearch(e.target.value)}
+                    placeholder="Search by student name or college email..."
+                    className={styles.recipientSearchInput}
+                  />
+                  {awardSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setAwardSearch("")}
+                      className={styles.clearSearchBtn}
+                      aria-label="Clear search"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                {/* Bulk Actions Header */}
+                <div className={styles.bulkActionBar}>
+                  <div className={styles.bulkActionBtns}>
+                    <button
+                      type="button"
+                      onClick={handleSelectAllVisible}
+                      disabled={candidatesLoading || awardCandidates.length === 0}
+                      className={styles.bulkActionBtn}
+                    >
+                      Select Visible ({awardCandidates.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeselectAllVisible}
+                      disabled={candidatesLoading || awardCandidates.length === 0 || !awardCandidates.some(m => Boolean(selectedRecipients[m.id]))}
+                      className={styles.bulkActionBtn}
+                    >
+                      Deselect Visible
+                    </button>
+                  </div>
+                  <span className={styles.selectedCountBadge}>
+                    {Object.keys(selectedRecipients).length} selected
+                  </span>
+                </div>
+
+                {/* Candidate Selection List */}
+                <div className={styles.candidateListContainer}>
+                  {candidatesLoading ? (
+                    <div className={styles.emptyCandidatesText}>Loading members…</div>
+                  ) : awardSearchError ? (
+                    <div className={styles.emptyCandidatesText} role="alert">{awardSearchError}</div>
+                  ) : awardCandidates.length === 0 ? (
+                    <div className={styles.emptyCandidatesText}>
+                      {awardSearch ? `No members found matching "${awardSearch}".` : "No members found in directory."}
+                    </div>
+                  ) : (
+                    awardCandidates.map((member) => {
+                      const uid = member.id;
+                      const isSelected = Boolean(selectedRecipients[uid]);
+                      const initials = member.full_name
+                        ? member.full_name.split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase()
+                        : "MB";
+                      return (
+                        <button
+                          key={uid}
+                          type="button"
+                          role="checkbox"
+                          aria-checked={isSelected}
+                          aria-label={`Select ${member.full_name}`}
+                          onClick={() => handleToggleRecipient(member)}
+                          className={`${styles.candidateRow} ${isSelected ? styles.candidateRowSelected : ""}`}
+                        >
+                          <span className={styles.candidateCheckboxVisual} aria-hidden="true" />
+                          <div className={styles.candidateAvatar}>
+                            {member.avatar_url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={member.avatar_url} alt={member.full_name} className={styles.candidateAvatarImg} />
+                            ) : (
+                              initials
+                            )}
+                          </div>
+                          <div className={styles.candidateInfo}>
+                            <div className={styles.candidateNameRow}>
+                              <span className={styles.candidateName}>{member.full_name}</span>
+                              <div className={styles.candidateBadges}>
+                                {member.is_admin && <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Admin</span>}
+                                {member.role_label?.toLowerCase() === "core" && <span className={`${styles.candidateBadge} ${styles.candidateBadgeCore}`}>Core</span>}
+                                {member.tier && member.tier !== "beginner" && <span className={styles.candidateBadge}>{member.tier}</span>}
+                              </div>
+                            </div>
+                            <span className={styles.candidateEmail}>{member.email}</span>
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+                {!candidatesLoading && !awardSearchError && awardCandidateTotal > awardCandidates.length && (
+                  <span className={styles.selectedMembers}>Showing {awardCandidates.length} of {awardCandidateTotal} members. Search to find others.</span>
+                )}
+
+                {/* Optional Manual Add Input */}
+                <div className={styles.manualAddBox}>
+                  <span style={{ fontSize: "11.5px", color: "#8e8e93" }}>
+                    Can&apos;t find a member? Add directly by email or Firebase UID:
+                  </span>
+                  <div className={styles.manualAddRow}>
+                    <input
+                      type="text"
+                      value={manualAddInput}
+                      onChange={(e) => { setManualAddInput(e.target.value); setManualAddError(""); }}
+                      placeholder="student@sst.scaler.com or UID"
+                      className={styles.manualAddInput}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddManualRecipient(); } }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddManualRecipient}
+                      disabled={manualAddLoading || !manualAddInput.trim()}
+                      className={styles.manualAddBtn}
+                    >
+                      {manualAddLoading ? "Searching..." : "+ Add to Selection"}
+                    </button>
+                  </div>
+                  {manualAddError && <span role="alert" style={{ color: "#ef4444", fontSize: "11px" }}>{manualAddError}</span>}
+                </div>
               </div>
 
-              <div className={styles.formRow}>
+              {/* Award Configuration: Points, Track, Contribution Type */}
+              <div className={styles.formRowThree}>
                 <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>Merit Points</label>
+                  <label className={styles.formLabel}>Merit Points (per member)</label>
                   <input
                     type="number"
                     value={awardPoints}
@@ -1219,20 +1437,49 @@ export default function AdminClient() {
                 </div>
 
                 <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Track</label>
+                  <select
+                    value={awardTrack}
+                    onChange={(e) => setAwardTrack(e.target.value as "misc" | "research" | "product" | "kaggle")}
+                    className={styles.formSelect}
+                  >
+                    <option value="misc">General / Misc</option>
+                    <option value="research">Research Track</option>
+                    <option value="product">Product Track</option>
+                    <option value="kaggle">Kaggle Track</option>
+                  </select>
+                </div>
+
+                <div className={styles.formGroup}>
                   <label className={styles.formLabel}>Contribution Type</label>
                   <select
                     value={awardType}
                     onChange={(e) => setAwardType(e.target.value)}
                     className={styles.formSelect}
                   >
-                    <option value="project_milestone">Project Milestone (100 pts)</option>
-                    <option value="open_source_pr">Open Source PR (50 pts)</option>
-                    <option value="workshop_lead">Workshop Speaker / Lead (75 pts)</option>
-                    <option value="community_support">Community Support (25 pts)</option>
-                    <option value="attendance">Event Attendance (10 pts)</option>
+                    <option value="project_milestone">Project Milestone</option>
+                    <option value="open_source_pr">Open Source PR</option>
+                    <option value="workshop_lead">Workshop Speaker / Lead</option>
+                    <option value="community_support">Community Support</option>
+                    <option value="attendance">Event Attendance</option>
+                    <option value="other">Other (custom)</option>
                   </select>
                 </div>
               </div>
+
+              {awardType === "other" && (
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Custom contribution type</label>
+                  <input
+                    className={styles.formInput}
+                    value={awardCustomType}
+                    onChange={(event) => setAwardCustomType(event.target.value)}
+                    maxLength={200}
+                    placeholder="e.g. Competition mentor"
+                    required
+                  />
+                </div>
+              )}
 
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Reason / Reference Link</label>
@@ -1247,34 +1494,17 @@ export default function AdminClient() {
 
               <button
                 type="submit"
-                disabled={awardLoading}
+                disabled={awardLoading || Object.keys(selectedRecipients).length === 0}
                 className={styles.publishBtn}
               >
                 <MemberIcon name="award" size={16} />
-                {awardLoading ? "Awarding Points..." : "Award Merits"}
+                {awardLoading
+                  ? "Awarding Points..."
+                  : Object.keys(selectedRecipients).length === 0
+                  ? "Select At Least 1 Member"
+                  : `Award ${awardPoints} Points to ${Object.keys(selectedRecipients).length} Member${Object.keys(selectedRecipients).length === 1 ? "" : "s"}`}
               </button>
             </form>
-          </div>
-
-          <div className={styles.card}>
-            <div className={styles.cardHeader}>
-              <div>
-                <h3 className={styles.cardTitle}>
-                  <MemberIcon name="check-circle" size={18} />
-                  Pending Contribution Submissions
-                </h3>
-                <div className={styles.cardSubtitle}>
-                  Submissions logged by students waiting for admin review.
-                </div>
-              </div>
-            </div>
-
-            <div style={{ textAlign: "center", padding: "30px 10px", color: "#8e8e93" }}>
-              <MemberIcon name="check-circle" size={32} />
-              <p style={{ marginTop: "10px", fontSize: "13px" }}>
-                All student contribution logs are currently audited and up to date!
-              </p>
-            </div>
           </div>
         </div>
       )}
@@ -1289,51 +1519,41 @@ export default function AdminClient() {
                 Member Directory & Role Management
               </h3>
               <div className={styles.cardSubtitle}>
-                Manage student verification, batch cohorts, and admin permissions.
+                Manage membership and roles. Admin access takes effect after the member signs in again.
               </div>
             </div>
           </div>
 
-          <div style={{ textAlign: "center", padding: "40px 20px", color: "#8e8e93" }}>
-            <MemberIcon name="users" size={36} />
-            <p style={{ marginTop: "12px", fontSize: "14px", color: "#ffffff" }}>
-              Member directory sync connected to Firestore.
-            </p>
-            <p style={{ fontSize: "12.5px", maxWidth: "440px", margin: "0 auto" }}>
-              Batch roles, discord linkages, and access levels are maintained directly through authoritative user records.
-            </p>
+          <div className={styles.formGroup}>
+            <label className={styles.formLabel} htmlFor="member-search">Search members by name or email</label>
+            <input id="member-search" className={styles.formInput} value={memberSearch} onChange={(event) => { setMemberSearch(event.target.value); setMemberPage(1); setDirectoryError(""); setDirectoryMessage(""); }} placeholder="Name or college email" />
           </div>
+          <LoadingBar loading={directoryLoading} />
+          {directoryError && <p role="alert" className={styles.memberMessage}>{directoryError} <button type="button" className={styles.smallAction} onClick={() => { setDirectoryError(""); setDirectoryRevision((value) => value + 1); }}>Retry</button></p>}
+          {directoryMessage && <p role="status" className={styles.memberMessage}>{directoryMessage}</p>}
+          <div className={styles.memberList}>
+            {memberDirectory?.items.map((member) => <MemberRoleRow key={`${member.id}-${member.updated_at}`} member={member} token={token} onSaved={(message) => { setDirectoryMessage(message); setDirectoryRevision((value) => value + 1); }} />)}
+            {memberDirectory?.items.length === 0 && !directoryError && !directoryLoading && <p className={styles.cardSubtitle}>No members found.</p>}
+          </div>
+          {!directoryError && (
+            <PaginationBar
+              currentPage={memberPage}
+              totalItems={memberDirectory?.total ?? 0}
+              pageSize={memberPageSize}
+              onPageChange={setMemberPage}
+              onPageSizeChange={(sz) => {
+                setMemberPageSize(sz);
+                setMemberPage(1);
+              }}
+              pageSizeOptions={[20, 50, 100]}
+              itemLabel="members"
+              disabled={directoryLoading}
+            />
+          )}
         </div>
       )}
 
-      {/* TAB 7 & 8: Articles and Ideas */}
-      {(activeTab === "articles" || activeTab === "ideas") && (
-        <div className={styles.card}>
-          <div className={styles.cardHeader}>
-            <div>
-              <h3 className={styles.cardTitle}>
-                <MemberIcon name={activeTab} size={18} />
-                {activeTab === "articles" ? "Article Hub Editorial Pipeline" : "Idea Jar Moderation"}
-              </h3>
-              <div className={styles.cardSubtitle}>
-                Manage peer-reviewed articles, tutorials, and community ideas.
-              </div>
-            </div>
-          </div>
-
-          <div style={{ textAlign: "center", padding: "40px 20px", color: "#8e8e93" }}>
-            <MemberIcon name={activeTab} size={36} />
-            <p style={{ marginTop: "12px", fontSize: "14px", color: "#ffffff" }}>
-              {activeTab === "articles"
-                ? "Article editorial pipeline is ready."
-                : "Idea moderation pipeline is ready."}
-            </p>
-            <p style={{ fontSize: "12.5px", maxWidth: "480px", margin: "0 auto" }}>
-              Connect with authors, assign peer reviewers, and feature top pieces on the landing page.
-            </p>
-          </div>
-        </div>
-      )}
+      {(activeTab === "articles" || activeTab === "ideas") && <AdminContentPanel token={token} kind={activeTab} />}
     </div>
   );
 }
