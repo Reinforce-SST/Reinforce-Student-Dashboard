@@ -67,10 +67,10 @@ export default function LeaderboardClient() {
 
   const isSearching = searchQuery !== debouncedSearch || (loading && Boolean(searchQuery.trim()));
 
-  // Reset page to 1 when search or filters change
+  // Reset page to 1 when search, filters, or view mode change
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, selectedTrack, selectedTier]);
+  }, [debouncedSearch, viewMode, selectedTrack, selectedTier]);
 
   // Fetch live members/leaderboard from backend API
   const fetchDirectoryData = useCallback(async () => {
@@ -79,7 +79,7 @@ export default function LeaderboardClient() {
       setLoading(true);
       const res = await api.browseUsers(token, {
         search: debouncedSearch.trim() || undefined,
-        track: selectedTrack !== "total" ? selectedTrack : undefined,
+        track: viewMode === "LEADERBOARD" && selectedTrack !== "total" ? selectedTrack : undefined,
         tier: selectedTier !== "all" ? selectedTier : undefined,
         page,
         page_size: pageSize,
@@ -98,7 +98,7 @@ export default function LeaderboardClient() {
     } finally {
       setLoading(false);
     }
-  }, [token, debouncedSearch, selectedTrack, selectedTier, page, pageSize]);
+  }, [token, debouncedSearch, viewMode, selectedTrack, selectedTier, page, pageSize]);
 
   useEffect(() => {
     void Promise.resolve().then(fetchDirectoryData);
@@ -182,44 +182,57 @@ export default function LeaderboardClient() {
       </div>
 
       {/* Filter Row: Track Tabs & Search Box */}
-      <div className={styles.filterRow}>
-        {/* Track Pills */}
-        <div className={styles.trackTabs}>
-          <button
-            type="button"
-            onClick={() => setSelectedTrack("total")}
-            className={`${styles.trackBtn} ${selectedTrack === "total" ? styles.trackBtnActiveTotal : ""}`}
-          >
-            OVERALL SCORE
-          </button>
+      <div
+        className={styles.filterRow}
+        style={{ justifyContent: viewMode === "DIRECTORY" ? "flex-end" : "space-between" }}
+      >
+        {/* Track Pills (shown only on Leaderboard rankings) */}
+        {viewMode === "LEADERBOARD" && (
+          <div className={styles.trackTabs}>
+            <button
+              type="button"
+              onClick={() => setSelectedTrack("total")}
+              className={`${styles.trackBtn} ${selectedTrack === "total" ? styles.trackBtnActiveTotal : ""}`}
+            >
+              OVERALL SCORE
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setSelectedTrack("research")}
-            className={`${styles.trackBtn} ${selectedTrack === "research" ? styles.trackBtnActiveResearch : ""}`}
-          >
-            RESEARCH TRACK
-          </button>
+            <button
+              type="button"
+              onClick={() => setSelectedTrack("research")}
+              className={`${styles.trackBtn} ${selectedTrack === "research" ? styles.trackBtnActiveResearch : ""}`}
+            >
+              RESEARCH TRACK
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setSelectedTrack("product")}
-            className={`${styles.trackBtn} ${selectedTrack === "product" ? styles.trackBtnActiveProduct : ""}`}
-          >
-            PRODUCT TRACK
-          </button>
+            <button
+              type="button"
+              onClick={() => setSelectedTrack("product")}
+              className={`${styles.trackBtn} ${selectedTrack === "product" ? styles.trackBtnActiveProduct : ""}`}
+            >
+              PRODUCT TRACK
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setSelectedTrack("kaggle")}
-            className={`${styles.trackBtn} ${selectedTrack === "kaggle" ? styles.trackBtnActiveKaggle : ""}`}
-          >
-            KAGGLE TRACK
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => setSelectedTrack("kaggle")}
+              className={`${styles.trackBtn} ${selectedTrack === "kaggle" ? styles.trackBtnActiveKaggle : ""}`}
+            >
+              KAGGLE TRACK
+            </button>
+          </div>
+        )}
 
         {/* Search & Tier Controls */}
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            flexWrap: "wrap",
+            marginLeft: viewMode === "DIRECTORY" ? "auto" : undefined,
+          }}
+        >
           <div className={styles.searchBox}>
             {isSearching ? (
               <div className={styles.searchSpinner} />

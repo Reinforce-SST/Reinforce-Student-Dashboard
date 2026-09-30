@@ -175,21 +175,22 @@ def _to_ticket_detail(doc_id: str, data: Dict[str, Any]) -> TicketDetail:
     summary = _to_ticket_summary(doc_id, data)
     creator_info = _get_user_info(summary.created_by_uid)
     assigned_info = _get_user_info(summary.assigned_to_uid)
-    return TicketDetail(
-        **summary.model_dump(),
-        description=data.get("description"),
-        fields=data.get("fields") or {},
-        closed_by_uid=data.get("closed_by_uid"),
-        close_reason=data.get("close_reason"),
-        closed_at=iso_str(data.get("closed_at")),
-        discord_meta=_to_discord_meta(data),
-        created_by_name=summary.created_by_name or creator_info["name"],
-        created_by_email=data.get("created_by_email") or creator_info["email"],
-        created_by_avatar=data.get("created_by_avatar") or creator_info["avatar_url"],
-        assigned_to_name=summary.assigned_to_name or assigned_info["name"],
-        assigned_to_email=data.get("assigned_to_email") or assigned_info["email"],
-        assigned_to_avatar=data.get("assigned_to_avatar") or assigned_info["avatar_url"],
-    )
+    detail_data = summary.model_dump()
+    detail_data.update({
+        "description": data.get("description"),
+        "fields": data.get("fields") or {},
+        "closed_by_uid": data.get("closed_by_uid"),
+        "close_reason": data.get("close_reason"),
+        "closed_at": iso_str(data.get("closed_at")),
+        "discord_meta": _to_discord_meta(data),
+        "created_by_name": summary.created_by_name or creator_info["name"],
+        "created_by_email": data.get("created_by_email") or creator_info["email"],
+        "created_by_avatar": data.get("created_by_avatar") or creator_info["avatar_url"],
+        "assigned_to_name": summary.assigned_to_name or assigned_info["name"],
+        "assigned_to_email": data.get("assigned_to_email") or assigned_info["email"],
+        "assigned_to_avatar": data.get("assigned_to_avatar") or assigned_info["avatar_url"],
+    })
+    return TicketDetail(**detail_data)
 
 
 def _to_ticket_message(msg_id: str, data: Dict[str, Any]) -> TicketMessage:

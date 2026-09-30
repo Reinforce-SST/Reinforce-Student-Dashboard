@@ -12,7 +12,7 @@ import {
   type TicketStatus,
 } from "@/lib/api";
 import { useMember } from "@/lib/useMember";
-import { MemberIcon } from "@/components/dashboard/MemberIcon";
+import MemberIcon from "@/components/dashboard/MemberIcon";
 import styles from "./TicketDetail.module.css";
 
 function safeUrl(value: string | null | undefined): string | null {
