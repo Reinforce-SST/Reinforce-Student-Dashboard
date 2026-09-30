@@ -30,12 +30,117 @@ from app.schemas.ideas import (
     IdeaUpdate,
     IdeaUpvoteToggleResponse,
 )
+from app.schemas.tickets import TicketCategory, TicketStatus
 
 router = APIRouter(prefix="/ideas", tags=["Idea Jar"])
 
 IDEAS_COLLECTION = "ideas"
+TICKETS_COLLECTION = "tickets"
 UPVOTES_SUBCOLLECTION = "upvotes"
 USERS_COLLECTION = "users"
+
+
+def _clean_list(raw: Any) -> List[str]:
+    if isinstance(raw, list):
+        return [str(x).strip() for x in raw if str(x).strip()]
+    if isinstance(raw, str) and raw.strip():
+        items: List[str] = []
+        for line in raw.replace("\r", "").split("\n"):
+            line = line.strip()
+            if line.startswith("• "):
+                line = line[2:].strip()
+            elif line.startswith("- "):
+                line = line[2:].strip()
+            elif len(line) > 2 and line[0].isdigit() and line[1] in (".", ")"):
+                line = line[2:].strip()
+            elif len(line) > 3 and line[:2].isdigit() and line[2] in (".", ")"):
+                line = line[3:].strip()
+            if line and line.lower() not in ("none specified", "none", "n/a"):
+                items.append(line)
+        return items
+    return []
+
+
+def _parse_track(raw: Any) -> IdeaTrack:
+    if not raw:
+        return IdeaTrack.MISC
+    s = str(raw).strip().lower()
+    if s.endswith(" track"):
+        s = s[:-6].strip()
+    return _normalise_track(s)
+
+
+def _parse_difficulty(raw: Any) -> Optional[IdeaDifficulty]:
+    if not raw:
+        return None
+    s = str(raw).strip().lower()
+    try:
+        return IdeaDifficulty(s)
+    except ValueError:
+        if "begin" in s:
+            return IdeaDifficulty.BEGINNER
+        if "adv" in s:
+            return IdeaDifficulty.ADVANCED
+        if "inter" in s:
+            return IdeaDifficulty.INTERMEDIATE
+        return None
+
+
+def _ticket_to_idea_summary(ticket_id: str, tdata: Dict[str, Any]) -> IdeaSummary:
+    fields = tdata.get("fields") or {}
+    title = (
+        tdata.get("title")
+        or fields.get("Idea Title")
+        or fields.get("title")
+        or "Untitled Idea"
+    )
+    desc = (
+        tdata.get("description")
+        or fields.get("Overview")
+        or fields.get("description")
+        or fields.get("Details")
+        or ""
+    )
+    track_val = fields.get("track") or fields.get("Track") or tdata.get("track")
+    diff_val = (
+        fields.get("difficulty")
+        or fields.get("Difficulty")
+        or tdata.get("difficulty")
+    )
+    return IdeaSummary(
+        id=ticket_id,
+        title=title,
+        description=desc,
+        track=_parse_track(track_val),
+        difficulty=_parse_difficulty(diff_val),
+        is_verified=False,
+        created_by_uid=_creator_uid(tdata),
+        approved_by_uid=None,
+        stats=IdeaStats(upvote_count=0, views_count=0, claims_count=0),
+        created_at=iso_str(tdata.get("created_at")),
+        approved_at=None,
+    )
+
+
+def _ticket_to_idea_detail(ticket_id: str, tdata: Dict[str, Any]) -> IdeaDetail:
+    summary = _ticket_to_idea_summary(ticket_id, tdata)
+    fields = tdata.get("fields") or {}
+    prereqs = _clean_list(fields.get("prerequisites") or fields.get("Prerequisites"))
+    roadmap = _clean_list(
+        fields.get("rough_roadmap")
+        or fields.get("Rough Roadmap")
+        or fields.get("roadmap")
+    )
+    outcomes = _clean_list(
+        fields.get("learning_outcomes") or fields.get("Learning Outcomes")
+    )
+    return IdeaDetail(
+        **summary.model_dump(),
+        prerequisites=prereqs,
+        rough_roadmap=roadmap,
+        learning_outcomes=outcomes,
+        updated_at=iso_str(tdata.get("updated_at") or tdata.get("created_at")),
+    )
 
 
 def _to_idea_summary(doc_id: str, data: Dict[str, Any]) -> IdeaSummary:
@@ -189,11 +294,30 @@ def list_my_ideas(
         )
         docs = list({doc.id: doc for doc in [*docs, *legacy]}.values())
 
-    items: List[IdeaSummary] = []
+    by_id: Dict[str, IdeaSummary] = {}
     for doc in docs:
         data = doc.to_dict() or {}
-        items.append(_to_idea_summary(doc.id, data))
+        by_id[doc.id] = _to_idea_summary(doc.id, data)
 
+    # Also include tickets submitted by current user with category "idea_jar"
+    user_tickets = (
+        db.collection(TICKETS_COLLECTION)
+        .where("created_by_uid", "==", uid)
+        .where("category", "==", TicketCategory.IDEA_JAR.value)
+        .stream()
+    )
+    for doc in user_tickets:
+        tdata = doc.to_dict() or {}
+        st = tdata.get("status")
+        if st not in (
+            TicketStatus.RESOLVED.value,
+            TicketStatus.CLOSED.value,
+            "resolved",
+            "closed",
+        ):
+            by_id[doc.id] = _ticket_to_idea_summary(doc.id, tdata)
+
+    items = list(by_id.values())
     items.sort(key=lambda x: x.created_at or "", reverse=True)
     return IdeaListResponse(
         total=len(items), items=items, page=1, page_size=len(items), has_more=False
@@ -209,18 +333,37 @@ def list_pending_ideas(
     admin: dict = Depends(get_admin_user),
 ) -> IdeaListResponse:
     """Fetch all unverified ideas waiting for review in the admin queue."""
-    by_id = {}
+    by_id: Dict[str, IdeaSummary] = {}
+
+    # 1. Unverified ideas from IDEAS_COLLECTION
     for field in ("is_verified", "is_approved"):
         for doc in db.collection(IDEAS_COLLECTION).where(field, "==", False).stream():
-            if not _is_approved(doc.to_dict() or {}):
-                by_id[doc.id] = doc
-    docs = list(by_id.values())
+            data = doc.to_dict() or {}
+            if not _is_approved(data):
+                by_id[doc.id] = _to_idea_summary(doc.id, data)
 
-    items: List[IdeaSummary] = []
-    for doc in docs:
+    for doc in db.collection(IDEAS_COLLECTION).stream():
         data = doc.to_dict() or {}
-        items.append(_to_idea_summary(doc.id, data))
+        if not _is_approved(data):
+            by_id[doc.id] = _to_idea_summary(doc.id, data)
 
+    # 2. Idea Jar proposals from TICKETS_COLLECTION
+    for doc in (
+        db.collection(TICKETS_COLLECTION)
+        .where("category", "==", TicketCategory.IDEA_JAR.value)
+        .stream()
+    ):
+        tdata = doc.to_dict() or {}
+        st = tdata.get("status")
+        if st not in (
+            TicketStatus.RESOLVED.value,
+            TicketStatus.CLOSED.value,
+            "resolved",
+            "closed",
+        ):
+            by_id[doc.id] = _ticket_to_idea_summary(doc.id, tdata)
+
+    items = list(by_id.values())
     items.sort(key=lambda x: x.created_at or "", reverse=True)
     return IdeaListResponse(
         total=len(items), items=items, page=1, page_size=len(items), has_more=False
@@ -300,6 +443,20 @@ def get_idea(
     doc = doc_ref.get()
 
     if not doc.exists:
+        ticket_ref = db.collection(TICKETS_COLLECTION).document(idea_id)
+        ticket_doc = ticket_ref.get()
+        if ticket_doc.exists:
+            tdata = ticket_doc.to_dict() or {}
+            if tdata.get("category") == TicketCategory.IDEA_JAR.value:
+                is_admin = is_admin_user(current_user) if current_user else False
+                creator = _creator_uid(tdata)
+                is_owner = current_user and creator in _identity_keys(current_user)
+                if not is_admin and not is_owner:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND, detail="Idea not found."
+                    )
+                return _ticket_to_idea_detail(idea_id, tdata)
+
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Idea not found."
         )
@@ -418,26 +575,89 @@ def approve_idea(
     admin: dict = Depends(get_admin_user),
 ) -> IdeaDetail:
     """Approve an idea from the moderation queue, making it live for discovery and random jar."""
+    now = now_iso()
     doc_ref = db.collection(IDEAS_COLLECTION).document(idea_id)
     doc = doc_ref.get()
 
-    if not doc.exists:
+    if doc.exists:
+        updates = {
+            "is_verified": True,
+            "is_approved": True,
+            "approved_by_uid": admin["uid"],
+            "approved_at": now,
+            "updated_at": now,
+        }
+        doc_ref.update(updates)
+        refreshed = doc_ref.get().to_dict() or {}
+        return _to_idea_detail(idea_id, refreshed)
+
+    ticket_ref = db.collection(TICKETS_COLLECTION).document(idea_id)
+    ticket_doc = ticket_ref.get()
+    if not ticket_doc.exists:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Idea not found."
         )
 
-    now = now_iso()
-    updates = {
+    ticket_data = ticket_doc.to_dict() or {}
+    if ticket_data.get("category") != TicketCategory.IDEA_JAR.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ticket is not an Idea Jar proposal.",
+        )
+
+    detail = _ticket_to_idea_detail(idea_id, ticket_data)
+    new_idea_id = f"idea_{uuid.uuid4().hex[:8]}"
+
+    new_idea_doc: Dict[str, Any] = {
+        "id": new_idea_id,
+        "title": detail.title,
+        "description": detail.description,
+        "track": detail.track.value,
+        "difficulty": detail.difficulty.value if detail.difficulty else None,
+        "prerequisites": detail.prerequisites,
+        "rough_roadmap": detail.rough_roadmap,
+        "learning_outcomes": detail.learning_outcomes,
         "is_verified": True,
         "is_approved": True,
+        "created_by_uid": ticket_data.get("created_by_uid"),
         "approved_by_uid": admin["uid"],
         "approved_at": now,
+        "stats": {
+            "upvote_count": 0,
+            "views_count": 0,
+            "claims_count": 0,
+        },
+        "ticket_id": idea_id,
+        "created_at": ticket_data.get("created_at") or now,
         "updated_at": now,
     }
 
-    doc_ref.update(updates)
-    refreshed = doc_ref.get().to_dict() or {}
-    return _to_idea_detail(idea_id, refreshed)
+    db.collection(IDEAS_COLLECTION).document(new_idea_id).set(new_idea_doc)
+
+    ticket_ref.update({
+        "status": TicketStatus.RESOLVED.value,
+        "closed_by_uid": admin["uid"],
+        "close_reason": "Idea approved and published to Idea Jar.",
+        "approved_idea_id": new_idea_id,
+        "updated_at": now,
+        "closed_at": now,
+    })
+
+    try:
+        admin_name = admin.get("full_name") or admin.get("name") or "Admin"
+        ticket_ref.collection("messages").document().set({
+            "sender_uid": admin["uid"],
+            "sender_name": admin_name,
+            "sender_role": "admin",
+            "source": "web",
+            "content": f"🎉 Your Idea Jar proposal '{detail.title}' has been approved and published to the public Idea Jar!",
+            "attachments": [],
+            "timestamp": now,
+        })
+    except Exception:
+        pass
+
+    return _to_idea_detail(new_idea_id, new_idea_doc)
 
 
 @router.post(
@@ -500,10 +720,36 @@ def delete_idea(
     doc_ref = db.collection(IDEAS_COLLECTION).document(idea_id)
     doc = doc_ref.get()
 
-    if not doc.exists:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Idea not found."
-        )
+    if doc.exists:
+        doc_ref.delete()
+        return {"message": "Idea deleted successfully", "id": idea_id}
 
-    doc_ref.delete()
-    return {"message": "Idea deleted successfully", "id": idea_id}
+    ticket_ref = db.collection(TICKETS_COLLECTION).document(idea_id)
+    ticket_doc = ticket_ref.get()
+    if ticket_doc.exists:
+        now = now_iso()
+        ticket_ref.update({
+            "status": TicketStatus.CLOSED.value,
+            "closed_by_uid": admin["uid"],
+            "close_reason": "Idea proposal was rejected by admin.",
+            "closed_at": now,
+            "updated_at": now,
+        })
+        try:
+            admin_name = admin.get("full_name") or admin.get("name") or "Admin"
+            ticket_ref.collection("messages").document().set({
+                "sender_uid": admin["uid"],
+                "sender_name": admin_name,
+                "sender_role": "admin",
+                "source": "web",
+                "content": "This Idea Jar proposal was reviewed and closed.",
+                "attachments": [],
+                "timestamp": now,
+            })
+        except Exception:
+            pass
+        return {"message": "Idea proposal closed", "id": idea_id}
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND, detail="Idea not found."
+    )

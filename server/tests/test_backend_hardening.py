@@ -218,6 +218,48 @@ class BackendHardeningTests(unittest.TestCase):
         self.assertNotIn("action", captured)
         self.assertEqual(captured["creator_uid"], "uid-member")
 
+    def test_admin_pending_ideas_includes_idea_tickets_and_can_approve(self):
+        self.db.store["tickets/tkt-idea-1"] = {
+            "id": "tkt-idea-1",
+            "title": "Autonomous Drone Navigation",
+            "description": "Using RL for drone navigation in unknown environments",
+            "category": "idea_jar",
+            "status": "open",
+            "fields": {
+                "track": "ai",
+                "difficulty": "advanced",
+                "prerequisites": ["Python", "Reinforcement Learning"],
+                "rough_roadmap": ["1. Simulation in AirSim", "2. PPO Agent training"],
+                "learning_outcomes": ["RL basics", "Robotics simulation"],
+            },
+            "created_by_uid": "someone-else",
+            "created_at": "2026-09-30T10:00:00Z",
+        }
+        self.user = dict(ADMIN)
+        res = self.client.get("/api/v1/ideas/pending")
+        self.assertEqual(res.status_code, 200)
+        items = {item["id"]: item for item in res.json()["items"]}
+        self.assertIn("tkt-idea-1", items)
+        self.assertEqual(items["tkt-idea-1"]["title"], "Autonomous Drone Navigation")
+        self.assertEqual(items["tkt-idea-1"]["track"], "ai")
+
+        # Admin approves the ticket-based idea proposal
+        approve_res = self.client.post("/api/v1/ideas/tkt-idea-1/approve")
+        self.assertEqual(approve_res.status_code, 200)
+        approved_data = approve_res.json()
+        self.assertTrue(approved_data["is_verified"])
+        self.assertEqual(approved_data["title"], "Autonomous Drone Navigation")
+
+        # The ticket in tickets collection is now resolved
+        ticket_data = self.db.store.get("tickets/tkt-idea-1")
+        self.assertEqual(ticket_data["status"], "resolved")
+
+        # It is no longer in pending ideas
+        res_after = self.client.get("/api/v1/ideas/pending")
+        items_after = {item["id"]: item for item in res_after.json()["items"]}
+        self.assertNotIn("tkt-idea-1", items_after)
+
 
 if __name__ == "__main__":
     unittest.main()
+

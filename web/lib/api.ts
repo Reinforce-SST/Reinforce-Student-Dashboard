@@ -450,6 +450,8 @@ export const api = {
   pendingIdeas: (token: string) => request<{ items: IdeaSummary[] }>("/ideas/pending", token),
   approveIdea: (token: string, id: string) =>
     request<IdeaDetail>(`/ideas/${encodeURIComponent(id)}/approve`, token, { method: "POST" }),
+  rejectIdea: (token: string, id: string) =>
+    request<{ message: string; id: string }>(`/ideas/${encodeURIComponent(id)}`, token, { method: "DELETE" }),
   syncUser: (token: string) =>
     request<StudentProfile>("/users/sync", token, {
       method: "POST",

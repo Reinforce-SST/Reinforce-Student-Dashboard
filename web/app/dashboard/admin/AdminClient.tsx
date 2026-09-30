@@ -613,6 +613,74 @@ export default function AdminClient() {
         </div>
       )}
 
+      {/* Admin Tabs Navigation */}
+      <nav className={styles.tabsNav} aria-label="Admin Navigation Tabs">
+        <button
+          type="button"
+          className={`${styles.tabButton} ${activeTab === "banners" ? styles.tabButtonActive : ""}`}
+          onClick={() => handleTabChange("banners")}
+        >
+          <MemberIcon name="image" size={15} />
+          Banners
+        </button>
+        <button
+          type="button"
+          className={`${styles.tabButton} ${activeTab === "events" ? styles.tabButtonActive : ""}`}
+          onClick={() => handleTabChange("events")}
+        >
+          <MemberIcon name="calendar" size={15} />
+          Events
+        </button>
+        <button
+          type="button"
+          className={`${styles.tabButton} ${activeTab === "spg" ? styles.tabButtonActive : ""}`}
+          onClick={() => handleTabChange("spg")}
+        >
+          <MemberIcon name="spg" size={15} />
+          SPG Requests
+        </button>
+        <button
+          type="button"
+          className={`${styles.tabButton} ${activeTab === "tickets" ? styles.tabButtonActive : ""}`}
+          onClick={() => handleTabChange("tickets")}
+        >
+          <MemberIcon name="tickets" size={15} />
+          Tickets
+        </button>
+        <button
+          type="button"
+          className={`${styles.tabButton} ${activeTab === "contributions" ? styles.tabButtonActive : ""}`}
+          onClick={() => handleTabChange("contributions")}
+        >
+          <MemberIcon name="award" size={15} />
+          Merit Auditing
+        </button>
+        <button
+          type="button"
+          className={`${styles.tabButton} ${activeTab === "members" ? styles.tabButtonActive : ""}`}
+          onClick={() => handleTabChange("members")}
+        >
+          <MemberIcon name="users" size={15} />
+          Members
+        </button>
+        <button
+          type="button"
+          className={`${styles.tabButton} ${activeTab === "ideas" ? styles.tabButtonActive : ""}`}
+          onClick={() => handleTabChange("ideas")}
+        >
+          <MemberIcon name="ideas" size={15} />
+          Idea Jar Review
+        </button>
+        <button
+          type="button"
+          className={`${styles.tabButton} ${activeTab === "articles" ? styles.tabButtonActive : ""}`}
+          onClick={() => handleTabChange("articles")}
+        >
+          <MemberIcon name="articles" size={15} />
+          Articles
+        </button>
+      </nav>
+
       {/* ========================================================================= */}
       {/* TAB 1: DASHBOARD HERO BANNERS */}
       {/* ========================================================================= */}
