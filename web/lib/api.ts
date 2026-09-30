@@ -175,6 +175,35 @@ export type EventDocument = {
   created_at?: string;
   updated_at?: string;
 };
+
+export type AttendeeProfile = {
+  id: string;
+  full_name: string;
+  email?: string;
+  avatar_url?: string | null;
+  batch_year?: number | null;
+  tier?: string;
+  role_label?: string | null;
+  bio?: string | null;
+  points?: number;
+};
+
+export type EventRegistration = {
+  id: string;
+  event_id: string;
+  user_id: string;
+  team_name?: string | null;
+  member_uids: string[];
+  spg_id?: string | null;
+  spg_status?: string | null;
+  status: "registered" | "waitlisted" | "checked_in" | "absent" | "disqualified" | "excused" | "cancelled";
+  checked_in_at?: string | null;
+  checked_in_by?: string | null;
+  attendance_note?: string | null;
+  registered_at: string;
+  user_profile?: AttendeeProfile | null;
+  member_profiles?: AttendeeProfile[] | null;
+};
 /* These mirror server/app/schemas/. See docs/DATA_CONTRACT.md. */
 
 export type SocialLinks = {
@@ -868,8 +897,49 @@ export const api = {
       body: JSON.stringify({ status }),
     }),
 
+  getEventRegistrations: (token: string, eventId: string) =>
+    request<EventRegistration[]>(`/events/${encodeURIComponent(eventId)}/registrations`, token),
+
   adminGetEventRegistrations: (token: string, eventId: string) =>
-    request<Record<string, unknown>[]>(`/events/${encodeURIComponent(eventId)}/registrations`, token),
+    request<EventRegistration[]>(`/events/${encodeURIComponent(eventId)}/registrations`, token),
+
+  adminUpdateRegistrationAttendance: (
+    token: string,
+    eventId: string,
+    registrationId: string,
+    payload: {
+      status: "checked_in" | "absent" | "disqualified" | "excused" | "registered" | "waitlisted" | "cancelled";
+      attendance_note?: string | null;
+      award_points?: boolean;
+    }
+  ) =>
+    request<EventRegistration>(
+      `/events/${encodeURIComponent(eventId)}/registrations/${encodeURIComponent(registrationId)}/attendance`,
+      token,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }
+    ),
+
+  adminAddManualRegistration: (
+    token: string,
+    eventId: string,
+    payload: {
+      user_id: string;
+      status: "checked_in" | "absent" | "disqualified" | "excused" | "registered" | "waitlisted" | "cancelled";
+      attendance_note?: string | null;
+      award_points?: boolean;
+    }
+  ) =>
+    request<EventRegistration>(
+      `/events/${encodeURIComponent(eventId)}/registrations/manual`,
+      token,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    ),
 
   adminRollCall: (token: string, eventId: string, attendeeUids: string[], awardPoints: boolean = true) =>
     request<Record<string, unknown>>(`/events/${encodeURIComponent(eventId)}/attendance/roll-call`, token, {

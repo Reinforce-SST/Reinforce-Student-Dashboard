@@ -10,7 +10,7 @@ Strictly follows zero user denormalization (pure UID references).
 from datetime import datetime, timezone
 import hashlib
 import io
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -47,7 +47,9 @@ from app.schemas.events import (
     FeedbackSubmitRequest,
     FeedbackSummaryResponse,
     MyRegistrationResponse,
+    ManualRegistrationRequest,
     PointsRewardConfig,
+    RegistrationAttendanceUpdateRequest,
     RegistrationDocument,
     RegistrationStatus,
     RollCallRequest,
@@ -1008,9 +1010,9 @@ def update_event_status(
 @router.get("/{id}/registrations", response_model=List[RegistrationDocument])
 def list_event_registrations(
     id: str,
-    current_user: Dict[str, Any] = Depends(get_admin_user),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
-    """View full list of registered attendees, teams, and waitlist (Admin only)."""
+    """View list of registered attendees, teams, and waitlist for the event with resolved user profiles."""
     event_doc = _get_event_doc_or_404(id)
     event_id = event_doc.id
 
@@ -1021,13 +1023,377 @@ def list_event_registrations(
         .stream()
     )
 
-    results: List[RegistrationDocument] = []
+    raw_regs: List[Dict[str, Any]] = []
+    all_uids: Set[str] = set()
+
     for r in regs:
         r_dict = r.to_dict() or {}
         r_dict["id"] = r.id
+        raw_regs.append(r_dict)
+        if r_dict.get("user_id"):
+            all_uids.add(r_dict["user_id"])
+        for m in r_dict.get("member_uids") or []:
+            if m:
+                all_uids.add(m)
+
+    user_profiles: Dict[str, Dict[str, Any]] = {}
+    if all_uids:
+        user_refs = [db.collection(USERS_COLLECTION).document(uid) for uid in all_uids]
+        try:
+            user_snaps = db.get_all(user_refs)
+            for snap in user_snaps:
+                if snap.exists:
+                    udata = snap.to_dict() or {}
+                    user_profiles[snap.id] = {
+                        "id": snap.id,
+                        "full_name": udata.get("full_name") or "Club Member",
+                        "email": udata.get("email") or "",
+                        "avatar_url": udata.get("avatar_url"),
+                        "batch_year": udata.get("batch_year"),
+                        "tier": udata.get("tier") or "beginner",
+                        "role_label": udata.get("role_label"),
+                        "bio": udata.get("bio"),
+                        "points": (udata.get("points") or {}).get("total", 0),
+                    }
+        except Exception:
+            for uid in all_uids:
+                snap = db.collection(USERS_COLLECTION).document(uid).get()
+                if snap.exists:
+                    udata = snap.to_dict() or {}
+                    user_profiles[uid] = {
+                        "id": uid,
+                        "full_name": udata.get("full_name") or "Club Member",
+                        "email": udata.get("email") or "",
+                        "avatar_url": udata.get("avatar_url"),
+                        "batch_year": udata.get("batch_year"),
+                        "tier": udata.get("tier") or "beginner",
+                        "role_label": udata.get("role_label"),
+                        "bio": udata.get("bio"),
+                        "points": (udata.get("points") or {}).get("total", 0),
+                    }
+
+    results: List[RegistrationDocument] = []
+    for r_dict in raw_regs:
+        uid = r_dict.get("user_id") or ""
+        r_dict["user_profile"] = user_profiles.get(uid)
+        r_dict["member_profiles"] = [
+            user_profiles.get(m, {"id": m, "full_name": m})
+            for m in (r_dict.get("member_uids") or ([uid] if uid else []))
+            if m
+        ]
         results.append(RegistrationDocument.model_validate(r_dict))
 
     return results
+
+
+def _hydrate_single_registration_profiles(r_dict: Dict[str, Any]) -> Dict[str, Any]:
+    uid = r_dict.get("user_id") or ""
+    member_uids = r_dict.get("member_uids") or ([uid] if uid else [])
+    target_uids = list({uid, *member_uids} - {""})
+
+    profiles: Dict[str, Any] = {}
+    if target_uids:
+        try:
+            refs = [db.collection(USERS_COLLECTION).document(u) for u in target_uids]
+            snaps = db.get_all(refs)
+            for snap in snaps:
+                if snap.exists:
+                    udata = snap.to_dict() or {}
+                    u = snap.id
+                    profiles[u] = {
+                        "id": u,
+                        "full_name": udata.get("full_name") or "Club Member",
+                        "email": udata.get("email") or "",
+                        "avatar_url": udata.get("avatar_url"),
+                        "batch_year": udata.get("batch_year"),
+                        "tier": udata.get("tier") or "beginner",
+                        "role_label": udata.get("role_label"),
+                        "bio": udata.get("bio"),
+                        "points": (udata.get("points") or {}).get("total", 0),
+                    }
+        except Exception:
+            for u in target_uids:
+                snap = db.collection(USERS_COLLECTION).document(u).get()
+                if snap.exists:
+                    udata = snap.to_dict() or {}
+                    profiles[u] = {
+                        "id": u,
+                        "full_name": udata.get("full_name") or "Club Member",
+                        "email": udata.get("email") or "",
+                        "avatar_url": udata.get("avatar_url"),
+                        "batch_year": udata.get("batch_year"),
+                        "tier": udata.get("tier") or "beginner",
+                        "role_label": udata.get("role_label"),
+                        "bio": udata.get("bio"),
+                        "points": (udata.get("points") or {}).get("total", 0),
+                    }
+
+    r_dict["user_profile"] = profiles.get(uid)
+    r_dict["member_profiles"] = [
+        profiles.get(m, {"id": m, "full_name": m})
+        for m in member_uids
+        if m
+    ]
+    return r_dict
+
+
+@router.patch(
+    "/{id}/registrations/{reg_id}/attendance",
+    response_model=RegistrationDocument,
+    summary="Update attendee/SPG attendance status (Admin only)",
+)
+def update_registration_attendance(
+    id: str,
+    reg_id: str,
+    payload: RegistrationAttendanceUpdateRequest,
+    current_user: Dict[str, Any] = Depends(get_admin_user),
+):
+    """Update attendee/SPG attendance status (Admin only).
+    Supports: checked_in (present), absent, disqualified, excused, registered, waitlisted, cancelled.
+    If status is changed to checked_in and award_points is True, awards attendance merit points.
+    """
+    admin_uid = get_user_uid(current_user)
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event = _doc_to_event_document(event_doc)
+
+    reg_ref = (
+        db.collection(EVENTS_COLLECTION)
+        .document(event_id)
+        .collection(REGISTRATIONS_SUBCOLLECTION)
+        .document(reg_id)
+    )
+    reg_snap = reg_ref.get()
+    if not reg_snap.exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Registration '{reg_id}' not found for this event",
+        )
+
+    reg_data = reg_snap.to_dict() or {}
+    now_timestamp = now_iso()
+    new_status = payload.status.value
+
+    updates: Dict[str, Any] = {
+        "status": new_status,
+        "updated_at": now_timestamp,
+    }
+    if payload.attendance_note is not None:
+        updates["attendance_note"] = payload.attendance_note
+
+    if new_status == RegistrationStatus.CHECKED_IN.value:
+        updates["checked_in_at"] = now_timestamp
+        updates["checked_in_by"] = admin_uid
+
+        if payload.award_points:
+            pts = event.points_reward.attendance_points
+            attendance_title = f"Event attendance: {event_id}"[:200]
+            occurred_at = _parse_utc(event.schedule.start_time)
+            target_uids = reg_data.get("member_uids") or (
+                [reg_data.get("user_id")] if reg_data.get("user_id") else []
+            )
+            for target_uid in target_uids:
+                try:
+                    contribution_service.award_user(
+                        db,
+                        user_id=target_uid,
+                        award=AdminAwardUser(
+                            category=ContributionCategory.ACHIEVEMENT,
+                            track=_contribution_track(event.points_reward.track),
+                            title=attendance_title,
+                            points=pts,
+                            event_id=event_id,
+                            occurred_at=occurred_at,
+                        ),
+                        admin_id=admin_uid,
+                    )
+                except ContributionError:
+                    pass
+
+    reg_ref.update(updates)
+
+    attendance_records = (
+        db.collection(CONTRIBUTIONS_COLLECTION)
+        .where("event_id", "==", event_id)
+        .stream()
+    )
+    attendance_title = f"Event attendance: {event_id}"[:200]
+    checked_in_count = len(
+        {
+            (record.to_dict() or {}).get("user_id")
+            for record in attendance_records
+            if (record.to_dict() or {}).get("title") == attendance_title
+            and (record.to_dict() or {}).get("status") == "approved"
+        }
+    )
+    db.collection(EVENTS_COLLECTION).document(event_id).update(
+        {
+            "stats.checked_in_count": checked_in_count,
+            "updated_at": now_timestamp,
+        }
+    )
+
+    fresh_reg = reg_ref.get().to_dict() or {}
+    fresh_reg["id"] = reg_id
+    _hydrate_single_registration_profiles(fresh_reg)
+    return RegistrationDocument.model_validate(fresh_reg)
+
+
+@router.post(
+    "/{id}/registrations/manual",
+    response_model=RegistrationDocument,
+    summary="Add a participant manually / walk-in to attendance (Admin only)",
+)
+def add_manual_event_registration(
+    id: str,
+    payload: ManualRegistrationRequest,
+    current_user: Dict[str, Any] = Depends(get_admin_user),
+):
+    """Add a student to attendance directly even if they haven't RSVPed (Admin only)."""
+    admin_uid = get_user_uid(current_user)
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event = _doc_to_event_document(event_doc)
+
+    # 1. Resolve user by UID or email
+    target_id = payload.user_id.strip()
+    user_doc = db.collection("users").document(target_id).get()
+    if not user_doc.exists:
+        # Try search by email
+        by_email = list(db.collection("users").where("email", "==", target_id.lower()).limit(1).stream())
+        if by_email:
+            user_doc = by_email[0]
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Student '{target_id}' not found in user directory.",
+            )
+
+    udata = user_doc.to_dict() or {}
+    target_uid = udata.get("id") or user_doc.id
+
+    regs_ref = (
+        db.collection(EVENTS_COLLECTION)
+        .document(event_id)
+        .collection(REGISTRATIONS_SUBCOLLECTION)
+    )
+
+    # Check if already registered
+    existing_regs = list(regs_ref.where("user_id", "==", target_uid).stream())
+    if not existing_regs:
+        existing_regs = list(regs_ref.where("member_uids", "array_contains", target_uid).stream())
+
+    now_timestamp = now_iso()
+    new_status = payload.status.value
+
+    if existing_regs:
+        reg_doc = existing_regs[0]
+        reg_id = reg_doc.id
+        reg_ref = regs_ref.document(reg_id)
+        reg_data = reg_doc.to_dict() or {}
+        reg_data["status"] = new_status
+        reg_data["updated_at"] = now_timestamp
+        if payload.attendance_note is not None:
+            reg_data["attendance_note"] = payload.attendance_note
+        if new_status == RegistrationStatus.CHECKED_IN.value:
+            reg_data["checked_in_at"] = now_timestamp
+            reg_data["checked_in_by"] = admin_uid
+        reg_ref.update({
+            "status": new_status,
+            "updated_at": now_timestamp,
+            "attendance_note": reg_data.get("attendance_note"),
+            "checked_in_at": reg_data.get("checked_in_at"),
+            "checked_in_by": reg_data.get("checked_in_by"),
+        })
+    else:
+        reg_id = f"reg_{uuid.uuid4().hex[:10]}"
+        reg_data = {
+            "id": reg_id,
+            "event_id": event_id,
+            "user_id": target_uid,
+            "team_name": None,
+            "member_uids": [target_uid],
+            "spg_id": None,
+            "spg_status": None,
+            "status": new_status,
+            "checked_in_at": now_timestamp if new_status == RegistrationStatus.CHECKED_IN.value else None,
+            "checked_in_by": admin_uid if new_status == RegistrationStatus.CHECKED_IN.value else None,
+            "attendance_note": payload.attendance_note or "Walk-in registration",
+            "registered_at": now_timestamp,
+            "updated_at": now_timestamp,
+        }
+        regs_ref.document(reg_id).set(reg_data)
+
+        # Update event registered_count
+        event_ref = db.collection(EVENTS_COLLECTION).document(event_id)
+        event_snap = event_ref.get()
+        fresh_stats = (event_snap.to_dict() or {}).get("stats", {})
+        current_reg_count = int(fresh_stats.get("registered_count", 0))
+        event_ref.update({
+            "stats.registered_count": current_reg_count + 1,
+            "updated_at": now_timestamp,
+        })
+
+    # Award points if checked_in and requested
+    if new_status == RegistrationStatus.CHECKED_IN.value and payload.award_points:
+        pts = event.points_reward.attendance_points
+        if pts:
+            attendance_title = f"Event attendance: {event_id}"[:200]
+            occurred_at = _parse_utc(event.schedule.start_time)
+            try:
+                contribution_service.award_user(
+                    db,
+                    user_id=target_uid,
+                    award=AdminAwardUser(
+                        category=ContributionCategory.ACHIEVEMENT,
+                        track=_contribution_track(event.points_reward.track),
+                        title=attendance_title,
+                        points=pts,
+                        event_id=event_id,
+                        occurred_at=occurred_at,
+                    ),
+                    admin_id=admin_uid,
+                )
+            except ContributionError:
+                pass
+
+    # Recalculate checked-in count
+    attendance_records = (
+        db.collection(CONTRIBUTIONS_COLLECTION)
+        .where("event_id", "==", event_id)
+        .stream()
+    )
+    attendance_title = f"Event attendance: {event_id}"[:200]
+    checked_in_count = len(
+        {
+            (record.to_dict() or {}).get("user_id")
+            for record in attendance_records
+            if (record.to_dict() or {}).get("title") == attendance_title
+            and (record.to_dict() or {}).get("status") == "approved"
+        }
+    )
+    db.collection(EVENTS_COLLECTION).document(event_id).update(
+        {
+            "stats.checked_in_count": checked_in_count,
+            "updated_at": now_timestamp,
+        }
+    )
+
+    prof = {
+        "id": target_uid,
+        "full_name": udata.get("full_name") or "Club Member",
+        "email": udata.get("email") or "",
+        "avatar_url": udata.get("avatar_url"),
+        "batch_year": udata.get("batch_year"),
+        "tier": udata.get("tier") or "beginner",
+        "role_label": udata.get("role_label"),
+        "bio": udata.get("bio"),
+        "points": (udata.get("points") or {}).get("total", 0),
+    }
+    reg_data["id"] = reg_id
+    reg_data["user_profile"] = prof
+    reg_data["member_profiles"] = [prof]
+    return RegistrationDocument.model_validate(reg_data)
 
 
 @router.post("/{id}/attendance/roll-call", response_model=RollCallResponse)
