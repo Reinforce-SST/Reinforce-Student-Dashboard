@@ -426,10 +426,20 @@ export const api = {
   getArticle: (slug: string) => request<ArticleDetail>(`/blogs/${encodeURIComponent(slug)}`),
   publishArticle: (token: string, body: { title: string; summary: string; content: string; tags: string[] }) =>
     request<ArticleDetail>("/blogs", token, { method: "POST", body: JSON.stringify({ ...body, status: "published" }) }),
-  listIdeas: (search = "", page = 1) => {
-    const query = new URLSearchParams({ page: String(page), page_size: "20" });
+  listIdeas: (
+    search = "",
+    page = 1,
+    pageSize = 12,
+    track?: string,
+    difficulty?: string,
+    sortBy?: string
+  ) => {
+    const query = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
     if (search.trim()) query.set("search", search.trim());
-    return request<{ items: IdeaSummary[]; has_more: boolean; total: number }>(`/ideas?${query}`);
+    if (track && track !== "all") query.set("track", track);
+    if (difficulty && difficulty !== "all") query.set("difficulty", difficulty);
+    if (sortBy) query.set("sort_by", sortBy);
+    return request<{ items: IdeaSummary[]; has_more: boolean; total: number; page: number; page_size: number }>(`/ideas?${query}`);
   },
   getIdea: (id: string, token?: string) => request<IdeaDetail>(`/ideas/${encodeURIComponent(id)}`, token),
   myIdeas: (token: string) => request<{ items: IdeaSummary[] }>("/ideas/my", token),
