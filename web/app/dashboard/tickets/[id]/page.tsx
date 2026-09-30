@@ -648,12 +648,19 @@ export default function TicketPage() {
 
             {ticket.fields && ticket.fields.length > 0 ? (
               <div className={styles.detailsList}>
-                {ticket.fields.map((field) => (
-                  <div key={field.label} className={styles.detailRow}>
-                    <span className={styles.detailLabel}>{field.label}</span>
-                    <span className={styles.detailValue}>{field.value}</span>
-                  </div>
-                ))}
+                {ticket.fields
+                  .filter((field) => {
+                    if (!field.value) return false;
+                    if (field.label === "Incident Summary" && field.value === ticket.title) return false;
+                    if (field.label === "Report Details" && field.value === ticket.description) return false;
+                    return true;
+                  })
+                  .map((field) => (
+                    <div key={field.label} className={styles.detailRow}>
+                      <span className={styles.detailLabel}>{field.label}</span>
+                      <span className={styles.detailValue}>{field.value}</span>
+                    </div>
+                  ))}
               </div>
             ) : (
               <p style={{ color: "#71717a", fontSize: "0.825rem", margin: 0 }}>

@@ -272,8 +272,6 @@ export default function TicketManagementClient() {
   const [feedbackTopic, setFeedbackTopic] = useState("");
   const [feedbackComments, setFeedbackComments] = useState("");
 
-  const [reportIncident, setReportIncident] = useState("");
-  const [reportDetails, setReportDetails] = useState("");
   const [partiesInvolved, setPartiesInvolved] = useState("");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -566,9 +564,7 @@ export default function TicketManagementClient() {
       };
     } else if (selectedCategory === "report") {
       fieldsObj = {
-        "Incident Summary": reportIncident,
-        "Report Details": reportDetails,
-        "Parties Involved": partiesInvolved,
+        ...(partiesInvolved.trim() ? { "Parties Involved": partiesInvolved.trim() } : {}),
         "Is Confidential": true,
       };
     }
@@ -647,6 +643,7 @@ export default function TicketManagementClient() {
       setNewOutcome("");
       setFeedbackTopic("");
       setFeedbackComments("");
+      setPartiesInvolved("");
       closeModal();
       setSuccessMessage(created.category === "report" ? "Confidential report submitted to the club team." : `Ticket created successfully (${created.id})!`);
       setTimeout(() => setSuccessMessage(""), 4500);
@@ -973,12 +970,19 @@ export default function TicketManagementClient() {
                     Ticket Details & Specifications
                   </span>
                   <div className={styles.fieldsTable}>
-                    {Object.entries(selectedTicket.fields).map(([key, value]) => (
-                      <div key={key} className={styles.fieldRow}>
-                        <span className={styles.fieldKey}>{key}:</span>
-                        <span className={styles.fieldVal}>{String(value)}</span>
-                      </div>
-                    ))}
+                    {Object.entries(selectedTicket.fields)
+                      .filter(([key, val]) => {
+                        if (!val) return false;
+                        if (key === "Incident Summary" && val === selectedTicket.title) return false;
+                        if (key === "Report Details" && val === selectedTicket.description) return false;
+                        return true;
+                      })
+                      .map(([key, value]) => (
+                        <div key={key} className={styles.fieldRow}>
+                          <span className={styles.fieldKey}>{key}:</span>
+                          <span className={styles.fieldVal}>{String(value)}</span>
+                        </div>
+                      ))}
                   </div>
                 </div>
               )}
@@ -1066,7 +1070,7 @@ export default function TicketManagementClient() {
               <div className={styles.formGroup}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <label className={styles.inputLabel} htmlFor="ticket-modal-title">
-                    Title
+                    {selectedCategory === "report" ? "Incident Summary / Title" : "Title"}
                   </label>
                   <span
                     style={{
@@ -1090,7 +1094,7 @@ export default function TicketManagementClient() {
                       : selectedCategory === "resource_request"
                       ? "e.g., Request for 4x A100 GPU Cluster Allocation"
                       : selectedCategory === "report"
-                      ? "e.g., Confidential Code of Conduct Incident Report"
+                      ? "e.g., Incident Summary: Harassment or Code of Conduct concern"
                       : selectedCategory === "idea_jar"
                       ? "e.g., Decentralized GPU pooling platform"
                       : selectedCategory === "feedback"
@@ -1106,7 +1110,7 @@ export default function TicketManagementClient() {
               <div className={styles.formGroup}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <label className={styles.inputLabel} htmlFor="ticket-modal-desc">
-                    Description
+                    {selectedCategory === "report" ? "Detailed Incident Report" : "Description"}
                   </label>
                   <span
                     style={{
@@ -1122,7 +1126,11 @@ export default function TicketManagementClient() {
                   id="ticket-modal-desc"
                   maxLength={2000}
                   className={styles.textareaInput}
-                  placeholder="Detailed context and rationale for this ticket."
+                  placeholder={
+                    selectedCategory === "report"
+                      ? "Provide all relevant details, timeline, context, and impact. This report is strictly confidential and visible only to club executive leads."
+                      : "Detailed context and rationale for this ticket."
+                  }
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
                 />
@@ -1897,33 +1905,8 @@ export default function TicketManagementClient() {
               {selectedCategory === "report" && (
                 <>
                   <div className={styles.formGroup}>
-                    <label className={styles.inputLabel} htmlFor="modal-report-incident">
-                      Incident Summary
-                    </label>
-                    <input
-                      id="modal-report-incident"
-                      type="text"
-                      className={styles.textInput}
-                      value={reportIncident}
-                      onChange={(e) => setReportIncident(e.target.value)}
-                    />
-                  </div>
-
-                  <div className={styles.formGroup}>
-                    <label className={styles.inputLabel} htmlFor="modal-report-details">
-                      Report Details
-                    </label>
-                    <textarea
-                      id="modal-report-details"
-                      className={styles.textareaInput}
-                      value={reportDetails}
-                      onChange={(e) => setReportDetails(e.target.value)}
-                    />
-                  </div>
-
-                  <div className={styles.formGroup}>
                     <label className={styles.inputLabel} htmlFor="modal-report-parties">
-                      Parties Involved
+                      Parties Involved (Optional)
                     </label>
                     <input
                       id="modal-report-parties"
