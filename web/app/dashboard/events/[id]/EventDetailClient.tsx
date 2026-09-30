@@ -279,6 +279,16 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
       <section className={styles.heroBanner} aria-label="Event Hero Banner">
         <div className={styles.heroGlow} />
 
+        {event.banner_url && (
+          <div className={styles.eventCoverWrapper}>
+            <img
+              src={event.banner_url}
+              alt={event.title}
+              className={styles.eventCoverImage}
+            />
+          </div>
+        )}
+
         <div className={styles.heroTopMeta}>
           <h1 className={styles.eventTitle}>{event.title}</h1>
         </div>

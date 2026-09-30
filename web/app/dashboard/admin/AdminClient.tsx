@@ -13,6 +13,8 @@ import PaginationBar from "@/components/dashboard/PaginationBar";
 import LoadingBar from "@/components/dashboard/LoadingBar";
 import AdminTicketsPanel from "./AdminTicketsPanel";
 import AdminContentPanel from "./AdminContentPanel";
+import AdminEventEditPanel from "./AdminEventEditPanel";
+import AdminBannerEditPanel from "./AdminBannerEditPanel";
 import MemberRoleRow from "./MemberRoleRow";
 import { useDebounce } from "@/lib/useDebounce";
 import styles from "./Admin.module.css";
@@ -54,8 +56,13 @@ export default function AdminClient() {
     setSubmitSuccess(null);
     setSubmitError(null);
     setDirectoryMessage("");
+    setBannerSubTab("create");
+    setEventSubTab("create");
     router.push(`/dashboard/admin?tab=${tab}`);
   };
+
+  const [bannerSubTab, setBannerSubTab] = useState<"create" | "edit">("create");
+  const [eventSubTab, setEventSubTab] = useState<"create" | "edit">("create");
 
   // --- TAB 1: Dashboard Hero Banner State ---
   const [bannerStartDateTime, setBannerStartDateTime] = useState("");
@@ -685,7 +692,36 @@ export default function AdminClient() {
       {/* TAB 1: DASHBOARD HERO BANNERS */}
       {/* ========================================================================= */}
       {activeTab === "banners" && (
-        <div className={styles.managerGrid}>
+        <div>
+          <div className={styles.subTabsRow}>
+            <button
+              type="button"
+              className={`${styles.subTabBtn} ${bannerSubTab === "create" ? styles.subTabBtnActive : ""}`}
+              onClick={() => {
+                setBannerSubTab("create");
+                setSubmitSuccess(null);
+                setSubmitError(null);
+              }}
+            >
+              <MemberIcon name="plus" size={14} />
+              Create Banner
+            </button>
+            <button
+              type="button"
+              className={`${styles.subTabBtn} ${bannerSubTab === "edit" ? styles.subTabBtnActive : ""}`}
+              onClick={() => {
+                setBannerSubTab("edit");
+                setSubmitSuccess(null);
+                setSubmitError(null);
+              }}
+            >
+              <MemberIcon name="edit" size={14} />
+              Edit Existing Banner
+            </button>
+          </div>
+
+          {bannerSubTab === "create" ? (
+            <div className={styles.managerGrid}>
           <div className={styles.card}>
             <div className={styles.cardHeader}>
               <div>
@@ -895,13 +931,52 @@ export default function AdminClient() {
             </div>
           </div>
         </div>
+      ) : (
+        <AdminBannerEditPanel
+          token={token || ""}
+          onSaved={(msg) => {
+            setSubmitSuccess(msg);
+            setSubmitError(null);
+          }}
+        />
       )}
+    </div>
+  )}
 
       {/* ========================================================================= */}
       {/* TAB 2: CLUB EVENTS (STANDALONE PAGE & CALENDAR) */}
       {/* ========================================================================= */}
       {activeTab === "events" && (
-        <div className={styles.card}>
+        <div>
+          <div className={styles.subTabsRow}>
+            <button
+              type="button"
+              className={`${styles.subTabBtn} ${eventSubTab === "create" ? styles.subTabBtnActive : ""}`}
+              onClick={() => {
+                setEventSubTab("create");
+                setSubmitSuccess(null);
+                setSubmitError(null);
+              }}
+            >
+              <MemberIcon name="plus" size={14} />
+              Create Event
+            </button>
+            <button
+              type="button"
+              className={`${styles.subTabBtn} ${eventSubTab === "edit" ? styles.subTabBtnActive : ""}`}
+              onClick={() => {
+                setEventSubTab("edit");
+                setSubmitSuccess(null);
+                setSubmitError(null);
+              }}
+            >
+              <MemberIcon name="edit" size={14} />
+              Edit Existing Event
+            </button>
+          </div>
+
+          {eventSubTab === "create" ? (
+            <div className={styles.card}>
           <div className={styles.cardHeader}>
             <div>
               <h3 className={styles.cardTitle}>
@@ -1285,7 +1360,17 @@ export default function AdminClient() {
             </button>
           </form>
         </div>
+      ) : (
+        <AdminEventEditPanel
+          token={token || ""}
+          onSaved={(msg) => {
+            setSubmitSuccess(msg);
+            setSubmitError(null);
+          }}
+        />
       )}
+    </div>
+  )}
 
       {activeTab === "spg" && <AdminTicketsPanel token={token} spgOnly />}
 
