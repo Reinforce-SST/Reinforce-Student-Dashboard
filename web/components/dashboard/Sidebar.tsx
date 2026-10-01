@@ -25,6 +25,7 @@ const studentMainMenuLinks: NavLink[] = [
 
 const studentResourceLinks: NavLink[] = [
   { href: "/dashboard/ideas", label: "Idea Jar", icon: "ideas" },
+  { href: "/dashboard/resources", label: "Learning Resources", icon: "book" },
   { href: "/dashboard/leaderboard", label: "Leaderboard", icon: "leaderboard" },
 ];
 
@@ -40,6 +41,7 @@ const adminDirectoryLinks: NavLink[] = [
   { href: "/dashboard/admin?tab=members", label: "Member Directory", icon: "users" },
   { href: "/dashboard/admin?tab=articles", label: "Article Publisher", icon: "articles" },
   { href: "/dashboard/admin?tab=ideas", label: "Idea Jar Review", icon: "ideas" },
+  { href: "/dashboard/admin?tab=resources", label: "Learning Resources", icon: "book" },
 ];
 
 export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {

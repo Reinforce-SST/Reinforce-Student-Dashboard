@@ -7,6 +7,7 @@ export type IconName =
   | "tickets"
   | "events"
   | "articles"
+  | "book"
   | "ideas"
   | "leaderboard"
   | "profile"
@@ -141,6 +142,12 @@ const paths: Record<IconName, ReactNode> = {
   ),
   menu: <path d="M4 6h16M4 12h16M4 18h16" />,
   close: <path d="m6 6 12 12M6 18 18 6" />,
+  book: (
+    <>
+      <path d="M12 7v14" />
+      <path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" />
+    </>
+  ),
   external: <path d="M8 5h11v11M19 5 5 19" />,
   lightning: <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />,
   location: (

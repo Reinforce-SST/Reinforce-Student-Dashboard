@@ -14,6 +14,7 @@ import LoadingBar from "@/components/dashboard/LoadingBar";
 import AdminTicketsPanel from "./AdminTicketsPanel";
 import AdminPendingContributionsPanel from "./AdminPendingContributionsPanel";
 import AdminContentPanel from "./AdminContentPanel";
+import AdminLearningResourcesPanel from "./AdminLearningResourcesPanel";
 import AdminEventEditPanel from "./AdminEventEditPanel";
 import AdminBannerEditPanel from "./AdminBannerEditPanel";
 import MemberRoleRow from "./MemberRoleRow";
@@ -28,7 +29,8 @@ type AdminTab =
   | "contributions"
   | "members"
   | "articles"
-  | "ideas";
+  | "ideas"
+  | "resources";
 
 function formatBannerDate(startStr: string): string {
   const start = new Date(startStr);
@@ -740,6 +742,14 @@ export default function AdminClient() {
         >
           <MemberIcon name="articles" size={15} />
           Articles
+        </button>
+        <button
+          type="button"
+          className={`${styles.tabButton} ${activeTab === "resources" ? styles.tabButtonActive : ""}`}
+          onClick={() => handleTabChange("resources")}
+        >
+          <MemberIcon name="book" size={15} />
+          Learning Resources
         </button>
       </nav>
 
@@ -1849,6 +1859,8 @@ export default function AdminClient() {
       )}
 
       {(activeTab === "articles" || activeTab === "ideas") && <AdminContentPanel token={token} kind={activeTab} />}
+
+      {activeTab === "resources" && <AdminLearningResourcesPanel token={token} />}
     </div>
   );
 }
