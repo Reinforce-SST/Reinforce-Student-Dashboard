@@ -82,7 +82,7 @@ test("an admin can publish a research paper", async ({ page, app }) => {
   await page.getByLabel("Link to the paper").fill("https://arxiv.org/abs/2509.01234");
   await page.getByLabel("Title").fill("Scaling laws revisited");
   await page.getByLabel("Summary").fill("Our reading-group write-up.");
-  await page.getByLabel("Article content (plain text)").fill("What we found.");
+  await page.getByLabel("Article content (Markdown)").fill("What we found.");
   await page.getByRole("button", { name: /Publish article/ }).click();
 
   await expect.poll(() => app.world.calls.find(call => call.method === "POST" && call.path === "/blogs")).toBeTruthy();
