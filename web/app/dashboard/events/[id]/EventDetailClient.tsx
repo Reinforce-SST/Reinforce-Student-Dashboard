@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMember } from "@/lib/useMember";
 import { api } from "@/lib/api";
 import MemberIcon from "@/components/dashboard/MemberIcon";
+import MemberPicker, { type PickedMember } from "@/components/dashboard/MemberPicker";
 import { type EventDocument } from "@/lib/api";
 import { getEventGraduationBatches } from "@/lib/eventsData";
 import EventAttendeesPanel from "./EventAttendeesPanel";
@@ -169,7 +170,9 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
   const [registrationBusy, setRegistrationBusy] = useState(false);
   const [registrationError, setRegistrationError] = useState("");
   const [teamName, setTeamName] = useState("");
-  const [teammateIds, setTeammateIds] = useState("");
+  const [teammates, setTeammates] = useState<PickedMember[]>([]);
+  const minTeamSize = Math.max(1, event.participation?.min_team_size ?? 1);
+  const maxTeamSize = Math.max(1, event.participation?.max_team_size ?? 1);
   const [registeredCount, setRegisteredCount] = useState(event.stats?.registered_count ?? 0);
   const [deadlinePassed, setDeadlinePassed] = useState(false);
 
@@ -203,9 +206,14 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
         setIsRegistered(false);
         setRegistrationStatus("");
       } else {
-        const memberUids = teammateIds.split(/[\s,]+/).map((id) => id.trim()).filter(Boolean);
+        const memberUids = teammates.map((member) => member.id);
         if (event.participation?.mode === "team" && !teamName.trim()) {
           setRegistrationError("Enter a team name before registering.");
+          return;
+        }
+        // The team counts you; the server enforces the same rule.
+        if (event.participation?.mode === "team" && memberUids.length + 1 < minTeamSize) {
+          setRegistrationError(`This event needs teams of at least ${minTeamSize}. Add ${minTeamSize - 1 - memberUids.length} more ${minTeamSize - 1 - memberUids.length === 1 ? "teammate" : "teammates"}.`);
           return;
         }
         const result = await api.registerForEvent(token, event.id, event.participation?.mode === "team"
@@ -216,7 +224,9 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
       const refreshed = await api.getEvent(event.id, token);
       setRegisteredCount(refreshed.stats?.registered_count ?? registeredCount);
     } catch (err) {
-      setRegistrationError(err instanceof Error ? err.message : "Registration could not be updated.");
+      // Server messages name members by account ID; show the teammate's name.
+      const message = err instanceof Error ? err.message : "Registration could not be updated.";
+      setRegistrationError(teammates.reduce((text, member) => text.split(member.id).join(member.full_name), message));
     } finally {
       setRegistrationBusy(false);
     }
@@ -381,15 +391,21 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                   onChange={(e) => setTeamName(e.target.value)}
                   className={styles.teamFieldInput}
                 />
-                <input
-                  aria-label="Teammate user IDs"
-                  placeholder="Teammate IDs, comma-separated"
-                  value={teammateIds}
-                  onChange={(e) => setTeammateIds(e.target.value)}
-                  className={styles.teamFieldInput}
-                />
+                {maxTeamSize > 1 && (
+                  <MemberPicker
+                    token={token}
+                    label="Teammates"
+                    selected={teammates}
+                    onChange={setTeammates}
+                    excludeIds={profile?.id ? [profile.id] : []}
+                    max={maxTeamSize - 1}
+                  />
+                )}
                 <span className={styles.teamHintText}>
-                  Your account is included automatically.
+                  You are included automatically.{" "}
+                  {minTeamSize === maxTeamSize
+                    ? `Teams have exactly ${maxTeamSize} ${maxTeamSize === 1 ? "member" : "members"}.`
+                    : `Teams have ${minTeamSize}–${maxTeamSize} members.`}
                 </span>
               </div>
             )}

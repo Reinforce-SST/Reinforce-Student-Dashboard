@@ -252,6 +252,9 @@ export const leaderboardRows = [
 export const directoryRows = [
   { id: memberProfile.id, full_name: memberProfile.full_name, email: memberProfile.email, is_verified: true, is_member: true, is_admin: false, batch_year: 2028, tier: "advanced", points: memberProfile.points, skills: memberProfile.skills, social_links: {} },
   { id: "member-2", full_name: "Second Member", email: "second@sst.scaler.com", is_verified: true, is_member: true, is_admin: false, batch_year: 2027, tier: "beginner", points: { total: 180, kaggle: 180, product: 0, research: 0, misc: 0 }, skills: ["SQL"], social_links: {} },
+  { id: "member-3", full_name: "Third Member", email: "third@sst.scaler.com", is_verified: true, is_member: true, is_admin: false, batch_year: 2027, tier: "beginner", points: { total: 90, kaggle: 0, product: 90, research: 0, misc: 0 }, skills: ["Figma"], social_links: {} },
+  { id: "member-4", full_name: "Fourth Member", email: "fourth@sst.scaler.com", is_verified: true, is_member: true, is_admin: false, batch_year: 2028, tier: "beginner", points: { total: 40, kaggle: 0, product: 0, research: 40, misc: 0 }, skills: ["PyTorch"], social_links: {} },
+  { id: "member-5", full_name: "Fifth Member", email: "fifth@sst.scaler.com", is_verified: true, is_member: true, is_admin: false, batch_year: 2028, tier: "beginner", points: { total: 10, kaggle: 0, product: 0, research: 10, misc: 0 }, skills: [], social_links: {} },
 ];
 
 export const learningResources = [
