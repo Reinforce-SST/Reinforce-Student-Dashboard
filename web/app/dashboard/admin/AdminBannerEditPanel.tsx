@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { api, type EventSummaryItem, type EventDocument } from "@/lib/api";
+import { api, type EventSummaryItem, type BannerDocument } from "@/lib/api";
 import { getBannerPresentation, isBannerDestination } from "@/lib/dashboardData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import styles from "./Admin.module.css";
@@ -38,7 +38,7 @@ export default function AdminBannerEditPanel({
   token: string;
   onSaved: (msg: string) => void;
 }) {
-  const [banners, setBanners] = useState<EventSummaryItem[]>([]);
+  const [banners, setBanners] = useState<BannerDocument[]>([]);
   const [loadingList, setLoadingList] = useState(false);
   const [selectedId, setSelectedId] = useState<string>("");
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -46,6 +46,11 @@ export default function AdminBannerEditPanel({
   // Search & Filter for List Area
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+
+  // Autofill State
+  const [autofillEvents, setAutofillEvents] = useState<EventSummaryItem[]>([]);
+  const [loadingAutofillEvents, setLoadingAutofillEvents] = useState(false);
+  const [showAutofillModal, setShowAutofillModal] = useState(false);
 
   // Form State
   const [title, setTitle] = useState("");
@@ -75,16 +80,48 @@ export default function AdminBannerEditPanel({
     banner_cta_url: ctaUrl,
   });
 
+  const handleOpenAutofill = async () => {
+    setShowAutofillModal(true);
+    if (token) {
+      setLoadingAutofillEvents(true);
+      try {
+        const res = await api.listEvents(token, { limit: 100 });
+        setAutofillEvents(res.events || []);
+      } catch (e) {
+        console.error("Could not load events for autofill", e);
+      } finally {
+        setLoadingAutofillEvents(false);
+      }
+    }
+  };
+
+  const handleApplyAutofill = (ev: EventSummaryItem) => {
+    setTitle(ev.title || "");
+    setDescription(ev.description || "");
+    if (ev.schedule?.start_time) {
+      setStartDateTime(formatDateTimeInput(ev.schedule.start_time));
+    }
+    if (ev.schedule?.end_time) {
+      setEndDateTime(formatDateTimeInput(ev.schedule.end_time));
+    }
+    if (ev.banner_url) {
+      setBannerUrl(ev.banner_url);
+      setBannerFile(null);
+      setBannerFilePreview(null);
+    }
+    setBadgeText(ev.event_type ? ev.event_type.toUpperCase() : "EVENT");
+    setCtaText("View Event →");
+    setCtaUrl(`/dashboard/events/${ev.slug || ev.id}`);
+    setShowAutofillModal(false);
+  };
+
   // Load banners
   const loadBanners = useCallback(async () => {
     if (!token) return;
     setLoadingList(true);
     try {
-      const res = await api.listEvents(token, { limit: 100 });
-      const bannerList = (res.events || []).filter((ev) =>
-        ev.event_type?.toLowerCase().includes("banner")
-      );
-      setBanners(bannerList);
+      const res = await api.listBanners(token, { limit: 100 });
+      setBanners(res.banners || []);
     } catch (e) {
       console.error("Failed to load banners list", e);
     } finally {
@@ -104,18 +141,18 @@ export default function AdminBannerEditPanel({
     setErrorMessage(null);
 
     api
-      .getEvent(selectedId, token)
-      .then((ev: EventDocument) => {
+      .getBanner(selectedId, token)
+      .then((b: BannerDocument) => {
         if (!active) return;
-        setTitle(ev.title || "");
-        setDescription(ev.description || "");
-        setStartDateTime(formatDateTimeInput(ev.schedule?.start_time));
-        setEndDateTime(formatDateTimeInput(ev.schedule?.end_time));
-        setBadgeText(ev.banner_badge_text || "");
-        setCtaText(ev.banner_cta_text || "");
-        setCtaUrl(ev.banner_cta_url || "");
-        setStatus(ev.status || "published");
-        setBannerUrl(ev.banner_url || "");
+        setTitle(b.title || "");
+        setDescription(b.description || "");
+        setStartDateTime(formatDateTimeInput(b.schedule?.start_time));
+        setEndDateTime(formatDateTimeInput(b.schedule?.end_time));
+        setBadgeText(b.banner_badge_text || "");
+        setCtaText(b.banner_cta_text || "");
+        setCtaUrl(b.banner_cta_url || "");
+        setStatus(b.status || "published");
+        setBannerUrl(b.banner_url || "");
         setBannerFile(null);
         setBannerFilePreview(null);
       })
@@ -204,7 +241,7 @@ export default function AdminBannerEditPanel({
 
       let imageUrl = bannerUrl.trim();
       if (bannerFile) {
-        imageUrl = (await api.adminUploadEventMedia(token, bannerFile)).url;
+        imageUrl = (await api.adminUploadBannerMedia(token, bannerFile)).url;
         setBannerUrl(imageUrl);
         setBannerFile(null);
         setBannerFilePreview(null);
@@ -217,9 +254,6 @@ export default function AdminBannerEditPanel({
       const payload = {
         title: title.trim(),
         description: description.trim(),
-        event_type: "Featured Banner",
-        track: "all",
-        format: "offline",
         schedule: {
           start_time: startDateObj.toISOString(),
           end_time: endDateObj ? endDateObj.toISOString() : undefined,
@@ -232,11 +266,26 @@ export default function AdminBannerEditPanel({
         status,
       };
 
-      const updated = await api.adminUpdateEvent(token, selectedId, payload);
+      const updated = await api.adminUpdateBanner(token, selectedId, payload);
       onSaved(`Dashboard hero banner "${updated.title}" updated successfully!`);
       loadBanners();
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : "Failed to update banner.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteBanner = async () => {
+    if (!selectedId || !confirm("Are you sure you want to delete this dashboard hero banner?")) return;
+    setIsSubmitting(true);
+    try {
+      await api.adminDeleteBanner(token, selectedId);
+      onSaved("Dashboard hero banner deleted successfully!");
+      setSelectedId("");
+      loadBanners();
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Failed to delete banner.");
     } finally {
       setIsSubmitting(false);
     }
@@ -401,18 +450,87 @@ export default function AdminBannerEditPanel({
         {/* Header Banner: Back to List */}
         <div className={styles.editingBannerBox}>
           <div className={styles.editingBannerText}>
-            <button
-              type="button"
-              onClick={() => setSelectedId("")}
-              className={styles.backToListBtn}
-            >
-              ← Back to All Banners
-            </button>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <button
+                type="button"
+                onClick={() => setSelectedId("")}
+                className={styles.backToListBtn}
+              >
+                ← Back to All Banners
+              </button>
+              <button
+                type="button"
+                className={styles.viewActionBtn}
+                onClick={handleOpenAutofill}
+                title="Autofill from an existing event"
+              >
+                <MemberIcon name="lightning" size={13} /> Autofill from Event
+              </button>
+            </div>
             <span>
               <strong>Currently Editing:</strong> {title || "Selected Banner"}
             </span>
           </div>
         </div>
+
+        {showAutofillModal && (
+          <div style={{
+            background: "#16161a",
+            border: "1px solid #33333e",
+            borderRadius: "10px",
+            padding: "16px",
+            marginBottom: "16px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "10px",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--brand, #E5B731)" }}>
+                Select an existing event to autofill banner details:
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowAutofillModal(false)}
+                style={{ background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: "16px" }}
+              >
+                ✕
+              </button>
+            </div>
+            {loadingAutofillEvents ? (
+              <p style={{ fontSize: "12px", color: "#a0a0a8", margin: 0 }}>Loading club events...</p>
+            ) : autofillEvents.length === 0 ? (
+              <p style={{ fontSize: "12px", color: "#a0a0a8", margin: 0 }}>No existing events found.</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "200px", overflowY: "auto" }}>
+                {autofillEvents.map((ev) => (
+                  <button
+                    key={ev.id}
+                    type="button"
+                    onClick={() => handleApplyAutofill(ev)}
+                    style={{
+                      textAlign: "left",
+                      background: "#1e1e24",
+                      border: "1px solid #2b2b36",
+                      borderRadius: "6px",
+                      padding: "8px 12px",
+                      color: "#fff",
+                      cursor: "pointer",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      fontSize: "12px",
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>{ev.title}</span>
+                    <span style={{ fontSize: "11px", color: "#8c8c98" }}>
+                      {ev.banner_url ? "📷 Has Cover" : "No Cover"} • Click to Fill
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {loadingDetail && (
           <div style={{ textAlign: "center", padding: "40px", color: "#e5b731" }}>
@@ -587,6 +705,16 @@ export default function AdminBannerEditPanel({
               <button type="submit" disabled={isSubmitting} className={styles.publishBtn} style={{ flex: 1 }}>
                 <MemberIcon name="check" size={16} />
                 {isSubmitting ? "Updating Banner…" : "Update Dashboard Hero Banner"}
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteBanner}
+                disabled={isSubmitting}
+                className={styles.viewActionBtn}
+                style={{ borderColor: "#ef4444", color: "#ef4444" }}
+                title="Delete this banner"
+              >
+                <MemberIcon name="trash" size={14} /> Delete
               </button>
               <button
                 type="button"

@@ -182,6 +182,25 @@ export type EventDocument = {
   updated_at?: string;
 };
 
+export type BannerDocument = {
+  id: string;
+  title: string;
+  description: string;
+  banner_url?: string | null;
+  banner_badge_text?: string | null;
+  banner_cta_text?: string | null;
+  banner_cta_url?: string | null;
+  schedule: {
+    start_time: string;
+    end_time?: string | null;
+    duration_minutes?: number | null;
+  };
+  status: "published" | "draft" | "archived" | string;
+  created_by?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type AttendeeProfile = {
   id: string;
   full_name: string;
@@ -878,6 +897,65 @@ export const api = {
   }) => request<unknown>(`/events/${encodeURIComponent(id)}/feedback`, token, {
     method: "POST", body: JSON.stringify(payload),
   }),
+
+  /* ----------------------------------------------------------- Banner APIs */
+  listBanners: (token?: string | null, params?: { status?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const query = qs.toString();
+    return request<{ banners: BannerDocument[]; total: number }>(
+      `/banners${query ? `?${query}` : ""}`,
+      token || undefined
+    );
+  },
+
+  getBanner: (id: string, token?: string | null) =>
+    request<BannerDocument>(`/banners/${encodeURIComponent(id)}`, token || undefined),
+
+  adminCreateBanner: (token: string, payload: Record<string, unknown>) =>
+    request<BannerDocument>("/banners", token, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  adminUpdateBanner: (token: string, bannerId: string, payload: Record<string, unknown>) =>
+    request<BannerDocument>(`/banners/${encodeURIComponent(bannerId)}`, token, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  adminDeleteBanner: (token: string, bannerId: string) =>
+    request<{ message: string }>(`/banners/${encodeURIComponent(bannerId)}`, token, {
+      method: "DELETE",
+    }),
+
+  adminUploadBannerMedia: async (token: string, file: File): Promise<{ url: string }> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const response = await fetch(`${BASE}/banners/media`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new ApiError(typeof body?.detail === "string" ? body.detail : `Image upload failed (${response.status}).`, response.status);
+      }
+      return response.json() as Promise<{ url: string }>;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new ApiError("Image upload timed out. Try again.", 504);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  },
 
   /* ----------------------------------------------------------- Admin APIs */
   adminUploadEventMedia: async (token: string, file: File): Promise<{ url: string }> => {

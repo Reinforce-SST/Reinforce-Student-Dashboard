@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useMember } from "@/lib/useMember";
 import { useAdminMode } from "@/lib/useAdminMode";
-import { api, type StudentProfile } from "@/lib/api";
+import { api, type StudentProfile, type EventSummaryItem } from "@/lib/api";
 import { getEventGraduationBatches } from "@/lib/eventsData";
 import { getBannerPresentation, isBannerDestination } from "@/lib/dashboardData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
@@ -35,6 +35,19 @@ function formatBannerDate(startStr: string): string {
   return startStr && Number.isFinite(start.getTime())
     ? start.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" })
     : "Date not set";
+}
+
+function formatDateTimeInput(isoStr?: string | null): string {
+  if (!isoStr) return "";
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return "";
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+  } catch {
+    return "";
+  }
 }
 
 export default function AdminClient() {
@@ -85,6 +98,47 @@ export default function AdminClient() {
   const [bannerUrl, setBannerUrl] = useState("");
   const [bannerFilePreview, setBannerFilePreview] = useState<string | null>(null);
   const [bannerFile, setBannerFile] = useState<File | null>(null);
+
+  // Autofill from Existing Event State
+  const [autofillEvents, setAutofillEvents] = useState<EventSummaryItem[]>([]);
+  const [loadingAutofillEvents, setLoadingAutofillEvents] = useState(false);
+  const [showAutofillModal, setShowAutofillModal] = useState(false);
+
+  const handleOpenAutofill = async () => {
+    setShowAutofillModal(true);
+    if (token) {
+      setLoadingAutofillEvents(true);
+      try {
+        const res = await api.listEvents(token, { limit: 100 });
+        setAutofillEvents(res.events || []);
+      } catch (e) {
+        console.error("Could not load events for autofill", e);
+      } finally {
+        setLoadingAutofillEvents(false);
+      }
+    }
+  };
+
+  const handleApplyAutofill = (ev: EventSummaryItem) => {
+    setBannerTitle(ev.title || "");
+    setBannerDescription(ev.description || "");
+    if (ev.schedule?.start_time) {
+      setBannerStartDateTime(formatDateTimeInput(ev.schedule.start_time));
+    }
+    if (ev.schedule?.end_time) {
+      setBannerEndDateTime(formatDateTimeInput(ev.schedule.end_time));
+    }
+    if (ev.banner_url) {
+      setBannerUrl(ev.banner_url);
+      setBannerFile(null);
+      setBannerFilePreview(null);
+    }
+    setBannerBadgeText(ev.event_type ? ev.event_type.toUpperCase() : "EVENT");
+    setBannerCtaText("View Event →");
+    setBannerCtaUrl(`/dashboard/events/${ev.slug || ev.id}`);
+    setShowAutofillModal(false);
+    setSubmitSuccess(`Autofilled banner details from event "${ev.title}"!`);
+  };
 
   // --- TAB 2: Full Club Event Publisher State ---
   const [eventTitle, setEventTitle] = useState("");
@@ -344,7 +398,7 @@ export default function AdminClient() {
         throw new Error("Use a site path starting with / or a full HTTPS URL for the button destination.");
       }
       const imageUrl = bannerFile
-        ? (await api.adminUploadEventMedia(token, bannerFile)).url
+        ? (await api.adminUploadBannerMedia(token, bannerFile)).url
         : bannerUrl.trim();
       if (bannerFile) {
         setBannerUrl(imageUrl);
@@ -358,9 +412,6 @@ export default function AdminClient() {
       const payload = {
         title: bannerTitle.trim(),
         description: bannerDescription.trim(),
-        event_type: "Featured Banner",
-        track: bannerTrack,
-        format: bannerFormat,
         schedule: {
           start_time: startDateObj.toISOString(),
           end_time: endDateObj ? endDateObj.toISOString() : undefined,
@@ -370,11 +421,11 @@ export default function AdminClient() {
         banner_badge_text: bannerBadgeText.trim() || undefined,
         banner_cta_text: bannerCtaText.trim() || undefined,
         banner_cta_url: ctaUrl || undefined,
-        status: "published" as const,
+        status: "published",
       };
 
-      const result = await api.adminCreateEvent(token || "", payload);
-      setSubmitSuccess(`Dashboard hero banner "${result.title}" published successfully!`);
+      const result = await api.adminCreateBanner(token || "", payload);
+      setSubmitSuccess(`Dashboard hero banner "${result.title}" published successfully to separate Banners collection!`);
     } catch (err: unknown) {
       console.error("Failed to publish banner:", err);
       const msg = err instanceof Error ? err.message : "Failed to create banner on the backend.";
@@ -737,7 +788,75 @@ export default function AdminClient() {
                   Upload image and configure the top 22:9 announcement slider on the student dashboard.
                 </div>
               </div>
+              <button
+                type="button"
+                className={styles.viewActionBtn}
+                onClick={handleOpenAutofill}
+                title="Autofill banner fields from an existing club event"
+              >
+                <MemberIcon name="lightning" size={14} />
+                Autofill from Event
+              </button>
             </div>
+
+            {showAutofillModal && (
+              <div style={{
+                background: "#16161a",
+                border: "1px solid #33333e",
+                borderRadius: "10px",
+                padding: "16px",
+                marginBottom: "16px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--brand, #E5B731)" }}>
+                    Select an existing event to autofill banner details:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAutofillModal(false)}
+                    style={{ background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: "16px" }}
+                  >
+                    ✕
+                  </button>
+                </div>
+                {loadingAutofillEvents ? (
+                  <p style={{ fontSize: "12px", color: "#a0a0a8", margin: 0 }}>Loading club events...</p>
+                ) : autofillEvents.length === 0 ? (
+                  <p style={{ fontSize: "12px", color: "#a0a0a8", margin: 0 }}>No existing events found.</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "220px", overflowY: "auto" }}>
+                    {autofillEvents.map((ev) => (
+                      <button
+                        key={ev.id}
+                        type="button"
+                        onClick={() => handleApplyAutofill(ev)}
+                        style={{
+                          textAlign: "left",
+                          background: "#1e1e24",
+                          border: "1px solid #2b2b36",
+                          borderRadius: "6px",
+                          padding: "8px 12px",
+                          color: "#fff",
+                          cursor: "pointer",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          fontSize: "12px",
+                        }}
+                      >
+                        <span style={{ fontWeight: 600 }}>{ev.title}</span>
+                        <span style={{ fontSize: "11px", color: "#8c8c98" }}>
+                          {ev.banner_url ? "📷 Has Cover" : "No Cover"} • Click to Fill
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <form onSubmit={handleSubmitBanner} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
               {/* Image Upload Dropzone */}
