@@ -124,10 +124,7 @@
   background: #141416;
   border: 1px solid #232328;
   border-radius: 18px;
-  padding: 28px 32px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  padding: 24px 28px;
   position: relative;
   overflow: hidden;
   box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.7);
@@ -143,6 +140,57 @@
   pointer-events: none;
 }
 
+.heroLayoutGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 28px;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+}
+
+@media (max-width: 900px) {
+  .heroLayoutGrid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}
+
+.heroLayoutSingle {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+  z-index: 1;
+}
+
+.eventCoverWrapper {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #0d0d10;
+  border: 1px solid #262630;
+  box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.6);
+  position: relative;
+}
+
+.eventCoverImage {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+}
+
+.heroSidePanel {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 16px;
+  min-width: 0;
+}
+
 .heroTopMeta {
   display: flex;
   align-items: center;
@@ -152,7 +200,7 @@
 }
 
 .eventTitle {
-  font-size: clamp(1.6rem, 2.6vw, 2.25rem);
+  font-size: clamp(1.4rem, 2.2vw, 2.05rem);
   font-weight: 900;
   color: #ffffff;
   margin: 0;
@@ -162,20 +210,133 @@
 
 .eventSubtitle {
   font-size: 0.92rem;
-  line-height: 1.5;
+  line-height: 1.6;
   color: #a6a6b4;
   margin: 0;
-  max-width: 900px;
+  max-width: 100%;
+  max-height: 140px;
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: #383844 transparent;
+}
+
+.eventSubtitle::-webkit-scrollbar {
+  width: 3px;
+}
+
+.eventSubtitle::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.eventSubtitle::-webkit-scrollbar-thumb {
+  background: #33333e;
+  border-radius: 999px;
+}
+
+.eventSubtitle::-webkit-scrollbar-thumb:hover {
+  background: var(--brand, #E5B731);
 }
 
 .heroActionRow {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 16px;
+  gap: 12px;
   padding-top: 14px;
   border-top: 1px solid #1e1e24;
   flex-wrap: wrap;
+}
+
+.regStatusPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #18181f;
+  border: 1px solid #2e2e3a;
+  border-radius: 9px;
+  padding: 10px 16px;
+  font-size: 0.82rem;
+  color: #d1d1d6;
+  white-space: nowrap;
+}
+
+.regCountText {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #f4f4f6;
+  font-weight: 600;
+}
+
+.regCountText strong {
+  color: var(--brand, #E5B731);
+  font-weight: 850;
+}
+
+.regStatusDivider {
+  color: #4a4a58;
+  font-size: 0.85rem;
+}
+
+.statusRegistered {
+  color: #4ade80;
+  font-weight: 750;
+}
+
+.statusWaitlisted {
+  color: #f59e0b;
+  font-weight: 750;
+}
+
+.statusOpen {
+  color: var(--brand, #E5B731);
+  font-weight: 750;
+}
+
+.statusClosed {
+  color: #f87171;
+  font-weight: 750;
+}
+
+.teamInputBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.teamFieldInput {
+  background: #121216;
+  border: 1px solid #33333e;
+  border-radius: 7px;
+  color: #ffffff;
+  padding: 9px 12px;
+  font-size: 0.82rem;
+  width: 100%;
+  outline: none;
+}
+
+.teamFieldInput:focus {
+  border-color: var(--brand, #E5B731);
+}
+
+.teamHintText {
+  color: #8c8c98;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.regErrorAlert {
+  color: #f87171;
+  font-size: 12px;
+  margin: 4px 0 0;
+}
+
+@media (max-width: 900px) {
+  .heroLayoutGrid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
 }
 
 .rsvpButton {
@@ -308,6 +469,14 @@
 
 .mdHeading:first-child {
   margin-top: 0;
+}
+
+.mdDivider {
+  border: none;
+  height: 1px;
+  background: #2a2a34;
+  margin: 6px 0;
+  width: 100%;
 }
 
 .mdParagraph {
@@ -660,24 +829,6 @@
     flex-direction: column;
     align-items: stretch;
   }
-}
-
-.eventCoverWrapper {
-  width: 100%;
-  max-height: 420px;
-  overflow: hidden;
-  border-radius: 14px;
-  margin-bottom: 8px;
-  background: #0d0d10;
-  border: 1px solid #232328;
-}
-
-.eventCoverImage {
-  width: 100%;
-  height: 100%;
-  max-height: 420px;
-  object-fit: cover;
-  display: block;
 }
 
 /* ==========================================================================

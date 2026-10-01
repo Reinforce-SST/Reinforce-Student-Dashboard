@@ -123,6 +123,11 @@ function renderMarkdown(md?: string | null) {
           </h3>
         );
       }
+    } else if (/^([-*_]\s*){3,}$/.test(rawLine) || /^<hr\s*\/?>$/i.test(rawLine)) {
+      flushList();
+      elements.push(
+        <hr key={`hr-${i}`} className={styles.mdDivider} />
+      );
     } else if (/^(\*|-)\s+/.test(rawLine)) {
       const itemText = rawLine.replace(/^(\*|-)\s+/, "");
       if (currentList && currentList.type === "ul") {
@@ -284,60 +289,118 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
       <section className={styles.heroBanner} aria-label="Event Hero Banner">
         <div className={styles.heroGlow} />
 
-        {event.banner_url && (
-          <div className={styles.eventCoverWrapper}>
-            <img
-              src={event.banner_url}
-              alt={event.title}
-              className={styles.eventCoverImage}
-            />
-          </div>
-        )}
-
-        <div className={styles.heroTopMeta}>
-          <h1 className={styles.eventTitle}>{event.title}</h1>
-        </div>
-
-        <p className={styles.eventSubtitle}>{event.description}</p>
-
-        <div className={styles.heroActionRow}>
-          <button
-            type="button"
-            className={isRegistered ? styles.joinedButton : styles.rsvpButton}
-            onClick={handleToggleRsvp}
-            disabled={registrationBusy || registrationLoading || (!isRegistered && !registrationOpen)}
-          >
-            {isRegistered ? (
-              <>
-                <MemberIcon name="check" size={16} />
-                {registrationStatus === "waitlisted" ? "Waitlisted" : "Registered"} (Cancel RSVP)
-              </>
-            ) : (
-              <>
-                <MemberIcon name="plus" size={16} />
-                {!registrationOpen ? "Registration Closed" : event.participation?.mode === "team" ? "Register Team (RSVP)" : "RSVP for Event"}
-              </>
-            )}
-          </button>
-
-          {event.venue_info?.meeting_url && (
-            <a
-              href={event.venue_info.meeting_url}
-              target="_blank"
-              rel="noreferrer"
-              className={styles.discordThreadLink}
-            >
-              <MemberIcon name="discord" size={16} />
-              Open Online Meeting / Stage
-            </a>
+        <div className={event.banner_url ? styles.heroLayoutGrid : styles.heroLayoutSingle}>
+          {event.banner_url && (
+            <div className={styles.eventCoverWrapper}>
+              <img
+                src={event.banner_url}
+                alt={event.title}
+                className={styles.eventCoverImage}
+              />
+            </div>
           )}
+
+          {/* Right 50% Side Panel: Heading, Description, and Buttons */}
+          <div className={styles.heroSidePanel}>
+            <div className={styles.heroTopMeta}>
+              <h1 className={styles.eventTitle}>{event.title}</h1>
+            </div>
+
+            {event.description && (
+              <p className={styles.eventSubtitle}>{event.description}</p>
+            )}
+
+            <div className={styles.heroActionRow}>
+              <button
+                type="button"
+                className={isRegistered ? styles.joinedButton : styles.rsvpButton}
+                onClick={handleToggleRsvp}
+                disabled={registrationBusy || registrationLoading || (!isRegistered && !registrationOpen)}
+              >
+                {isRegistered ? (
+                  <>
+                    <MemberIcon name="check" size={16} />
+                    {registrationStatus === "waitlisted" ? "Waitlisted" : "Registered"} (Cancel RSVP)
+                  </>
+                ) : (
+                  <>
+                    <MemberIcon name="plus" size={16} />
+                    {!registrationOpen ? "Registration Closed" : event.participation?.mode === "team" ? "Register Team (RSVP)" : "RSVP for Event"}
+                  </>
+                )}
+              </button>
+
+              {/* Registration Count & Status Beside the RSVP Button */}
+              <div className={styles.regStatusPill}>
+                <span className={styles.regCountText}>
+                  <MemberIcon name="users" size={14} />
+                  <strong>{registeredCount}</strong>
+                  {capacity ? ` / ${capacity}` : ""} Registered
+                </span>
+                <span className={styles.regStatusDivider}>•</span>
+                <span
+                  className={
+                    isRegistered
+                      ? registrationStatus === "waitlisted"
+                        ? styles.statusWaitlisted
+                        : styles.statusRegistered
+                      : !registrationOpen
+                      ? styles.statusClosed
+                      : styles.statusOpen
+                  }
+                >
+                  {isRegistered
+                    ? registrationStatus === "waitlisted"
+                      ? "Waitlisted"
+                      : "✓ Registered"
+                    : !registrationOpen
+                    ? "Closed"
+                    : "RSVP Open"}
+                </span>
+              </div>
+
+              {event.venue_info?.meeting_url && (
+                <a
+                  href={event.venue_info.meeting_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={styles.discordThreadLink}
+                >
+                  <MemberIcon name="discord" size={16} />
+                  Open Meeting
+                </a>
+              )}
+            </div>
+
+            {event.participation?.mode === "team" && registrationOpen && !isRegistered && (
+              <div className={styles.teamInputBlock}>
+                <input
+                  aria-label="Team name"
+                  placeholder="Team name"
+                  value={teamName}
+                  onChange={(e) => setTeamName(e.target.value)}
+                  className={styles.teamFieldInput}
+                />
+                <input
+                  aria-label="Teammate user IDs"
+                  placeholder="Teammate IDs, comma-separated"
+                  value={teammateIds}
+                  onChange={(e) => setTeammateIds(e.target.value)}
+                  className={styles.teamFieldInput}
+                />
+                <span className={styles.teamHintText}>
+                  Your account is included automatically.
+                </span>
+              </div>
+            )}
+
+            {registrationError && (
+              <p role="alert" className={styles.regErrorAlert}>
+                {registrationError}
+              </p>
+            )}
+          </div>
         </div>
-        {event.participation?.mode === "team" && registrationOpen && !isRegistered && <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <input aria-label="Team name" placeholder="Team name" value={teamName} onChange={(e) => setTeamName(e.target.value)} style={{ background: "#141416", border: "1px solid #35353f", borderRadius: 8, color: "#fff", padding: "10px 12px", width: "min(100%, 260px)" }} />
-          <input aria-label="Teammate user IDs" placeholder="Teammate IDs, comma-separated" value={teammateIds} onChange={(e) => setTeammateIds(e.target.value)} style={{ background: "#141416", border: "1px solid #35353f", borderRadius: 8, color: "#fff", padding: "10px 12px", width: "min(100%, 320px)" }} />
-          <span style={{ color: "#8c8c98", fontSize: 12, alignSelf: "center" }}>Your account is included automatically.</span>
-        </div>}
-        {registrationError && <p role="alert" style={{ margin: "0 24px 16px" }}>{registrationError}</p>}
       </section>
 
       {/* Event Details Navigation Tabs */}
