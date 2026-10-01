@@ -39,6 +39,8 @@ export type World = {
   draws: number;
   /** Registrations for every event, as the admin attendance console sees them. */
   registrations: Record<string, unknown>[];
+  /** The contribution ledger, every status. */
+  contributions: Record<string, unknown>[];
 };
 
 function freshWorld(): World {
@@ -56,6 +58,7 @@ function freshWorld(): World {
     registered: false,
     draws: 0,
     registrations: [{ ...fixture.eventRegistration }],
+    contributions: [{ ...fixture.contribution }],
   };
 }
 
@@ -136,7 +139,11 @@ async function handleApi(route: Route, world: World) {
   if (path === "/users/admin-directory") return ok(page1(fixture.directoryRows));
   if (path === "/users" && method === "GET") return ok(page1(fixture.directoryRows));
   if (/^\/users\/[^/]+\/status$/.test(path)) return ok({ ...world.profile, is_member: true });
-  if (/^\/users\/[^/]+$/.test(path)) return ok(world.profile);
+  if (/^\/users\/[^/]+$/.test(path)) {
+    const uid = decodeURIComponent(path.split("/")[2] ?? "");
+    const row = fixture.directoryRows.find(item => item.id === uid);
+    return ok(row ?? (uid === world.profile.id ? world.profile : { ...world.profile, id: uid, full_name: uid }));
+  }
 
   /* -------------------------------------------------------------- tickets */
   if (path === "/tickets/my") return ok({ total: world.tickets.length, items: world.tickets });
@@ -332,13 +339,41 @@ async function handleApi(route: Route, world: World) {
   if (path === "/contributions/leaderboard") {
     return ok(fixture.leaderboardRows.map(row => ({ user_id: row.id, points: row.points, contribution_count: 3 })));
   }
-  if (path.startsWith("/contributions/me")) return ok(page1([fixture.contribution]));
-  if (/^\/contributions\/public\/user\/[^/]+$/.test(path)) return ok(page1([fixture.contribution]));
-  if (/^\/contributions\/user\/[^/]+$/.test(path)) return ok(page1([fixture.contribution]));
+  const ledgerFor = (uid: unknown) => world.contributions.filter(item => item.user_id === uid);
+  if (path.startsWith("/contributions/me")) return ok(page1(ledgerFor(world.profile.id)));
+  // The public route only ever serves approved records.
+  if (/^\/contributions\/public\/user\/[^/]+$/.test(path)) {
+    return ok(page1(ledgerFor(path.split("/")[4]).filter(item => item.status === "approved")));
+  }
+  if (/^\/contributions\/user\/[^/]+$/.test(path)) return ok(page1(ledgerFor(path.split("/")[3])));
   if (/^\/contributions\/award\/user\/[^/]+$/.test(path)) return ok(fixture.contribution);
   if (/^\/contributions\/recalculate\/[^/]+$/.test(path)) return ok({ ...world.profile });
-  if (/^\/contributions\/[^/]+\/review$/.test(path)) return ok({ ...fixture.contribution, status: "approved" });
-  if (/^\/contributions\/[^/]+$/.test(path)) return ok(fixture.contribution);
+  if (path === "/contributions" && method === "GET") {
+    const wanted = search.get("status");
+    return ok({ items: world.contributions.filter(item => !wanted || item.status === wanted), next_cursor: null });
+  }
+  // Mirrors review_contribution: pending only; approving needs whole points,
+  // rejecting needs a reason.
+  if (/^\/contributions\/[^/]+\/review$/.test(path)) {
+    const recordId = decodeURIComponent(path.split("/")[2] ?? "");
+    const index = world.contributions.findIndex(item => item.id === recordId);
+    if (index < 0) return fail(404, "Contribution not found.");
+    if (world.contributions[index].status !== "pending") return fail(409, "Only a pending contribution can be reviewed.");
+    const review = body as { action: string; points?: unknown; reason?: string };
+    if (review.action === "approve") {
+      if (typeof review.points !== "number" || !Number.isInteger(review.points) || review.points < 0) {
+        return fail(400, "Approving needs a whole number of points, zero or more.");
+      }
+      world.contributions[index] = { ...world.contributions[index], status: "approved", points: review.points };
+    } else {
+      if (!review.reason?.trim()) return fail(400, "Rejecting needs a reason.");
+      world.contributions[index] = { ...world.contributions[index], status: "rejected", status_reason: review.reason };
+    }
+    return ok(world.contributions[index]);
+  }
+  if (/^\/contributions\/[^/]+$/.test(path)) {
+    return ok(world.contributions.find(item => item.id === path.split("/")[2]) ?? fixture.contribution);
+  }
 
   return fail(404, `Unmocked API route: ${method} ${path}`);
 }

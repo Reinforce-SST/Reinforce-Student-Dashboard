@@ -9,6 +9,7 @@ from google.cloud import firestore
 from app.api.security import get_current_user
 from app.utils import iso_str, now_iso, slugify
 from app.services.firebase import db, upload_file_to_storage
+from app.services import contributions as contribution_service
 from app.schemas.blogs import (
     BlogCreate,
     BlogDetail,
@@ -182,6 +183,22 @@ def get_blog(id_or_slug: str) -> BlogDetail:
     return _to_blog_detail(doc.id, data)
 
 
+def _credit_publication(blog_id: str, author_uid: Optional[str], title: str, published_at: str) -> None:
+    """Ask for points for a newly published article. Blogs have no editorial
+    review, so this pending record is where Reinforce decides what it is worth."""
+    contribution_service.credit_activity(
+        db,
+        user_id=author_uid,
+        activity=f"blog:{blog_id}",
+        details={
+            "category": "content",
+            "title": f"Published an article: {title}"[:200],
+            "source": {"type": "blog", "id": blog_id},
+            "occurred_at": published_at,
+        },
+    )
+
+
 @router.post("", response_model=BlogDetail, status_code=status.HTTP_201_CREATED, summary="Create a new blog post")
 def create_blog(
     blog_in: BlogCreate,
@@ -223,6 +240,8 @@ def create_blog(
     }
 
     doc_ref.set(blog_doc)
+    if published_at:
+        _credit_publication(doc_ref.id, user["uid"], blog_in.title, published_at)
     return _to_blog_detail(doc_ref.id, blog_doc)
 
 
@@ -266,7 +285,11 @@ def update_blog(
 
     doc_ref.update(updates)
     updated_doc = doc_ref.get()
-    return _to_blog_detail(blog_id, updated_doc.to_dict() or {})
+    updated = updated_doc.to_dict() or {}
+    # Only the first publication is a new activity; re-saving does not repeat it.
+    if "published_at" in updates:
+        _credit_publication(blog_id, data.get("author_uid"), updated.get("title") or "", updates["published_at"])
+    return _to_blog_detail(blog_id, updated)
 
 
 @router.delete("/{blog_id}", summary="Delete a blog post")

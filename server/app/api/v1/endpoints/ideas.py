@@ -19,6 +19,7 @@ from app.api.security import (
 )
 from app.utils import is_admin_user, iso_str, now_iso
 from app.services.firebase import db
+from app.services import contributions as contribution_service
 from app.schemas.ideas import (
     IdeaCreate,
     IdeaDetail,
@@ -740,6 +741,25 @@ def update_idea(
     return _ticket_to_idea_detail(idea_id, refreshed_tdata)
 
 
+def _credit_approved_idea(activity: str, author_uid: Any, title: str, track: Any, occurred_at: Any) -> None:
+    """Ask for points for an idea accepted into the jar. An idea is not one of
+    the contribution source types, so it is recorded as content with no source,
+    and the activity key keeps it from being asked for twice."""
+    contribution_service.credit_activity(
+        db,
+        user_id=author_uid,
+        activity=activity,
+        details={
+            "category": "content",
+            # Ideas and contributions share these track names, except YUVI's
+            # legacy "other", which the ideas API already maps to "misc".
+            "track": track if track in ("kaggle", "product", "research") else "misc",
+            "title": f"Idea approved for the Idea Jar: {title}"[:200],
+            "occurred_at": occurred_at,
+        },
+    )
+
+
 @router.post(
     "/{idea_id}/approve",
     response_model=IdeaDetail,
@@ -764,6 +784,10 @@ def approve_idea(
         }
         doc_ref.update(updates)
         refreshed = doc_ref.get().to_dict() or {}
+        _credit_approved_idea(
+            f"idea:{idea_id}", refreshed.get("created_by_uid"), refreshed.get("title") or "",
+            refreshed.get("track"), refreshed.get("created_at") or now,
+        )
         return _to_idea_detail(idea_id, refreshed)
 
     ticket_ref = db.collection(TICKETS_COLLECTION).document(idea_id)
@@ -808,6 +832,11 @@ def approve_idea(
     }
 
     db.collection(IDEAS_COLLECTION).document(new_idea_id).set(new_idea_doc)
+    # Keyed on the ticket, which is stable if the approval is retried.
+    _credit_approved_idea(
+        f"idea:{idea_id}", ticket_data.get("created_by_uid"), detail.title,
+        new_idea_doc["track"], new_idea_doc["created_at"],
+    )
 
     ticket_ref.update({
         "status": TicketStatus.RESOLVED.value,

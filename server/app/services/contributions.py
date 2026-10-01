@@ -12,6 +12,7 @@ Two rules shape everything below:
 """
 
 import hashlib
+import logging
 import json
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -45,6 +46,9 @@ MAX_SPG_MEMBERS = 200
 # The leaderboard reads approved records and sums them here. The cap keeps a
 # single request bounded; passing it means it is time for stored aggregates.
 MAX_LEADERBOARD_SCAN = 5000
+
+
+logger = logging.getLogger(__name__)
 
 
 class ContributionError(Exception):
@@ -196,6 +200,158 @@ def award_user(
             return _load(snapshot), False
         transaction.set(reference, record.model_dump())
         return record, True
+
+    return runner(db, work)
+
+
+def pending_key(*, activity: str, user_id: str) -> str:
+    """A deterministic key for one member's credit for one activity.
+
+    Unlike deduplication_key, nothing the reviewer decides goes in — not the
+    points, which are not set yet, nor the title, which can change when an
+    article is edited. Publishing the same article twice is one activity.
+    """
+    canonical = json.dumps(
+        {"kind": "pending", "activity": activity, "user_id": user_id},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def record_pending(
+    db: Any,
+    *,
+    user_id: str,
+    activity: str,
+    details: ContributionDetails,
+    recorder: str,
+    spg_id: Optional[str] = None,
+    runner: Optional[Callable[[Any, Callable[[Any], Any]], Any]] = None,
+    now: Optional[datetime] = None,
+) -> Tuple[ContributionRecord, bool]:
+    """Record that a member did something worth reviewing.
+
+    The record is pending and worth nothing until an admin reviews it and sets
+    the points (review_contribution). Returns the record and whether it was
+    just created; recording the same activity again is idempotent.
+    """
+    runner = runner or run_in_transaction
+    if not user_exists(db, user_id):
+        raise ContributionError(404, "Recipient user not found.")
+    user_id = user_id.strip()
+    key = pending_key(activity=activity, user_id=user_id)
+    record = ContributionRecord(
+        id=key,
+        user_id=user_id,
+        track=details.track,
+        category=details.category,
+        title=details.title,
+        description=details.description,
+        # Placeholder. The reviewer sets the real value on approval.
+        points=0,
+        source=details.source,
+        event_id=details.event_id,
+        spg_id=spg_id,
+        occurred_at=details.occurred_at,
+        status=ContributionStatus.PENDING,
+        recorded_by=recorder,
+        created_at=now or utcnow(),
+        deduplication_key=key,
+    )
+    collection = db.collection(CONTRIBUTIONS_COLLECTION)
+
+    def work(transaction: Any) -> Tuple[ContributionRecord, bool]:
+        reference = collection.document(record.id)
+        snapshot = reference.get(transaction=transaction)
+        if getattr(snapshot, "exists", False):
+            return _load(snapshot), False
+        transaction.set(reference, record.model_dump())
+        return record, True
+
+    return runner(db, work)
+
+
+def credit_activity(
+    db: Any,
+    *,
+    user_id: Optional[str],
+    activity: str,
+    details: Dict[str, Any],
+    spg_id: Optional[str] = None,
+) -> Optional[ContributionRecord]:
+    """Record a pending contribution for an action that has already happened.
+
+    `details` is validated here, inside the guard, so a malformed title is a
+    logged failure rather than an error raised into the caller.
+
+    Never raises. The article is already published, or the report already
+    verified, by the time this runs; failing that request now would invite a
+    retry that repeats the action, such as publishing a second copy. A failure
+    is logged with its traceback instead, and because recording is idempotent
+    a later attempt fills the gap. A member with no Firebase UID — some legacy
+    YUVI records only carry a Discord id — simply has nothing to credit.
+    """
+    if not isinstance(user_id, str) or not user_id.strip():
+        return None
+    try:
+        record, _ = record_pending(
+            db,
+            user_id=user_id,
+            activity=activity,
+            details=ContributionDetails.model_validate({**details, "points": 0}),
+            recorder="system",
+            spg_id=spg_id,
+        )
+        return record
+    except Exception:
+        logger.exception("Could not record a pending contribution for %s (%s)", activity, user_id)
+        return None
+
+
+def review_contribution(
+    db: Any,
+    *,
+    record_id: str,
+    approve: bool,
+    points: Any,
+    reason: Optional[str],
+    admin_id: str,
+    runner: Optional[Callable[[Any, Callable[[Any], Any]], Any]] = None,
+    now: Optional[datetime] = None,
+) -> ContributionRecord:
+    """Approve a pending record with the points the admin chose, or reject it.
+
+    Points are set here and only here: the one exception to the rule that a
+    record's content is immutable (CONTRIBUTION_SCHEMA.md §9, decision #9). Only
+    a pending record can be reviewed; an approved one is corrected by
+    revocation, never by review.
+    """
+    runner = runner or run_in_transaction
+    if approve:
+        # bool is an int subclass, so True must be refused explicitly.
+        if type(points) is not int or points < 0:
+            raise ContributionError(400, "Approving needs a whole number of points, zero or more.")
+    elif not (isinstance(reason, str) and reason.strip()):
+        raise ContributionError(400, "Rejecting needs a reason.")
+    reference = db.collection(CONTRIBUTIONS_COLLECTION).document(record_id)
+
+    def work(transaction: Any) -> ContributionRecord:
+        snapshot = reference.get(transaction=transaction)
+        if not getattr(snapshot, "exists", False):
+            raise ContributionError(404, "Contribution not found.")
+        current = _load(snapshot)
+        if current.status is not ContributionStatus.PENDING:
+            raise ContributionError(409, f"Only a pending contribution can be reviewed; this one is {current.status.value}.")
+        reviewed_at = now or utcnow()
+        changes: Dict[str, Any] = {"reviewed_by": admin_id, "reviewed_at": reviewed_at}
+        if approve:
+            changes.update(status=ContributionStatus.APPROVED, points=points)
+        else:
+            changes.update(status=ContributionStatus.REJECTED, status_reason=reason.strip())
+        updated = ContributionRecord.model_validate({**current.model_dump(), **changes})
+        transaction.set(reference, updated.model_dump())
+        return updated
 
     return runner(db, work)
 
