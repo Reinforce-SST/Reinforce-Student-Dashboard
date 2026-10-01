@@ -18,6 +18,7 @@ from pydantic import (
     ConfigDict,
     Field,
     PlainSerializer,
+    model_validator,
 )
 
 from app.schemas.common import DescriptionStr, NonBlankStr, TitleStr
@@ -132,6 +133,16 @@ class EventParticipationConfig(BaseModel):
     max_participants: Optional[int] = Field(default=None, ge=1)
     requires_event_spg: bool = False
     spg_auto_disband_days: int = Field(default=3, ge=1)
+
+    @model_validator(mode="after")
+    def _individual_events_form_no_group(self) -> "EventParticipationConfig":
+        # A group needs more than one person. Normalising here, rather than
+        # rejecting, keeps any stored solo event readable while guaranteeing
+        # that neither registration nor waitlist promotion spawns a
+        # one-person "team" SPG.
+        if self.mode is ParticipationMode.SOLO:
+            self.requires_event_spg = False
+        return self
 
 
 class PointsRewardConfig(BaseModel):

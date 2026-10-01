@@ -106,6 +106,9 @@ export default function AdminClient() {
   const [eventMinTeamSize, setEventMinTeamSize] = useState(1);
   const [eventMaxTeamSize, setEventMaxTeamSize] = useState(1);
   const [eventMaxParticipants, setEventMaxParticipants] = useState<number | "">("");
+  // A team event forms one project group per registered team unless the admin
+  // opts out. Solo events never do; the server enforces that too.
+  const [eventFormsTeamSpg, setEventFormsTeamSpg] = useState(true);
   const [eventPointsReward, setEventPointsReward] = useState<number | "">("");
   const [eventSlidesUrl, setEventSlidesUrl] = useState("");
   const [eventDiscordThread, setEventDiscordThread] = useState("");
@@ -461,7 +464,7 @@ export default function AdminClient() {
           min_team_size: Number(eventMinTeamSize),
           max_team_size: Number(eventMaxTeamSize),
           max_participants: eventMaxParticipants ? Number(eventMaxParticipants) : undefined,
-          requires_event_spg: false,
+          requires_event_spg: eventParticipationMode === "team" && eventFormsTeamSpg,
           spg_auto_disband_days: 3,
         },
         points_reward: {
@@ -1171,8 +1174,9 @@ export default function AdminClient() {
                 </select>
               </div>
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Participation Mode</label>
+                <label className={styles.formLabel} htmlFor="new-event-mode">Participation Mode</label>
                 <select
+                  id="new-event-mode"
                   value={eventParticipationMode}
                   onChange={(e) => setEventParticipationMode(e.target.value as "solo" | "team")}
                   className={styles.formSelect}
@@ -1226,8 +1230,9 @@ export default function AdminClient() {
                 />
               </div>
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Min Team Size</label>
+                <label className={styles.formLabel} htmlFor="new-event-min-team">Min Team Size</label>
                 <input
+                  id="new-event-min-team"
                   type="number"
                   value={eventMinTeamSize}
                   onChange={(e) => setEventMinTeamSize(Number(e.target.value))}
@@ -1236,8 +1241,9 @@ export default function AdminClient() {
                 />
               </div>
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Max Team Size</label>
+                <label className={styles.formLabel} htmlFor="new-event-max-team">Max Team Size</label>
                 <input
+                  id="new-event-max-team"
                   type="number"
                   value={eventMaxTeamSize}
                   onChange={(e) => setEventMaxTeamSize(Number(e.target.value))}
@@ -1246,6 +1252,17 @@ export default function AdminClient() {
                 />
               </div>
             </div>
+
+            {eventParticipationMode === "team" && (
+              <label className={styles.batchOption}>
+                <input
+                  type="checkbox"
+                  checked={eventFormsTeamSpg}
+                  onChange={(e) => setEventFormsTeamSpg(e.target.checked)}
+                />
+                Form a project group (SPG) for each registered team
+              </label>
+            )}
 
             {/* Section 4: Event Poster & Resources */}
             <div className={styles.formSectionHeading}>4. Event Poster & Resources</div>
