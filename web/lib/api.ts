@@ -957,8 +957,15 @@ export const api = {
       }
     ),
 
+  /** Only registered or already checked-in attendees can be checked in; the rest come back in failed_uids. */
   adminRollCall: (token: string, eventId: string, attendeeUids: string[], awardPoints: boolean = true) =>
-    request<Record<string, unknown>>(`/events/${encodeURIComponent(eventId)}/attendance/roll-call`, token, {
+    request<{
+      event_id: string;
+      checked_in_count: number;
+      points_awarded_per_user: number;
+      awarded_uids: string[];
+      failed_uids: string[];
+    }>(`/events/${encodeURIComponent(eventId)}/attendance/roll-call`, token, {
       method: "POST",
       body: JSON.stringify({ attendee_uids: attendeeUids, award_points: awardPoints }),
     }),

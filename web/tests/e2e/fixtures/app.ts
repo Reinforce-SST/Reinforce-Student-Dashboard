@@ -37,6 +37,8 @@ export type World = {
   registered: boolean;
   /** How many times /ideas/random has been drawn, so draws rotate. */
   draws: number;
+  /** Registrations for every event, as the admin attendance console sees them. */
+  registrations: Record<string, unknown>[];
 };
 
 function freshWorld(): World {
@@ -53,6 +55,7 @@ function freshWorld(): World {
     links: [],
     registered: false,
     draws: 0,
+    registrations: [{ ...fixture.eventRegistration }],
   };
 }
 
@@ -259,13 +262,54 @@ async function handleApi(route: Route, world: World) {
     world.registered = method !== "DELETE";
     return ok({ status: world.registered ? "registered" : "cancelled" });
   }
-  if (/^\/events\/[^/]+\/registrations\/manual$/.test(path)) return ok(fixture.eventRegistration);
+  if (/^\/events\/[^/]+\/registrations\/manual$/.test(path)) {
+    const request = body as { user_id: string; status?: string; attendance_note?: string };
+    const added = {
+      ...fixture.eventRegistration,
+      id: `registration-walk-in-${world.registrations.length + 1}`,
+      user_id: request.user_id,
+      member_uids: [request.user_id],
+      status: request.status ?? "checked_in",
+      attendance_note: request.attendance_note ?? null,
+      user_profile: { id: request.user_id, full_name: "Walk-in Member" },
+    };
+    world.registrations = [...world.registrations, added];
+    return ok(added);
+  }
   if (/^\/events\/[^/]+\/registrations\/[^/]+\/attendance$/.test(path)) {
-    return ok({ ...fixture.eventRegistration, status: "checked_in" });
+    const registrationId = decodeURIComponent(path.split("/")[4] ?? "");
+    const update = body as { status: string; attendance_note?: string };
+    world.registrations = world.registrations.map(item =>
+      item.id === registrationId ? { ...item, status: update.status, attendance_note: update.attendance_note ?? item.attendance_note } : item,
+    );
+    return ok(world.registrations.find(item => item.id === registrationId) ?? fixture.eventRegistration);
   }
   // Registrations come back as a bare array.
-  if (/^\/events\/[^/]+\/registrations$/.test(path)) return ok([fixture.eventRegistration]);
-  if (/^\/events\/[^/]+\/attendance\/roll-call$/.test(path)) return ok({ updated: 1 });
+  if (/^\/events\/[^/]+\/registrations$/.test(path)) return ok(world.registrations);
+  // Mirrors submit_attendance_roll_call: only a registered or already checked-in
+  // registration can be checked in. Anyone else — waitlisted, absent — comes
+  // back in failed_uids and is neither checked in nor awarded.
+  if (/^\/events\/[^/]+\/attendance\/roll-call$/.test(path)) {
+    const request = body as { attendee_uids: string[]; award_points: boolean };
+    const awarded: string[] = [];
+    const failed: string[] = [];
+    for (const uid of request.attendee_uids) {
+      const index = world.registrations.findIndex(item =>
+        ["registered", "checked_in"].includes(String(item.status)) &&
+        (item.user_id === uid || (item.member_uids as string[] | undefined)?.includes(uid)),
+      );
+      if (index < 0) { failed.push(uid); continue; }
+      world.registrations[index] = { ...world.registrations[index], status: "checked_in" };
+      awarded.push(uid);
+    }
+    return ok({
+      event_id: path.split("/")[2],
+      checked_in_count: world.registrations.filter(item => item.status === "checked_in").length,
+      points_awarded_per_user: request.award_points ? 10 : 0,
+      awarded_uids: awarded,
+      failed_uids: failed,
+    });
+  }
   if (/^\/events\/[^/]+\/feedback$/.test(path)) return ok({ success: true });
   if (/^\/events\/[^/]+\/status$/.test(path)) return ok({ ...fixture.upcomingEvent, status: "published" });
   if (/^\/events\/[^/]+$/.test(path)) {

@@ -1072,8 +1072,15 @@ def list_event_registrations(
                         "points": (udata.get("points") or {}).get("total", 0),
                     }
 
+    # The attendee list is open to every member, but an attendance note is the
+    # admin's own record — often the reason for a disqualification — and the
+    # member view never shows it. Strip what only the attendance console needs.
+    viewer_is_admin = is_admin_user(current_user)
     results: List[RegistrationDocument] = []
     for r_dict in raw_regs:
+        if not viewer_is_admin:
+            r_dict.pop("attendance_note", None)
+            r_dict.pop("checked_in_by", None)
         uid = r_dict.get("user_id") or ""
         r_dict["user_profile"] = user_profiles.get(uid)
         r_dict["member_profiles"] = [

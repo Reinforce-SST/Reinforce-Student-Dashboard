@@ -322,6 +322,31 @@ class EventHardeningTests(unittest.TestCase):
         self.assertIsNone(promoted.get("spg_id"))
         self.assertEqual(self._event_spgs(), {})
 
+    def _attended(self):
+        self.db.store["events/event-one/registrations/reg-one"] = {
+            "id": "reg-one", "event_id": "event-one", "user_id": "uid-two",
+            "member_uids": ["uid-two"], "status": "disqualified",
+            "attendance_note": "Submitted another team's notebook as their own.",
+            "checked_in_by": "uid-admin",
+            "registered_at": "2026-01-01T00:00:00+00:00",
+        }
+
+    def test_members_never_receive_admin_attendance_notes(self):
+        """The member attendee list never shows these; they must not be sent."""
+        self._attended()
+        response = self.client.get("/api/v1/events/event-one/registrations")
+        self.assertEqual(response.status_code, 200, response.text)
+        [registration] = response.json()
+        self.assertIsNone(registration.get("attendance_note"))
+        self.assertIsNone(registration.get("checked_in_by"))
+
+    def test_admins_still_receive_attendance_notes(self):
+        self._attended()
+        self.sign_in_admin()
+        [registration] = self.client.get("/api/v1/events/event-one/registrations").json()
+        self.assertEqual(registration["attendance_note"], "Submitted another team's notebook as their own.")
+        self.assertEqual(registration["checked_in_by"], "uid-admin")
+
     def test_promoted_team_gets_required_spg_with_general_track(self):
         self.db.store["events/event-one"]["participation"].update(
             {
