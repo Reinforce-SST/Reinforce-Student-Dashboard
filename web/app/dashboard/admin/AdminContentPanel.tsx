@@ -143,7 +143,7 @@ export default function AdminContentPanel({
               />
             </label>
             <label>
-              Article content (plain text)
+              Article content (Markdown)
               <textarea
                 required
                 value={content}

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, type ArticleDetail, type IdeaDetail } from "@/lib/api";
 import { useMember } from "@/lib/useMember";
+import ArticleMarkdown from "@/components/dashboard/ArticleMarkdown";
 import styles from "./Discovery.module.css";
 
 type Kind = "articles" | "ideas";
@@ -156,7 +157,7 @@ export default function DiscoveryDetail({
             </section>
           )}
 
-          <div className={styles.articleText}>{article.content}</div>
+          <ArticleMarkdown content={article.content} />
 
           <footer className={styles.articleFooter}>
             {article.published_at && <span>Published {formatDate(article.published_at)}</span>}
