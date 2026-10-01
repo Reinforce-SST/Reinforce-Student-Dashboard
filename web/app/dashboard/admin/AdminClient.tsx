@@ -12,6 +12,7 @@ import MemberIcon from "@/components/dashboard/MemberIcon";
 import PaginationBar from "@/components/dashboard/PaginationBar";
 import LoadingBar from "@/components/dashboard/LoadingBar";
 import AdminTicketsPanel from "./AdminTicketsPanel";
+import AdminPendingContributionsPanel from "./AdminPendingContributionsPanel";
 import AdminContentPanel from "./AdminContentPanel";
 import AdminEventEditPanel from "./AdminEventEditPanel";
 import AdminBannerEditPanel from "./AdminBannerEditPanel";
@@ -1394,6 +1395,8 @@ export default function AdminClient() {
       {activeTab === "tickets" && <AdminTicketsPanel token={token} adminId={profile.id} />}
 
       {/* TAB 5: Merit Auditing */}
+      {activeTab === "contributions" && <AdminPendingContributionsPanel token={token} />}
+
       {activeTab === "contributions" && (
         <div className={`${styles.managerGrid} ${styles.meritGrid}`}>
           <div className={styles.card}>

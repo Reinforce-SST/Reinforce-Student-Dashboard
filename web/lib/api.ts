@@ -6,7 +6,7 @@
  */
 
 import type { SPGRecord, SPGReportRecord } from "./spgData";
-import type { ContributionRecord, PublicContributionRecord } from "./contributionData";
+import type { ContributionPage, ContributionRecord, PublicContributionRecord } from "./contributionData";
 
 const BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080/api/v1";
@@ -1007,10 +1007,27 @@ export const api = {
   adminRecalculateUserPoints: (token: string, userId: string) =>
     request<Record<string, unknown>>(`/contributions/recalculate/${encodeURIComponent(userId)}`, token, { method: "POST" }),
 
-  adminReviewContribution: (token: string, contribId: string, action: "approve" | "reject" | "revoke", reason?: string) =>
-    request<Record<string, unknown>>(`/contributions/${encodeURIComponent(contribId)}/review`, token, {
+  /** The admin ledger. `status: "pending"` is the review queue that actions fill. */
+  adminListContributions: (token: string, params: { status?: string; limit?: number; cursor?: string } = {}) => {
+    const query = new URLSearchParams();
+    if (params.status) query.set("status", params.status);
+    if (params.limit) query.set("limit", String(params.limit));
+    if (params.cursor) query.set("cursor", params.cursor);
+    const qs = query.toString();
+    return request<ContributionPage>(`/contributions${qs ? `?${qs}` : ""}`, token);
+  },
+  /**
+   * Settle a pending contribution. Approving sets the points the admin chose;
+   * rejecting needs a reason. An approved record is corrected by revocation.
+   */
+  adminReviewContribution: (
+    token: string,
+    contribId: string,
+    review: { action: "approve"; points: number } | { action: "reject"; reason: string },
+  ) =>
+    request<ContributionRecord>(`/contributions/${encodeURIComponent(contribId)}/review`, token, {
       method: "PATCH",
-      body: JSON.stringify({ action, reason }),
+      body: JSON.stringify(review),
     }),
 
   /** Every filter maps to an equality filter in list_all_tickets. Unset means "any". */

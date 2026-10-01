@@ -21,6 +21,7 @@ from app.api.security import get_current_user, require_admin
 from app.schemas.contributions import (
     AdminAwardSPG,
     AdminAwardUser,
+    AdminReviewRecord,
     AdminRevokeRecord,
     ContributionCategory,
     ContributionPage,
@@ -98,6 +99,32 @@ def award_spg_points(
     try:
         return service.award_spg(
             db, spg_id=spg_id, award=award, admin_id=_admin_id(admin)
+        )
+    except service.ContributionError as error:
+        raise _handle(error) from None
+
+
+@router.patch(
+    "/{record_id}/review",
+    response_model=ContributionRecord,
+    summary="Approve a pending contribution with points, or reject it",
+)
+def review_contribution(
+    record_id: str,
+    review: AdminReviewRecord,
+    admin: dict = Depends(require_admin),
+    db: Any = Depends(get_db),
+) -> ContributionRecord:
+    """Settle a pending contribution recorded by an action. Approving sets the
+    points; rejecting keeps the record, with its reason, for audit."""
+    try:
+        return service.review_contribution(
+            db,
+            record_id=record_id,
+            approve=review.action == "approve",
+            points=review.points,
+            reason=review.reason,
+            admin_id=_admin_id(admin),
         )
     except service.ContributionError as error:
         raise _handle(error) from None

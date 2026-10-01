@@ -448,3 +448,64 @@ class RecalculateEndpointTests(ContributionAPITestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReviewEndpointTests(ContributionAPITestCase):
+    """PATCH /contributions/{id}/review settles a pending record an action made."""
+
+    def pending(self, activity="blog:blog_1"):
+        from app.schemas.contributions import ContributionDetails
+        record, _ = service.record_pending(
+            self.db,
+            user_id="uid_one",
+            activity=activity,
+            details=ContributionDetails.model_validate({
+                "category": "content", "title": "Published an article", "points": 0,
+                "source": {"type": "blog", "id": "blog_1"}, "occurred_at": OCCURRED_AT,
+            }),
+            recorder="system",
+        )
+        return record.id
+
+    def review(self, record_id, **body):
+        return self.client.patch(f"/api/v1/contributions/{record_id}/review", json=body)
+
+    def test_an_admin_approves_with_points(self):
+        record_id = self.pending()
+        response = self.review(record_id, action="approve", points=20)
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual((body["status"], body["points"], body["reviewed_by"]), ("approved", 20, "uid_admin"))
+
+    def test_the_admin_queue_lists_pending_requests(self):
+        record_id = self.pending()
+        listed = self.client.get("/api/v1/contributions", params={"status": "pending"})
+        self.assertEqual(listed.status_code, 200, listed.text)
+        self.assertEqual([item["id"] for item in listed.json()["items"]], [record_id])
+
+    def test_a_member_cannot_review(self):
+        record_id = self.pending()
+        self.sign_in_as(MEMBER)
+        self.assertEqual(self.review(record_id, action="approve", points=20).status_code, 403)
+
+    def test_bad_points_are_refused_by_the_schema(self):
+        record_id = self.pending()
+        for points in (-1, 2.5, True, "20"):
+            with self.subTest(points=points):
+                self.assertEqual(self.review(record_id, action="approve", points=points).status_code, 422)
+
+    def test_approving_without_points_or_rejecting_without_reason_is_refused(self):
+        record_id = self.pending()
+        self.assertEqual(self.review(record_id, action="approve").status_code, 400)
+        self.assertEqual(self.review(record_id, action="reject").status_code, 400)
+
+    def test_the_reviewer_cannot_be_chosen_in_the_body(self):
+        record_id = self.pending()
+        response = self.review(record_id, action="approve", points=5, reviewed_by="uid_one")
+        self.assertEqual(response.status_code, 422)
+
+    def test_reviewing_twice_conflicts(self):
+        record_id = self.pending()
+        self.assertEqual(self.review(record_id, action="approve", points=5).status_code, 200)
+        self.assertEqual(self.review(record_id, action="reject", reason="Changed my mind").status_code, 409)
+
