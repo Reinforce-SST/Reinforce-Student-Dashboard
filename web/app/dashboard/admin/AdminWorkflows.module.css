@@ -169,3 +169,11 @@
 .saveApproveBtn:hover:not(:disabled) { background: #246336; color: #fff; }
 
 
+.filterBar { display:flex; flex-wrap:wrap; align-items:end; gap:12px; padding:14px; border:1px solid #333; border-radius:8px; background:#1a1a1c; }
+.filterBar label { display:grid; gap:6px; min-width:0; flex:1 1 160px; color:#c9c9cd; font-size:.74rem; font-weight:700; }
+.filterBar select { width:100%; min-width:0; min-height:40px; padding:8px 10px; border:1px solid #4a4a50; border-radius:8px; background:#232326; color:#f5f5f5; font:inherit; font-size:.82rem; font-weight:500; }
+.filterBar .filterCheck { display:flex; flex:0 0 auto; align-items:center; gap:8px; min-height:40px; font-size:.8rem; font-weight:650; color:#e1e1e4; cursor:pointer; }
+.filterCheck input { width:16px; height:16px; accent-color:var(--brand,#e5b731); }
+.filterClear { flex:0 0 auto; min-height:40px; padding:8px 14px; border:1px solid #4a4a50; border-radius:8px; background:transparent; color:var(--brand,#e5b731); font:inherit; font-size:.8rem; font-weight:750; cursor:pointer; }
+.filterClear:disabled { color:#6b6b70; border-color:#333; cursor:default; }
+@media (max-width:640px) { .filterBar label { flex-basis:100%; } }

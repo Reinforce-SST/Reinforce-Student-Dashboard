@@ -277,12 +277,22 @@ export type TicketCategory =
 
 export type TicketStatus = "open" | "in_progress" | "resolved" | "closed";
 
+export type TicketPriority = "low" | "medium" | "high" | "urgent";
+
+export type AdminTicketFilters = {
+  category?: TicketCategory;
+  status?: TicketStatus;
+  priority?: TicketPriority;
+  /** A lead's UID. The server has no "unassigned" filter. */
+  assignedTo?: string;
+};
+
 export type TicketSummary = {
   id: string;
   category: TicketCategory;
   title: string;
   status: TicketStatus;
-  priority?: "low" | "medium" | "high" | "urgent";
+  priority?: TicketPriority;
   created_by_uid?: string;
   assigned_to_uid?: string | null;
   spg_id?: string | null;
@@ -990,9 +1000,13 @@ export const api = {
       body: JSON.stringify({ action, reason }),
     }),
 
-  adminGetAllTickets: (token: string, page = 1, category?: TicketCategory) => {
+  /** Every filter maps to an equality filter in list_all_tickets. Unset means "any". */
+  adminGetAllTickets: (token: string, page = 1, filters: AdminTicketFilters = {}) => {
     const query = new URLSearchParams({ page: String(page), page_size: "20" });
-    if (category) query.set("category", category);
+    if (filters.category) query.set("category", filters.category);
+    if (filters.status) query.set("status", filters.status);
+    if (filters.priority) query.set("priority", filters.priority);
+    if (filters.assignedTo) query.set("assigned_to_uid", filters.assignedTo);
     return request<{ total: number; items: TicketSummary[] }>(`/tickets?${query}`, token);
   },
   adminUpdateTicketStatus: (token: string, ticketId: string, nextStatus: TicketStatus, closeReason?: string) =>
