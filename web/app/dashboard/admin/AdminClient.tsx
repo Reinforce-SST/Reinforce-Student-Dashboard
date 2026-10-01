@@ -1374,7 +1374,7 @@ export default function AdminClient() {
 
       {activeTab === "spg" && <AdminTicketsPanel token={token} spgOnly />}
 
-      {activeTab === "tickets" && <AdminTicketsPanel token={token} />}
+      {activeTab === "tickets" && <AdminTicketsPanel token={token} adminId={profile.id} />}
 
       {/* TAB 5: Merit Auditing */}
       {activeTab === "contributions" && (

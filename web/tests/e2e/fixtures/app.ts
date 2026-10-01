@@ -134,7 +134,22 @@ async function handleApi(route: Route, world: World) {
 
   /* -------------------------------------------------------------- tickets */
   if (path === "/tickets/my") return ok({ total: world.tickets.length, items: world.tickets });
-  if (path === "/tickets" && method === "GET") return ok({ total: world.tickets.length, items: world.tickets });
+  // The admin list. Mirrors list_all_tickets: equality filters, newest first,
+  // then a page slice — so a UI that forgets to send a filter, or to reset the
+  // page when one changes, shows the wrong rows here exactly as it would live.
+  if (path === "/tickets" && method === "GET") {
+    const equal = (field: string, param: string) => (item: Record<string, unknown>) =>
+      !search.get(param) || item[field] === search.get(param);
+    const matching = world.tickets
+      .filter(equal("category", "category"))
+      .filter(equal("status", "status"))
+      .filter(equal("priority", "priority"))
+      .filter(equal("assigned_to_uid", "assigned_to_uid"))
+      .filter(equal("spg_id", "spg_id"));
+    const page = Number(search.get("page") ?? 1);
+    const size = Number(search.get("page_size") ?? 20);
+    return ok({ total: matching.length, items: matching.slice((page - 1) * size, page * size) });
+  }
   if (path === "/tickets" && method === "POST") {
     const created = { ...fixture.ticketDetail, id: "ticket-new", ...(body as object) };
     world.tickets = [created, ...world.tickets];
