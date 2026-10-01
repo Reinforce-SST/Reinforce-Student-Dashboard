@@ -35,6 +35,13 @@ class Document:
         else:
             self.db.store[self.path] = copy.deepcopy(data)
 
+    def create(self, data):
+        from google.api_core.exceptions import AlreadyExists
+
+        if self.path in self.db.store:
+            raise AlreadyExists("Document already exists")
+        self.set(data)
+
     def update(self, updates):
         target = self.db.store[self.path]
         for field, value in updates.items():
