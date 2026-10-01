@@ -105,10 +105,10 @@ async function handleApi(route: Route, world: World) {
   }
   if (path === "/users/verify-discord") {
     const payload = body as Record<string, unknown>;
-    // The private proof replaced the forgeable discord_id deep link. If this
-    // assertion ever fires, the auth contract regressed.
-    expect(payload.link_token, "linking must send link_token").toBe(fixture.LINK_TOKEN);
-    expect(payload.discord_id, "linking must not send discord_id").toBeUndefined();
+    // Recorded, not asserted. An assertion thrown here would abandon the route
+    // without fulfilling it, so a real regression would surface as a page that
+    // hangs until the test times out. auth.spec.ts asserts the contract against
+    // world.links instead, where a failure names what actually went wrong.
     world.links.push(payload);
     return ok({
       success: true,
