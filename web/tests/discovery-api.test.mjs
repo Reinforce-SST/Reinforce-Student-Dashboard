@@ -44,3 +44,19 @@ test("idea submission and ticket status changes use member and admin authenticat
     globalThis.fetch = originalFetch;
   }
 });
+
+test("drawing from the jar asks the server for one random approved idea", async () => {
+  const originalFetch = globalThis.fetch;
+  let requested;
+  globalThis.fetch = async (url) => {
+    requested = new URL(url);
+    return { ok: true, json: async () => ({ id: "idea-1", title: "Drawn", is_verified: true }) };
+  };
+  try {
+    const idea = await api.randomIdea("member-token");
+    assert.equal(idea.id, "idea-1");
+    assert.equal(requested.pathname.endsWith("/ideas/random"), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

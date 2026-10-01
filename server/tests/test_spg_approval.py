@@ -63,6 +63,49 @@ class SPGApprovalTests(unittest.TestCase):
         self.assertEqual(len(self.db.documents("spgs")), 1)
         self.assertEqual(self.client.patch("/api/v1/tickets/tkt_1/status", json={"status": "open"}).status_code, 409)
 
+    def _link_idea(self, idea_id="idea_live", **idea):
+        self.db.documents("tickets")["tkt_1"]["fields"]["idea_id"] = idea_id
+        if idea is not None:
+            self.db.store.setdefault("ideas", {})[idea_id] = {
+                "id": idea_id, "title": "Course-feedback clustering", "is_verified": True,
+                "stats": {"upvote_count": 9, "views_count": 60, "claims_count": 2}, **idea,
+            }
+
+    def test_a_group_started_from_an_idea_links_to_it_and_counts_once(self):
+        self._link_idea()
+        first = self.approve()
+        self.assertEqual(first.status_code, 200, first.text)
+        spg_id = first.json()["spg_id"]
+        self.assertEqual(self.db.documents("spgs")[spg_id]["idea_id"], "idea_live")
+        stats = self.db.documents("ideas")["idea_live"]["stats"]
+        self.assertEqual(stats["claims_count"], 3)
+        # The other counters are untouched: a nested update, not a map replace.
+        self.assertEqual((stats["upvote_count"], stats["views_count"]), (9, 60))
+
+        # Approval is idempotent, so a repeat must not count the group twice.
+        self.assertEqual(self.approve().status_code, 200)
+        self.assertEqual(self.db.documents("ideas")["idea_live"]["stats"]["claims_count"], 3)
+
+    def test_a_group_whose_idea_was_deleted_is_still_created_unlinked(self):
+        self.db.documents("tickets")["tkt_1"]["fields"]["idea_id"] = "idea_gone"
+        approved = self.approve()
+        self.assertEqual(approved.status_code, 200, approved.text)
+        spg = self.db.documents("spgs")[approved.json()["spg_id"]]
+        self.assertIsNone(spg.get("idea_id"))
+        self.assertNotIn("idea_gone", self.db.documents("ideas"))
+
+    def test_a_group_never_links_to_an_unapproved_idea(self):
+        self._link_idea("idea_pending", is_verified=False)
+        approved = self.approve()
+        self.assertEqual(approved.status_code, 200, approved.text)
+        self.assertIsNone(self.db.documents("spgs")[approved.json()["spg_id"]].get("idea_id"))
+        self.assertEqual(self.db.documents("ideas")["idea_pending"]["stats"]["claims_count"], 2)
+
+    def test_a_group_without_an_idea_is_unchanged(self):
+        approved = self.approve()
+        self.assertEqual(approved.status_code, 200, approved.text)
+        self.assertIsNone(self.db.documents("spgs")[approved.json()["spg_id"]].get("idea_id"))
+
     def test_wrong_category_track_or_closed_ticket_never_creates_group(self):
         self.assertEqual(self.approve("tkt_2").status_code, 400)
         self.assertEqual(self.approve(track="research").status_code, 400)

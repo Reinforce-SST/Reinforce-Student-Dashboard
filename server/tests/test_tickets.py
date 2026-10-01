@@ -93,3 +93,32 @@ class TicketTests(unittest.TestCase):
             with self.subTest(value=bad), self.assertRaises(HTTPException) as error:
                 tickets._validate_spg_registration_fields({**fields, "duration_days": bad}, "uid-1")
             self.assertEqual(error.exception.status_code, 400)
+
+    def _member_registration(self, **extra):
+        self.db.store["users/uid-1"].update({"id": "uid-1", "is_member": True, "full_name": "Leader"})
+        return {"leader_uid": "uid-1", "member_uids": [], "duration_days": 60, "frequency_days": 14, **extra}
+
+    def test_spg_registration_names_the_approved_idea_it_starts_from(self):
+        self.db.store["ideas/idea_live"] = {"title": "Course-feedback clustering", "is_verified": True}
+        result = tickets._validate_spg_registration_fields(self._member_registration(idea_id=" idea_live "), "uid-1")
+        self.assertEqual(result["idea_id"], "idea_live")
+        # Display key, derived on the server so a member cannot claim another title.
+        self.assertEqual(result["Based on Idea"], "Course-feedback clustering")
+
+    def test_spg_registration_accepts_yuvis_legacy_approval_flag(self):
+        self.db.store["ideas/idea_bot"] = {"title": "From Discord", "is_approved": True}
+        result = tickets._validate_spg_registration_fields(self._member_registration(idea_id="idea_bot"), "uid-1")
+        self.assertEqual(result["Based on Idea"], "From Discord")
+
+    def test_spg_registration_rejects_an_unknown_or_unapproved_idea(self):
+        self.db.store["ideas/idea_pending"] = {"title": "Pending", "is_verified": False}
+        for idea_id in ("idea_missing", "idea_pending", "", 42):
+            with self.subTest(idea_id=idea_id), self.assertRaises(HTTPException) as error:
+                tickets._validate_spg_registration_fields(self._member_registration(idea_id=idea_id), "uid-1")
+            self.assertEqual(error.exception.status_code, 400)
+
+    def test_spg_registration_without_an_idea_has_no_idea_keys(self):
+        result = tickets._validate_spg_registration_fields(self._member_registration(), "uid-1")
+        self.assertNotIn("idea_id", result)
+        self.assertNotIn("Based on Idea", result)
+

@@ -7,7 +7,7 @@ import MemberIcon, { type IconName } from "@/components/dashboard/MemberIcon";
 import PaginationBar from "@/components/dashboard/PaginationBar";
 import LoadingBar from "@/components/dashboard/LoadingBar";
 import { useMember } from "@/lib/useMember";
-import { api, type ApiTicketDetail, type TicketSummary, type StudentProfile } from "@/lib/api";
+import { api, type ApiTicketDetail, type IdeaDetail, type TicketSummary, type StudentProfile } from "@/lib/api";
 import { loadAllSpgs } from "@/lib/memberData";
 import type { SPGRecord } from "@/lib/spgData";
 import { useDebounce } from "@/lib/useDebounce";
@@ -224,6 +224,12 @@ export default function TicketManagementClient() {
 
   const selectedCategory = currentCategory;
 
+  // A registration started from an approved idea ("Start a project group from
+  // this idea"). Closing the modal clears the URL, which clears this too.
+  const ideaParam = searchParams.get("idea");
+  const [basedOnIdea, setBasedOnIdea] = useState<IdeaDetail | null>(null);
+  const [prefilledIdea, setPrefilledIdea] = useState<string | null>(null);
+
   const [formTitle, setFormTitle] = useState("");
   const [formDescription, setFormDescription] = useState("");
   const [formSpgId, setFormSpgId] = useState("");
@@ -337,6 +343,34 @@ export default function TicketManagementClient() {
       });
     return () => { active = false; };
   }, [isModalOpen, selectedCategory, isChangingLeader, debouncedLeaderSearch, token]);
+
+  useEffect(() => {
+    if (!isModalOpen || selectedCategory !== "spg_registration" || !ideaParam || !token) {
+      setBasedOnIdea(null);
+      return;
+    }
+    let active = true;
+    api.getIdea(ideaParam, token)
+      // Only an approved idea can seed a group; the server enforces this too.
+      .then((idea) => { if (active) setBasedOnIdea(idea.is_verified ? idea : null); })
+      .catch(() => { if (active) setBasedOnIdea(null); });
+    return () => { active = false; };
+  }, [isModalOpen, selectedCategory, ideaParam, token]);
+
+  useEffect(() => {
+    if (!basedOnIdea) {
+      setPrefilledIdea(null);
+      return;
+    }
+    if (prefilledIdea === basedOnIdea.id) return;
+    setPrefilledIdea(basedOnIdea.id);
+    // Fill only what the member has not already typed.
+    setFormTitle((current) => current.trim() ? current : basedOnIdea.title);
+    setSpgGoals((current) => current.trim() ? current : basedOnIdea.description);
+    // Ideas call the catch-all track "misc"; SPGs call it "general".
+    const track = basedOnIdea.track === "misc" ? "general" : basedOnIdea.track;
+    if (track === "research" || track === "product" || track === "kaggle" || track === "general") setSpgTrack(track);
+  }, [basedOnIdea, prefilledIdea]);
 
   // Team member candidate search
   useEffect(() => {
@@ -527,6 +561,8 @@ export default function TicketManagementClient() {
         "frequency_days": Number(spgFrequencyDays),
         "Summary & Goals": spgGoals.trim(),
         "Project Name & Track": `${formTitle.trim() || "Untitled Project"} (${trackLabel})`,
+        // The server validates this and adds the idea's title as "Based on Idea".
+        ...(basedOnIdea ? { idea_id: basedOnIdea.id } : {}),
       };
     } else if (selectedCategory === "resource_request") {
       fieldsObj = {
@@ -1078,6 +1114,12 @@ export default function TicketManagementClient() {
             </div>
 
             <form onSubmit={handleCreateTicket} className={styles.fieldsStack}>
+              {selectedCategory === "spg_registration" && basedOnIdea && (
+                <p className={styles.basedOnIdea}>
+                  Based on idea:{" "}
+                  <Link href={`/dashboard/ideas/${encodeURIComponent(basedOnIdea.id)}`}>{basedOnIdea.title}</Link>
+                </p>
+              )}
               {/* Field: Title */}
               <div className={styles.formGroup}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>

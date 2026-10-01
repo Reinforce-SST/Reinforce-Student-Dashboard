@@ -57,6 +57,7 @@ logger = logging.getLogger(__name__)
 TICKETS_COLLECTION = "tickets"
 MESSAGES_SUBCOLLECTION = "messages"
 USERS_COLLECTION = "users"
+IDEAS_COLLECTION = "ideas"
 MAX_MESSAGES = 300
 
 
@@ -316,6 +317,22 @@ def _positive_days(value: Any, label: str) -> int:
     return days
 
 
+def _linkable_idea(idea_id: Any, transaction: Any = None) -> Optional[Dict[str, Any]]:
+    """Return the idea a group may be started from, or None.
+
+    Only an approved idea is in the public jar, so only an approved idea can
+    seed a group. YUVI still writes the legacy `is_approved` name for the same
+    flag (see docs/DATA_CONTRACT.md), so either counts.
+    """
+    if not isinstance(idea_id, str) or not idea_id.strip():
+        return None
+    snapshot = db.collection(IDEAS_COLLECTION).document(idea_id.strip()).get(transaction=transaction)
+    if not snapshot.exists:
+        return None
+    data = snapshot.to_dict() or {}
+    return data if (data.get("is_verified") or data.get("is_approved")) else None
+
+
 def _validate_spg_registration_fields(fields: Dict[str, Any], creator_uid: str) -> Dict[str, Any]:
     """Validate SPG registration fields with strict checks:
     - Leader must be mandatory, single UID, and an active club member (is_member == True)
@@ -434,6 +451,20 @@ def _validate_spg_registration_fields(fields: Dict[str, Any], creator_uid: str) 
     fields_copy["Duration (Days)"] = duration_days
     fields_copy["frequency_days"] = frequency_days
     fields_copy["Report Frequency (Days)"] = frequency_days
+
+    # 5. Optional idea the group is started from. The display title is always
+    # set here, from the idea itself, so a member cannot attach one idea and
+    # show another's name.
+    fields_copy.pop("Based on Idea", None)
+    if "idea_id" in fields_copy:
+        idea = _linkable_idea(fields_copy["idea_id"])
+        if idea is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A group can only be started from an approved idea in the Idea Jar.",
+            )
+        fields_copy["idea_id"] = fields_copy["idea_id"].strip()
+        fields_copy["Based on Idea"] = idea.get("title") or fields_copy["idea_id"]
 
     return fields_copy
 
@@ -859,6 +890,11 @@ def approve_spg_ticket(
     elif proposition is not None:
         raise HTTPException(status_code=400, detail="Only project SPGs use a proposition PDF.")
 
+    # A group started from an idea links back to it. An idea that has since
+    # been deleted or unapproved does not block the group; it is created
+    # unlinked, because the group is the thing the members asked for.
+    idea_id = fields.get("idea_id").strip() if _linkable_idea(fields.get("idea_id")) else None
+
     try:
         create = SPGCreate(
             name=raw_name.strip(),
@@ -870,6 +906,7 @@ def approve_spg_ticket(
             member_ids=members,
             source_ticket_id=ticket_id,
             proposition_document_url=proposition_url,
+            idea_id=idea_id,
         )
 
         def approve_in_one_transaction(_db, create_spg_work):
@@ -880,7 +917,18 @@ def approve_spg_ticket(
                     raise HTTPException(status_code=409, detail="Registration changed while approving.")
                 if current_data.get("status") in (TicketStatus.CLOSED.value, TicketStatus.RESOLVED.value) and not current_data.get("spg_id"):
                     raise HTTPException(status_code=409, detail="Registration was closed while approving.")
+                # Firestore needs every read before the first write, so the idea
+                # is re-read here, ahead of create_spg_work's writes.
+                if idea_id and not _linkable_idea(idea_id, transaction):
+                    raise HTTPException(status_code=409, detail="The idea this group is based on changed while approving. Try again.")
                 record, created = create_spg_work(transaction)
+                if idea_id and created:
+                    # claims_count is the number of groups started from the idea.
+                    # A nested Increment leaves the vote and view counters alone.
+                    transaction.update(
+                        db.collection(IDEAS_COLLECTION).document(idea_id),
+                        {"stats.claims_count": firestore.Increment(1)},
+                    )
                 if current_data.get("spg_id") and current_data["spg_id"] != record.id:
                     raise HTTPException(status_code=409, detail="Registration already links to another SPG.")
                 if not current_data.get("spg_id"):

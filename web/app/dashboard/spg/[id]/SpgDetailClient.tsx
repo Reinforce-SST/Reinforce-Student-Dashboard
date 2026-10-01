@@ -276,6 +276,13 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
               View Proposition Document →
             </a>
           )}
+
+          {spg.idea_id && (
+            <Link href={`/dashboard/ideas/${encodeURIComponent(spg.idea_id)}`} className={styles.propositionLink}>
+              <MemberIcon name="ideas" size={16} />
+              Started from an Idea Jar idea →
+            </Link>
+          )}
         </div>
       </section>
 

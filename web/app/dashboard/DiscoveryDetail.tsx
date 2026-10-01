@@ -208,7 +208,32 @@ export default function DiscoveryDetail({
                 Updated: <strong>{formatDate(idea.updated_at)}</strong>
               </span>
             )}
+
+            {/* claims_count counts the project groups started from this idea. */}
+            {(idea.stats?.claims_count ?? 0) > 0 && (
+              <span className={styles.metaStatItem}>
+                Groups started: <strong>{idea.stats.claims_count}</strong>
+              </span>
+            )}
           </div>
+
+          {/* Only an approved idea is in the jar, and only those can seed a group. */}
+          {idea.is_verified && (
+            <div className={styles.startGroupCard}>
+              <div>
+                <h3 className={styles.overviewTitle}>Want to build this?</h3>
+                <p className={styles.overviewText}>
+                  Register a project group around this idea. The club reviews the registration like any other.
+                </p>
+              </div>
+              <Link
+                href={`/dashboard/tickets?category=spg_registration&idea=${encodeURIComponent(idea.id)}`}
+                className={styles.startGroupLink}
+              >
+                Start a project group from this idea →
+              </Link>
+            </div>
+          )}
 
           {/* Prerequisites */}
           <div className={styles.sectionCard}>
