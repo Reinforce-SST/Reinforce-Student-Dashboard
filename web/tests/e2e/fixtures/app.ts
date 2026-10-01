@@ -236,13 +236,27 @@ async function handleApi(route: Route, world: World) {
   }
 
   /* ---------------------------------------------------------------- blogs */
+  // Articles without a kind predate kinds and read as "article", as on the server.
+  const kindOf = (item: Record<string, unknown>) => item.kind ?? "article";
   if (path === "/blogs" && method === "GET") {
     const term = (search.get("search") ?? "").toLowerCase();
-    const matching = world.articles.filter(item => !term || String(item.title).toLowerCase().includes(term));
+    const wanted = search.get("kind");
+    const matching = world.articles
+      .filter(item => !wanted || kindOf(item) === wanted)
+      .filter(item => !term || String(item.title).toLowerCase().includes(term));
     return ok(page1(matching));
   }
-  if (path === "/blogs" && method === "POST") return ok(fixture.articleDetail);
-  if (/^\/blogs\/[^/]+$/.test(path)) return ok(fixture.articleDetail);
+  if (path === "/blogs" && method === "POST") {
+    const created = { ...fixture.articleDetail, ...(body as object), id: `article-${world.articles.length + 1}` };
+    world.articles = [...world.articles, created];
+    return ok(created);
+  }
+  if (/^\/blogs\/[^/]+\/upvote$/.test(path)) return ok({ upvoted: true, upvote_count: 13 });
+  if (/^\/blogs\/[^/]+$/.test(path)) {
+    const key = decodeURIComponent(path.split("/")[2] ?? "");
+    const match = world.articles.find(item => item.slug === key || item.id === key);
+    return ok({ ...fixture.articleDetail, ...(match ?? {}) });
+  }
 
   /* --------------------------------------------------------------- events */
   // The list is keyed `events`, not `items`. Returning `items` here leaves the

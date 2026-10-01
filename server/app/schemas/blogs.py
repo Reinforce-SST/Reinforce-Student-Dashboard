@@ -5,6 +5,7 @@ from enum import Enum
 import math
 import re
 from typing import Annotated, List, Optional
+from urllib.parse import urlparse
 from pydantic import (
     AfterValidator,
     AwareDatetime,
@@ -43,6 +44,12 @@ def calculate_reading_time(content: str, words_per_minute: int = 200) -> int:
 # Enums
 # ---------------------------------------------------------------------------
 
+class BlogKind(str, Enum):
+    """An article, or a write-up of a research paper. One collection, one feed."""
+    ARTICLE = "article"
+    RESEARCH_PAPER = "research_paper"
+
+
 class BlogStatus(str, Enum):
     DRAFT = "draft"
     PUBLISHED = "published"
@@ -53,6 +60,39 @@ class BlogStatus(str, Enum):
 # ---------------------------------------------------------------------------
 # 1. Blog Post Schemas
 # ---------------------------------------------------------------------------
+
+def _web_address(value: str) -> str:
+    """A paper link is rendered as an href. Only http(s) may pass; a
+    javascript: or data: address would run in the reader's browser."""
+    parsed = urlparse(value)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError("must be an http or https web address")
+    return value
+
+
+PaperUrl = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=500),
+    AfterValidator(_web_address),
+]
+PaperAuthor = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
+
+
+class PaperDetails(BaseModel):
+    """What makes a research paper citable: who wrote it, where, and the link."""
+    model_config = ConfigDict(extra="forbid")
+
+    authors: List[PaperAuthor] = Field(min_length=1, max_length=30)
+    venue: Optional[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]] = None
+    paper_url: PaperUrl
+
+
+def paper_matches_kind(kind: "BlogKind", paper: Optional[PaperDetails]) -> None:
+    if kind is BlogKind.RESEARCH_PAPER and paper is None:
+        raise ValueError("a research paper needs its paper details: authors and a link")
+    if kind is BlogKind.ARTICLE and paper is not None:
+        raise ValueError("an article cannot carry paper details")
+
 
 class BlogStats(BaseModel):
     upvote_count: int = Field(default=0, ge=0)
@@ -74,6 +114,13 @@ class BlogCreate(BlogBase):
 
     slug: Optional[SlugStr] = None  # Auto-derived from title if omitted
     content: NonBlankStr            # Full Markdown content
+    kind: BlogKind = BlogKind.ARTICLE
+    paper: Optional[PaperDetails] = None
+
+    @model_validator(mode="after")
+    def _kind_and_paper_agree(self):
+        paper_matches_kind(self.kind, self.paper)
+        return self
 
 
 class BlogUpdate(BaseModel):
@@ -87,6 +134,10 @@ class BlogUpdate(BaseModel):
     content: Optional[NonBlankStr] = None
     tags: Optional[List[str]] = Field(default=None, max_length=10)
     status: Optional[BlogStatus] = None
+    # Checked against the stored article by the endpoint, since either may be
+    # omitted and the result is what has to agree.
+    kind: Optional[BlogKind] = None
+    paper: Optional[PaperDetails] = None
 
 
 class BlogDocument(BaseModel):
@@ -107,6 +158,8 @@ class BlogDocument(BaseModel):
     updated_at: Optional[str] = None
     published_at: Optional[str] = None
     stats: BlogStats = Field(default_factory=BlogStats)
+    kind: BlogKind = BlogKind.ARTICLE
+    paper: Optional[PaperDetails] = None
 
 
 class BlogSummary(BaseModel):
@@ -124,6 +177,8 @@ class BlogSummary(BaseModel):
     published_at: Optional[str] = None
     stats: BlogStats
     is_upvoted: Optional[bool] = None  # Contextual to requesting authenticated user
+    kind: BlogKind = BlogKind.ARTICLE
+    paper: Optional[PaperDetails] = None
 
 
 class BlogDetail(BlogSummary):

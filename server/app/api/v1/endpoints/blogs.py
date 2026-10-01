@@ -11,10 +11,13 @@ from app.utils import is_admin_user, iso_str, now_iso, slugify
 from app.services.firebase import db, upload_file_to_storage
 from app.services import contributions as contribution_service
 from app.schemas.blogs import (
+    paper_matches_kind,
     BlogCreate,
     BlogDetail,
     BlogListResponse,
     BlogStats,
+    PaperDetails,
+    BlogKind,
     BlogStatus,
     BlogSummary,
     BlogUpdate,
@@ -57,7 +60,20 @@ def _to_blog_summary(doc_id: str, data: Dict[str, Any]) -> BlogSummary:
         created_at=iso_str(data.get("created_at")),
         published_at=iso_str(data.get("published_at")),
         stats=stats,
+        kind=data.get("kind") or BlogKind.ARTICLE,
+        paper=_stored_paper(data.get("paper")),
     )
+
+
+def _stored_paper(raw: Any) -> Optional[PaperDetails]:
+    """Paper details as stored. Only validated writes store them, but one bad
+    document must not take the whole feed down, so an invalid one reads as none."""
+    if not raw:
+        return None
+    try:
+        return PaperDetails.model_validate(raw)
+    except Exception:
+        return None
 
 
 def _to_blog_detail(doc_id: str, data: Dict[str, Any]) -> BlogDetail:
@@ -132,6 +148,7 @@ def list_blogs(
     tag: Optional[str] = Query(None, description="Filter by tag"),
     search: Optional[str] = Query(None, description="Search term in title or summary"),
     status_filter: BlogStatus = Query(BlogStatus.PUBLISHED, alias="status", description="Status filter"),
+    kind: Optional[BlogKind] = Query(None, description="article or research_paper"),
     viewer: Optional[dict] = Depends(get_optional_current_user),
 ) -> BlogListResponse:
     """Fetch published blogs feed with pagination, tag filter, and search.
@@ -154,6 +171,10 @@ def list_blogs(
     for doc in docs:
         data = doc.to_dict() or {}
         summary = _to_blog_summary(doc.id, data)
+        # Filtered here, not in the query: articles written before kinds
+        # existed have no kind field, and still count as articles.
+        if kind is not None and summary.kind is not kind:
+            continue
 
         if search:
             s = search.strip().lower()
@@ -267,6 +288,8 @@ def create_blog(
             "comment_count": 0,
             "view_count": 0,
         },
+        "kind": blog_in.kind.value,
+        "paper": blog_in.paper.model_dump() if blog_in.paper else None,
     }
 
     doc_ref.set(blog_doc)
@@ -312,6 +335,17 @@ def update_blog(
         updates["status"] = blog_in.status.value
         if blog_in.status == BlogStatus.PUBLISHED and not data.get("published_at"):
             updates["published_at"] = now
+    if blog_in.kind is not None or blog_in.paper is not None:
+        kind = blog_in.kind or BlogKind(data.get("kind") or BlogKind.ARTICLE)
+        # Turning a paper back into an article drops its details rather than
+        # leaving them stale; otherwise a supplied paper replaces the stored one.
+        paper = None if kind is BlogKind.ARTICLE and blog_in.paper is None else (blog_in.paper or _stored_paper(data.get("paper")))
+        try:
+            paper_matches_kind(kind, paper)
+        except ValueError as error:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from None
+        updates["kind"] = kind.value
+        updates["paper"] = paper.model_dump() if paper else None
 
     doc_ref.update(updates)
     updated_doc = doc_ref.get()
