@@ -278,7 +278,10 @@ async function handleApi(route: Route, world: World) {
   if (path === "/spgs" && method === "GET") return ok(page1(world.spgs));
   if (/^\/spgs\/[^/]+\/reports\/(form|pdf)$/.test(path)) return ok(fixture.spgReport);
   if (/^\/spgs\/[^/]+\/reports$/.test(path)) return ok(page1([fixture.spgReport]));
-  if (/^\/spgs\/[^/]+$/.test(path)) return ok(fixture.spg);
+  if (/^\/spgs\/[^/]+$/.test(path)) {
+    const spgId = decodeURIComponent(path.split("/")[2] ?? "");
+    return ok(world.spgs.find(item => item.id === spgId) ?? fixture.spg);
+  }
 
   /* -------------------------------------------------------- contributions */
   // A bare array, unlike every other leaderboard response.

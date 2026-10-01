@@ -347,6 +347,7 @@ type ApiTicketMessage = {
 const FIELD_ORDER: Partial<Record<TicketCategory, string[]>> = {
   spg_registration: [
     "Project Name",
+    "Based on Idea",
     "Track",
     "Team Leader",
     "Team Members",
@@ -394,6 +395,9 @@ function ticketFields(category: TicketCategory, fields: Record<string, unknown>)
     if (val === undefined || val === null) continue;
     const strVal = String(val).trim();
     if (!strVal || strVal === "None specified" || strVal === "None") continue;
+    // A document id means nothing to a member. The server stores the idea's
+    // title alongside it as "Based on Idea".
+    if (key === "idea_id") continue;
 
     // Skip redundant raw snake_case keys if Title Case key exists
     if (
@@ -485,6 +489,8 @@ export const api = {
   },
   getIdea: (id: string, token?: string) => request<IdeaDetail>(`/ideas/${encodeURIComponent(id)}`, token),
   myIdeas: (token: string) => request<{ items: IdeaSummary[] }>("/ideas/my", token),
+  /** One approved idea, chosen by the server. 404 when the jar is empty. */
+  randomIdea: (token?: string | null) => request<IdeaDetail>("/ideas/random", token),
   createIdea: (token: string, body: { title: string; description: string; track: string }) =>
     request<IdeaDetail>("/ideas", token, { method: "POST", body: JSON.stringify(body) }),
   upvoteIdea: (token: string, id: string) =>

@@ -82,3 +82,10 @@
 .outcomeText { color: #e2e2e7; font-size: 0.9rem; line-height: 1.5; }
 .emptyNotice { color: #888892; font-size: 0.85rem; font-style: italic; }
 
+
+.startGroupCard { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 18px 20px; border: 1px solid rgba(229, 183, 49, 0.35); border-radius: 12px; background: rgba(229, 183, 49, 0.06); }
+.startGroupCard > div { min-width: 0; flex: 1 1 260px; }
+.startGroupCard p { margin: 4px 0 0; }
+.startGroupLink { display: inline-flex; align-items: center; min-height: 42px; padding: 10px 16px; border-radius: 10px; background: var(--brand, #E5B731); color: #0c0c0e; font-size: 0.82rem; font-weight: 800; text-decoration: none; white-space: nowrap; }
+.startGroupLink:hover { background: #f0c345; }
+@media (max-width: 480px) { .startGroupLink { white-space: normal; } }

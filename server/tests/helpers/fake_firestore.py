@@ -37,9 +37,17 @@ class FakeDocumentRef:
         self._store.setdefault(self._collection, {})[self.id] = copy.deepcopy(data)
 
     def update(self, data: dict) -> None:
-        self._store.setdefault(self._collection, {}).setdefault(self.id, {}).update(
-            copy.deepcopy(data)
-        )
+        """Mirror Firestore: a dotted key updates one nested field, and an
+        Increment adds to the stored value instead of replacing it."""
+        target = self._store.setdefault(self._collection, {}).setdefault(self.id, {})
+        for field, value in data.items():
+            cursor = target
+            parts = field.split(".")
+            for part in parts[:-1]:
+                cursor = cursor.setdefault(part, {})
+            if type(value).__name__ == "Increment":
+                value = cursor.get(parts[-1], 0) + value.value
+            cursor[parts[-1]] = copy.deepcopy(value)
 
 
 class FakeQuery:
