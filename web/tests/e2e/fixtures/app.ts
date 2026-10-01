@@ -35,6 +35,8 @@ export type World = {
   links: Record<string, unknown>[];
   /** Whether the member currently holds an event registration. */
   registered: boolean;
+  /** How many times /ideas/random has been drawn, so draws rotate. */
+  draws: number;
 };
 
 function freshWorld(): World {
@@ -43,13 +45,14 @@ function freshWorld(): World {
     token: fixture.MEMBER_TOKEN,
     fail: new Set<string>(),
     tickets: [{ ...fixture.ticket }],
-    ideas: [{ ...fixture.idea }],
+    ideas: [{ ...fixture.idea }, { ...fixture.pendingIdea }],
     articles: [{ ...fixture.article }],
     events: [{ ...fixture.upcomingEvent }, { ...fixture.pastEvent }],
     spgs: [{ ...fixture.spg }],
     calls: [],
     links: [],
     registered: false,
+    draws: 0,
   };
 }
 
@@ -165,22 +168,62 @@ async function handleApi(route: Route, world: World) {
   if (/^\/tickets\/[^/]+$/.test(path)) return ok(fixture.ticketDetail);
 
   /* ---------------------------------------------------------------- ideas */
-  if (path === "/ideas/my") return ok({ items: [{ ...fixture.pendingIdea }] });
-  if (path === "/ideas/pending") return ok({ items: [{ ...fixture.pendingIdea }] });
-  if (path === "/ideas/admin") return ok(page1([{ ...fixture.idea }, { ...fixture.pendingIdea }]));
-  if (path === "/ideas" && method === "GET") {
+  // world.ideas holds every idea, approved or not, as the server does. The
+  // public list must only ever see approved ones; the admin list sees all.
+  const isApproved = (item: Record<string, unknown>) => item.is_verified === true;
+  const ideaStatus = (item: Record<string, unknown>) =>
+    item.status === "closed" ? "closed" : isApproved(item) ? "approved" : "pending";
+  if (path === "/ideas/my") return ok({ items: world.ideas.filter(item => !isApproved(item)) });
+  if (path === "/ideas/pending") return ok({ items: world.ideas.filter(item => ideaStatus(item) === "pending") });
+  if (path === "/ideas/admin") {
+    const wanted = search.get("status");
     const term = (search.get("search") ?? "").toLowerCase();
-    const matching = world.ideas.filter(item => !term || String(item.title).toLowerCase().includes(term));
+    const matching = world.ideas
+      .filter(item => !wanted || wanted === "all" || ideaStatus(item) === wanted)
+      .filter(item => !search.get("track") || item.track === search.get("track"))
+      .filter(item => !search.get("difficulty") || item.difficulty === search.get("difficulty"))
+      .filter(item => !term || `${item.title} ${item.description}`.toLowerCase().includes(term));
     return ok(page1(matching));
   }
-  if (path === "/ideas" && method === "POST") return ok({ ...fixture.ideaDetail, ...(body as object), is_verified: false });
+  if (path === "/ideas/random") {
+    const live = world.ideas.filter(isApproved);
+    if (!live.length) return fail(404, "No approved ideas yet.");
+    return ok({ ...fixture.ideaDetail, ...live[world.draws++ % live.length] });
+  }
+  if (path === "/ideas" && method === "GET") {
+    const term = (search.get("search") ?? "").toLowerCase();
+    const matching = world.ideas
+      .filter(isApproved)
+      .filter(item => !term || String(item.title).toLowerCase().includes(term));
+    return ok(page1(matching));
+  }
+  if (path === "/ideas" && method === "POST") {
+    const created = { ...fixture.ideaDetail, ...(body as object), id: `idea-${world.ideas.length + 1}`, is_verified: false, status: "pending" };
+    world.ideas = [...world.ideas, created];
+    return ok(created);
+  }
   if (/^\/ideas\/[^/]+\/upvote$/.test(path)) return ok({ upvoted: true, upvote_count: 10 });
-  if (/^\/ideas\/[^/]+\/approve$/.test(path)) return ok({ ...fixture.ideaDetail, is_verified: true });
+  const ideaId = decodeURIComponent(path.split("/")[2] ?? "");
+  const ideaIndex = world.ideas.findIndex(item => item.id === ideaId);
+  if (/^\/ideas\/[^/]+\/approve$/.test(path)) {
+    if (ideaIndex < 0) return fail(404, "Idea not found.");
+    world.ideas[ideaIndex] = { ...world.ideas[ideaIndex], is_verified: true, status: "approved" };
+    return ok({ ...fixture.ideaDetail, ...world.ideas[ideaIndex] });
+  }
   // rejectIdea is a DELETE on the idea itself and answers { message, id }.
   if (/^\/ideas\/[^/]+$/.test(path) && method === "DELETE") {
-    return ok({ message: "Idea rejected.", id: path.split("/")[2] });
+    if (ideaIndex < 0) return fail(404, "Idea not found.");
+    world.ideas = world.ideas.filter(item => item.id !== ideaId);
+    return ok({ message: "Idea deleted successfully", id: ideaId });
   }
-  if (/^\/ideas\/[^/]+$/.test(path)) return ok(fixture.ideaDetail);
+  if (/^\/ideas\/[^/]+$/.test(path) && method === "PATCH") {
+    if (ideaIndex < 0) return fail(404, "Idea not found.");
+    world.ideas[ideaIndex] = { ...world.ideas[ideaIndex], ...(body as object) };
+    return ok({ ...fixture.ideaDetail, ...world.ideas[ideaIndex] });
+  }
+  if (/^\/ideas\/[^/]+$/.test(path)) {
+    return ok({ ...fixture.ideaDetail, ...(ideaIndex >= 0 ? world.ideas[ideaIndex] : {}) });
+  }
 
   /* ---------------------------------------------------------------- blogs */
   if (path === "/blogs" && method === "GET") {
