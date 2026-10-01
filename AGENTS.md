@@ -14,7 +14,6 @@ The Reinforce Club (SST) platform. Three surfaces, one codebase:
 |---|---|---|
 | Public website | Landing page and project/track browsing | `web/` |
 | Member dashboard | Auth, profile, tickets, and member navigation | `web/` |
-| Legacy frontend | Vite client; still served by the older Vercel URL | `client/` |
 | API | Users, tickets, SPGs, events, ideas, blogs, contributions | `server/` |
 
 The product specification is the PRD. **Do not assume a feature exists because
@@ -27,7 +26,7 @@ one shared database.
 
 ```
   www.reinforce-sst.com                       Vercel   (Next.js web/)
-  reinforce-student-dashboard.vercel.app      Vercel   (legacy client/)
+  reinforce-sst.com                           Vercel   (same deployment)
                  │
                  ▼
   api.reinforce-sst.com                       VPS      (this repo, server/)
@@ -82,8 +81,10 @@ drive-by edit inside an unrelated change.
 
 - **Legacy Discord records need reverification.** Raw-ID links no longer grant
   access; members must open a fresh private YUVI token link. See docs/verification.md.
-- **The older Vercel URL still selects the Vite client.** The custom domain
-  serves `web/`; check both destinations before changing redirects or auth links.
+- **The older `reinforce-student-dashboard.vercel.app` URL is gone.** It answers
+  `DEPLOYMENT_NOT_FOUND` as of 1 October 2026, and the Vite client it served was
+  deleted from this repository. `reinforce-sst.com` and `www.reinforce-sst.com`
+  both serve `web/`. Any link still pointing at the old URL is dead.
 - **YUVI's hosted Render health URL returns 503.** The VPS bot is a separate
   deployment; check its current commit and bridge endpoint before claiming a
   dashboard ticket reached Discord. PR #13 repairs the bridge after a queue merge.
@@ -106,6 +107,13 @@ cannot approve one. Live deployment still needs an end-to-end check.
 - Conventional Commits, signed, authored by the club member who wrote the code.
 - Stage exact paths. Never `git add -A`.
 - One logical change per PR.
+- **Run the end-to-end suite for any dashboard change.** `npm run e2e` in `web/`
+  builds the app, drives a real browser over every member route, and fails on an
+  unmocked API call. Fixtures live in `web/tests/e2e/fixtures/` and only at the
+  network boundary — never add a fixture to production code to make a test pass.
+- **Add a header title with a new dashboard route.** `components/dashboard/Header.tsx`
+  falls back to "Dashboard Overview", so a missing entry is silent. The suite
+  asserts every route's title to keep it that way.
 
 ## Design system
 
@@ -128,6 +136,9 @@ Do not resolve these yourself. Ask.
 - Anything moving or gating `/auth`
 - Adding a dependency
 - Choosing or changing a licence
-- Deleting the legacy `client/` app
-- Which `vercel.json` is authoritative (there are two, identical, and the Vercel
-  root-directory setting is not visible from the repository)
+- Whether `vercel.json`'s `services.frontend` block is what actually builds the
+  site. It sets `outputDirectory: "dist"`, which is a Vite output directory, but
+  `web/` is Next.js and builds to `.next`. Deploys are green, so the Vercel
+  project's own root-directory setting is probably what takes effect and this
+  block is inert — but that setting is not visible from the repository, so do
+  not "fix" the file without checking the dashboard first.
