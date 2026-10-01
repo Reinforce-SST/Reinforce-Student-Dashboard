@@ -30,9 +30,12 @@ export type IdeaSummary = {
   track: string; difficulty?: string | null; is_verified: boolean;
   stats: { upvote_count: number; views_count: number; claims_count: number };
   created_at?: string | null;
+  approved_at?: string | null;
+  status?: string | null;
 };
 export type IdeaDetail = IdeaSummary & {
   prerequisites: string[]; rough_roadmap: string[]; learning_outcomes: string[];
+  updated_at?: string | null;
 };
 
 /** Nothing should hang the UI forever. Render cold starts are slow but finite. */
@@ -171,6 +174,35 @@ export type EventDocument = {
   created_by?: string;
   created_at?: string;
   updated_at?: string;
+};
+
+export type AttendeeProfile = {
+  id: string;
+  full_name: string;
+  email?: string;
+  avatar_url?: string | null;
+  batch_year?: number | null;
+  tier?: string;
+  role_label?: string | null;
+  bio?: string | null;
+  points?: number;
+};
+
+export type EventRegistration = {
+  id: string;
+  event_id: string;
+  user_id: string;
+  team_name?: string | null;
+  member_uids: string[];
+  spg_id?: string | null;
+  spg_status?: string | null;
+  status: "registered" | "waitlisted" | "checked_in" | "absent" | "disqualified" | "excused" | "cancelled";
+  checked_in_at?: string | null;
+  checked_in_by?: string | null;
+  attendance_note?: string | null;
+  registered_at: string;
+  user_profile?: AttendeeProfile | null;
+  member_profiles?: AttendeeProfile[] | null;
 };
 /* These mirror server/app/schemas/. See docs/DATA_CONTRACT.md. */
 
@@ -426,10 +458,20 @@ export const api = {
   getArticle: (slug: string) => request<ArticleDetail>(`/blogs/${encodeURIComponent(slug)}`),
   publishArticle: (token: string, body: { title: string; summary: string; content: string; tags: string[] }) =>
     request<ArticleDetail>("/blogs", token, { method: "POST", body: JSON.stringify({ ...body, status: "published" }) }),
-  listIdeas: (search = "", page = 1) => {
-    const query = new URLSearchParams({ page: String(page), page_size: "20" });
+  listIdeas: (
+    search = "",
+    page = 1,
+    pageSize = 20,
+    track?: string,
+    difficulty?: string,
+    sortBy?: string
+  ) => {
+    const query = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
     if (search.trim()) query.set("search", search.trim());
-    return request<{ items: IdeaSummary[]; has_more: boolean; total: number }>(`/ideas?${query}`);
+    if (track && track !== "all") query.set("track", track);
+    if (difficulty && difficulty !== "all") query.set("difficulty", difficulty);
+    if (sortBy) query.set("sort_by", sortBy);
+    return request<{ items: IdeaSummary[]; has_more: boolean; total: number; page: number; page_size: number }>(`/ideas?${query}`);
   },
   getIdea: (id: string, token?: string) => request<IdeaDetail>(`/ideas/${encodeURIComponent(id)}`, token),
   myIdeas: (token: string) => request<{ items: IdeaSummary[] }>("/ideas/my", token),
@@ -438,8 +480,50 @@ export const api = {
   upvoteIdea: (token: string, id: string) =>
     request<{ upvoted: boolean; upvote_count: number }>(`/ideas/${encodeURIComponent(id)}/upvote`, token, { method: "POST" }),
   pendingIdeas: (token: string) => request<{ items: IdeaSummary[] }>("/ideas/pending", token),
+  adminListIdeas: (
+    token: string,
+    options?: {
+      status?: string;
+      search?: string;
+      track?: string;
+      difficulty?: string;
+      page?: number;
+      pageSize?: number;
+    }
+  ) => {
+    const query = new URLSearchParams();
+    if (options?.status && options.status !== "all") query.set("status", options.status);
+    if (options?.search) query.set("search", options.search);
+    if (options?.track && options.track !== "all") query.set("track", options.track);
+    if (options?.difficulty && options.difficulty !== "all") query.set("difficulty", options.difficulty);
+    if (options?.page) query.set("page", String(options.page));
+    if (options?.pageSize) query.set("page_size", String(options.pageSize));
+    return request<{ items: IdeaSummary[]; has_more: boolean; total: number; page: number; page_size: number }>(
+      `/ideas/admin?${query}`,
+      token
+    );
+  },
+  updateIdea: (
+    token: string,
+    id: string,
+    body: Partial<{
+      title: string;
+      description: string;
+      track: string;
+      difficulty: string;
+      prerequisites: string[];
+      rough_roadmap: string[];
+      learning_outcomes: string[];
+    }>
+  ) =>
+    request<IdeaDetail>(`/ideas/${encodeURIComponent(id)}`, token, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   approveIdea: (token: string, id: string) =>
     request<IdeaDetail>(`/ideas/${encodeURIComponent(id)}/approve`, token, { method: "POST" }),
+  rejectIdea: (token: string, id: string) =>
+    request<{ message: string; id: string }>(`/ideas/${encodeURIComponent(id)}`, token, { method: "DELETE" }),
   syncUser: (token: string) =>
     request<StudentProfile>("/users/sync", token, {
       method: "POST",
@@ -813,8 +897,49 @@ export const api = {
       body: JSON.stringify({ status }),
     }),
 
+  getEventRegistrations: (token: string, eventId: string) =>
+    request<EventRegistration[]>(`/events/${encodeURIComponent(eventId)}/registrations`, token),
+
   adminGetEventRegistrations: (token: string, eventId: string) =>
-    request<Record<string, unknown>[]>(`/events/${encodeURIComponent(eventId)}/registrations`, token),
+    request<EventRegistration[]>(`/events/${encodeURIComponent(eventId)}/registrations`, token),
+
+  adminUpdateRegistrationAttendance: (
+    token: string,
+    eventId: string,
+    registrationId: string,
+    payload: {
+      status: "checked_in" | "absent" | "disqualified" | "excused" | "registered" | "waitlisted" | "cancelled";
+      attendance_note?: string | null;
+      award_points?: boolean;
+    }
+  ) =>
+    request<EventRegistration>(
+      `/events/${encodeURIComponent(eventId)}/registrations/${encodeURIComponent(registrationId)}/attendance`,
+      token,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }
+    ),
+
+  adminAddManualRegistration: (
+    token: string,
+    eventId: string,
+    payload: {
+      user_id: string;
+      status: "checked_in" | "absent" | "disqualified" | "excused" | "registered" | "waitlisted" | "cancelled";
+      attendance_note?: string | null;
+      award_points?: boolean;
+    }
+  ) =>
+    request<EventRegistration>(
+      `/events/${encodeURIComponent(eventId)}/registrations/manual`,
+      token,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    ),
 
   adminRollCall: (token: string, eventId: string, attendeeUids: string[], awardPoints: boolean = true) =>
     request<Record<string, unknown>>(`/events/${encodeURIComponent(eventId)}/attendance/roll-call`, token, {

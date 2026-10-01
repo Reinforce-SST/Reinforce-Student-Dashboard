@@ -13,7 +13,10 @@ import PaginationBar from "@/components/dashboard/PaginationBar";
 import LoadingBar from "@/components/dashboard/LoadingBar";
 import AdminTicketsPanel from "./AdminTicketsPanel";
 import AdminContentPanel from "./AdminContentPanel";
+import AdminEventEditPanel from "./AdminEventEditPanel";
+import AdminBannerEditPanel from "./AdminBannerEditPanel";
 import MemberRoleRow from "./MemberRoleRow";
+import { useDebounce } from "@/lib/useDebounce";
 import styles from "./Admin.module.css";
 
 type AdminTab =
@@ -53,8 +56,13 @@ export default function AdminClient() {
     setSubmitSuccess(null);
     setSubmitError(null);
     setDirectoryMessage("");
+    setBannerSubTab("create");
+    setEventSubTab("create");
     router.push(`/dashboard/admin?tab=${tab}`);
   };
+
+  const [bannerSubTab, setBannerSubTab] = useState<"create" | "edit">("create");
+  const [eventSubTab, setEventSubTab] = useState<"create" | "edit">("create");
 
   // --- TAB 1: Dashboard Hero Banner State ---
   const [bannerStartDateTime, setBannerStartDateTime] = useState("");
@@ -120,6 +128,7 @@ export default function AdminClient() {
   const [awardTrack, setAwardTrack] = useState<"misc" | "research" | "product" | "kaggle">("misc");
   const [awardLoading, setAwardLoading] = useState(false);
   const [awardSearch, setAwardSearch] = useState("");
+  const debouncedAwardSearch = useDebounce(awardSearch, 400);
   const [awardCandidates, setAwardCandidates] = useState<StudentProfile[]>([]);
   const [awardSearchError, setAwardSearchError] = useState("");
   const [awardCandidateTotal, setAwardCandidateTotal] = useState(0);
@@ -131,6 +140,7 @@ export default function AdminClient() {
   const [manualAddError, setManualAddError] = useState("");
   const awardOccurredAtRef = useRef<string | null>(null);
   const [memberSearch, setMemberSearch] = useState("");
+  const debouncedMemberSearch = useDebounce(memberSearch, 400);
   const [memberPage, setMemberPage] = useState(1);
   const [memberPageSize, setMemberPageSize] = useState(20);
   const [memberDirectory, setMemberDirectory] = useState<{ items: StudentProfile[]; total: number; has_more: boolean } | null>(null);
@@ -140,17 +150,19 @@ export default function AdminClient() {
   const [directoryRevision, setDirectoryRevision] = useState(0);
 
   useEffect(() => {
+    setMemberPage(1);
+  }, [debouncedMemberSearch]);
+
+  useEffect(() => {
     if (activeTab !== "members" || !token) return;
     let active = true;
     setDirectoryLoading(true);
-    const timer = setTimeout(() => {
-      api.adminDirectory(token, { search: memberSearch.trim(), page: memberPage, page_size: memberPageSize })
-        .then((result) => { if (active) { setMemberDirectory(result); setDirectoryError(""); } })
-        .catch((error) => { if (active) setDirectoryError(error instanceof Error ? error.message : "Could not load members."); })
-        .finally(() => { if (active) setDirectoryLoading(false); });
-    }, 250);
-    return () => { active = false; clearTimeout(timer); };
-  }, [activeTab, token, memberSearch, memberPage, memberPageSize, directoryRevision]);
+    api.adminDirectory(token, { search: debouncedMemberSearch.trim(), page: memberPage, page_size: memberPageSize })
+      .then((result) => { if (active) { setMemberDirectory(result); setDirectoryError(""); } })
+      .catch((error) => { if (active) setDirectoryError(error instanceof Error ? error.message : "Could not load members."); })
+      .finally(() => { if (active) setDirectoryLoading(false); });
+    return () => { active = false; };
+  }, [activeTab, token, debouncedMemberSearch, memberPage, memberPageSize, directoryRevision]);
 
   useEffect(() => {
     if (activeTab !== "contributions" || !token) {
@@ -159,26 +171,24 @@ export default function AdminClient() {
     let active = true;
     setCandidatesLoading(true);
     setAwardSearchError("");
-    const timer = setTimeout(() => {
-      api.adminDirectory(token, { search: awardSearch.trim() || undefined, page_size: 50 })
-        .then((result) => {
-          if (active) {
-            setAwardCandidates(result.items || []);
-            setAwardCandidateTotal(result.total);
-            setCandidatesLoading(false);
-          }
-        })
-        .catch((error) => {
-          if (active) {
-            setAwardCandidates([]);
-            setAwardCandidateTotal(0);
-            setAwardSearchError(error instanceof Error ? error.message : "Could not load members.");
-            setCandidatesLoading(false);
-          }
-        });
-    }, 250);
-    return () => { active = false; clearTimeout(timer); };
-  }, [activeTab, token, awardSearch]);
+    api.adminDirectory(token, { search: debouncedAwardSearch.trim() || undefined, page_size: 50 })
+      .then((result) => {
+        if (active) {
+          setAwardCandidates(result.items || []);
+          setAwardCandidateTotal(result.total);
+          setCandidatesLoading(false);
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          setAwardCandidates([]);
+          setAwardCandidateTotal(0);
+          setAwardSearchError(error instanceof Error ? error.message : "Could not load members.");
+          setCandidatesLoading(false);
+        }
+      });
+    return () => { active = false; };
+  }, [activeTab, token, debouncedAwardSearch]);
 
   const handleSelectAllVisible = () => {
     setSelectedRecipients((prev) => {
@@ -610,11 +620,108 @@ export default function AdminClient() {
         </div>
       )}
 
+      {/* Admin Tabs Navigation */}
+      <nav className={styles.tabsNav} aria-label="Admin Navigation Tabs">
+        <button
+          type="button"
+          className={`${styles.tabButton} ${activeTab === "banners" ? styles.tabButtonActive : ""}`}
+          onClick={() => handleTabChange("banners")}
+        >
+          <MemberIcon name="image" size={15} />
+          Banners
+        </button>
+        <button
+          type="button"
+          className={`${styles.tabButton} ${activeTab === "events" ? styles.tabButtonActive : ""}`}
+          onClick={() => handleTabChange("events")}
+        >
+          <MemberIcon name="calendar" size={15} />
+          Events
+        </button>
+        <button
+          type="button"
+          className={`${styles.tabButton} ${activeTab === "spg" ? styles.tabButtonActive : ""}`}
+          onClick={() => handleTabChange("spg")}
+        >
+          <MemberIcon name="spg" size={15} />
+          SPG Requests
+        </button>
+        <button
+          type="button"
+          className={`${styles.tabButton} ${activeTab === "tickets" ? styles.tabButtonActive : ""}`}
+          onClick={() => handleTabChange("tickets")}
+        >
+          <MemberIcon name="tickets" size={15} />
+          Tickets
+        </button>
+        <button
+          type="button"
+          className={`${styles.tabButton} ${activeTab === "contributions" ? styles.tabButtonActive : ""}`}
+          onClick={() => handleTabChange("contributions")}
+        >
+          <MemberIcon name="award" size={15} />
+          Merit Auditing
+        </button>
+        <button
+          type="button"
+          className={`${styles.tabButton} ${activeTab === "members" ? styles.tabButtonActive : ""}`}
+          onClick={() => handleTabChange("members")}
+        >
+          <MemberIcon name="users" size={15} />
+          Members
+        </button>
+        <button
+          type="button"
+          className={`${styles.tabButton} ${activeTab === "ideas" ? styles.tabButtonActive : ""}`}
+          onClick={() => handleTabChange("ideas")}
+        >
+          <MemberIcon name="ideas" size={15} />
+          Idea Jar Review
+        </button>
+        <button
+          type="button"
+          className={`${styles.tabButton} ${activeTab === "articles" ? styles.tabButtonActive : ""}`}
+          onClick={() => handleTabChange("articles")}
+        >
+          <MemberIcon name="articles" size={15} />
+          Articles
+        </button>
+      </nav>
+
       {/* ========================================================================= */}
       {/* TAB 1: DASHBOARD HERO BANNERS */}
       {/* ========================================================================= */}
       {activeTab === "banners" && (
-        <div className={styles.managerGrid}>
+        <div>
+          <div className={styles.subTabsRow}>
+            <button
+              type="button"
+              className={`${styles.subTabBtn} ${bannerSubTab === "create" ? styles.subTabBtnActive : ""}`}
+              onClick={() => {
+                setBannerSubTab("create");
+                setSubmitSuccess(null);
+                setSubmitError(null);
+              }}
+            >
+              <MemberIcon name="plus" size={14} />
+              Create Banner
+            </button>
+            <button
+              type="button"
+              className={`${styles.subTabBtn} ${bannerSubTab === "edit" ? styles.subTabBtnActive : ""}`}
+              onClick={() => {
+                setBannerSubTab("edit");
+                setSubmitSuccess(null);
+                setSubmitError(null);
+              }}
+            >
+              <MemberIcon name="edit" size={14} />
+              Edit Existing Banner
+            </button>
+          </div>
+
+          {bannerSubTab === "create" ? (
+            <div className={styles.managerGrid}>
           <div className={styles.card}>
             <div className={styles.cardHeader}>
               <div>
@@ -824,13 +931,52 @@ export default function AdminClient() {
             </div>
           </div>
         </div>
+      ) : (
+        <AdminBannerEditPanel
+          token={token || ""}
+          onSaved={(msg) => {
+            setSubmitSuccess(msg);
+            setSubmitError(null);
+          }}
+        />
       )}
+    </div>
+  )}
 
       {/* ========================================================================= */}
       {/* TAB 2: CLUB EVENTS (STANDALONE PAGE & CALENDAR) */}
       {/* ========================================================================= */}
       {activeTab === "events" && (
-        <div className={styles.card}>
+        <div>
+          <div className={styles.subTabsRow}>
+            <button
+              type="button"
+              className={`${styles.subTabBtn} ${eventSubTab === "create" ? styles.subTabBtnActive : ""}`}
+              onClick={() => {
+                setEventSubTab("create");
+                setSubmitSuccess(null);
+                setSubmitError(null);
+              }}
+            >
+              <MemberIcon name="plus" size={14} />
+              Create Event
+            </button>
+            <button
+              type="button"
+              className={`${styles.subTabBtn} ${eventSubTab === "edit" ? styles.subTabBtnActive : ""}`}
+              onClick={() => {
+                setEventSubTab("edit");
+                setSubmitSuccess(null);
+                setSubmitError(null);
+              }}
+            >
+              <MemberIcon name="edit" size={14} />
+              Edit Existing Event
+            </button>
+          </div>
+
+          {eventSubTab === "create" ? (
+            <div className={styles.card}>
           <div className={styles.cardHeader}>
             <div>
               <h3 className={styles.cardTitle}>
@@ -1214,7 +1360,17 @@ export default function AdminClient() {
             </button>
           </form>
         </div>
+      ) : (
+        <AdminEventEditPanel
+          token={token || ""}
+          onSaved={(msg) => {
+            setSubmitSuccess(msg);
+            setSubmitError(null);
+          }}
+        />
       )}
+    </div>
+  )}
 
       {activeTab === "spg" && <AdminTicketsPanel token={token} spgOnly />}
 

@@ -7,6 +7,8 @@ import { api } from "@/lib/api";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import { type EventDocument } from "@/lib/api";
 import { getEventGraduationBatches } from "@/lib/eventsData";
+import EventAttendeesPanel from "./EventAttendeesPanel";
+import EventAttendancePanel from "./EventAttendancePanel";
 import styles from "./EventDetail.module.css";
 
 function formatInline(text: string): React.ReactNode[] {
@@ -152,7 +154,10 @@ function renderMarkdown(md?: string | null) {
 }
 
 export default function EventDetailClient({ event }: { event: EventDocument }) {
-  const { token } = useMember();
+  const { token, profile } = useMember();
+  const isAdmin = Boolean(profile?.is_admin);
+  const [activeTab, setActiveTab] = useState<"overview" | "attendees" | "attendance">("overview");
+
   const [isRegistered, setIsRegistered] = useState(false);
   const [registrationStatus, setRegistrationStatus] = useState("");
   const [registrationLoading, setRegistrationLoading] = useState(true);
@@ -279,6 +284,16 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
       <section className={styles.heroBanner} aria-label="Event Hero Banner">
         <div className={styles.heroGlow} />
 
+        {event.banner_url && (
+          <div className={styles.eventCoverWrapper}>
+            <img
+              src={event.banner_url}
+              alt={event.title}
+              className={styles.eventCoverImage}
+            />
+          </div>
+        )}
+
         <div className={styles.heroTopMeta}>
           <h1 className={styles.eventTitle}>{event.title}</h1>
         </div>
@@ -325,8 +340,42 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
         {registrationError && <p role="alert" style={{ margin: "0 24px 16px" }}>{registrationError}</p>}
       </section>
 
-      {/* Main 2-Column Content Grid */}
-      <div className={styles.mainGrid}>
+      {/* Event Details Navigation Tabs */}
+      <div className={styles.eventTabsBar}>
+        <button
+          type="button"
+          className={`${styles.eventTabBtn} ${activeTab === "overview" ? styles.eventTabBtnActive : ""}`}
+          onClick={() => setActiveTab("overview")}
+        >
+          <MemberIcon name="calendar" size={15} />
+          Overview & Specifications
+        </button>
+
+        <button
+          type="button"
+          className={`${styles.eventTabBtn} ${activeTab === "attendees" ? styles.eventTabBtnActive : ""}`}
+          onClick={() => setActiveTab("attendees")}
+        >
+          <MemberIcon name="users" size={15} />
+          Registered Attendees & SPGs
+          {registeredCount > 0 && <span className={styles.tabCountBadge}>{registeredCount}</span>}
+        </button>
+
+        {isAdmin && (
+          <button
+            type="button"
+            className={`${styles.eventTabBtn} ${activeTab === "attendance" ? styles.eventTabBtnActive : ""}`}
+            onClick={() => setActiveTab("attendance")}
+          >
+            <MemberIcon name="shield" size={15} />
+            Attendance Management (Admin)
+          </button>
+        )}
+      </div>
+
+      {/* TAB 1: OVERVIEW & SPECIFICATIONS */}
+      {activeTab === "overview" && (
+        <div className={styles.mainGrid}>
         {/* Left Main Column */}
         <div className={styles.contentColumn}>
           {/* Detailed Overview */}
@@ -554,6 +603,25 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
           </div>
         </aside>
       </div>
+      )}
+
+      {/* TAB 2: REGISTERED ATTENDEES & SPGS */}
+      {activeTab === "attendees" && (
+        <section className={styles.sectionCard} aria-label="Registered Attendees">
+          <EventAttendeesPanel eventId={event.id} token={token} />
+        </section>
+      )}
+
+      {/* TAB 3: ADMIN ATTENDANCE MANAGEMENT */}
+      {activeTab === "attendance" && isAdmin && (
+        <section className={styles.sectionCard} aria-label="Attendance Console">
+          <EventAttendancePanel
+            eventId={event.id}
+            token={token}
+            attendancePoints={event.points_reward?.attendance_points ?? 0}
+          />
+        </section>
+      )}
     </div>
   );
 }

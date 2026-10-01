@@ -64,6 +64,7 @@ EXPECTED_ROUTES = {
     ("GET", "/api/v1/ideas/random"),
     ("GET", "/api/v1/ideas/my"),
     ("GET", "/api/v1/ideas/pending"),
+    ("GET", "/api/v1/ideas/admin"),
     ("POST", "/api/v1/ideas"),
     ("GET", "/api/v1/ideas/{idea_id}"),
     ("PATCH", "/api/v1/ideas/{idea_id}"),

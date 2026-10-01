@@ -8,7 +8,7 @@ Strictly follows zero user denormalization (pure UID references).
 # Validated Need Some Changes and Discussion along the Comemnted Points
 from datetime import date, datetime, timezone
 from enum import Enum
-from typing import Annotated, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 from pydantic import (
@@ -68,6 +68,9 @@ class RegistrationStatus(str, Enum):
     REGISTERED = "registered"
     WAITLISTED = "waitlisted"
     CHECKED_IN = "checked_in"
+    ABSENT = "absent"
+    DISQUALIFIED = "disqualified"
+    EXCUSED = "excused"
     CANCELLED = "cancelled"
 
 
@@ -342,7 +345,27 @@ class RegistrationDocument(BaseModel):
     status: str = RegistrationStatus.REGISTERED.value
     checked_in_at: Optional[str] = None
     checked_in_by: Optional[str] = None
+    attendance_note: Optional[str] = None
     registered_at: str
+    user_profile: Optional[Dict[str, Any]] = None
+    member_profiles: Optional[List[Dict[str, Any]]] = None
+
+
+class RegistrationAttendanceUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: RegistrationStatus
+    attendance_note: Optional[str] = None
+    award_points: bool = True
+
+
+class ManualRegistrationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: NonBlankStr
+    status: RegistrationStatus = RegistrationStatus.CHECKED_IN
+    attendance_note: Optional[str] = None
+    award_points: bool = True
 
 
 class MyRegistrationResponse(BaseModel):

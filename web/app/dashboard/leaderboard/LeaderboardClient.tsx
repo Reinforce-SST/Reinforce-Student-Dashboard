@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 
 import Link from "next/link";
 import MemberIcon from "@/components/dashboard/MemberIcon";
@@ -55,7 +55,7 @@ export default function LeaderboardClient() {
   const [selectedTrack, setSelectedTrack] = useState<"total" | "research" | "product" | "kaggle">("total");
   const [selectedTier, setSelectedTier] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const debouncedSearch = useDebounce(searchQuery, 350);
+  const debouncedSearch = useDebounce(searchQuery, 400);
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -67,42 +67,57 @@ export default function LeaderboardClient() {
 
   const isSearching = searchQuery !== debouncedSearch || (loading && Boolean(searchQuery.trim()));
 
-  // Reset page to 1 when search, filters, or view mode change
+  const prevFilterRef = useRef({ debouncedSearch, viewMode, selectedTrack, selectedTier });
+
   useEffect(() => {
-    setPage(1);
-  }, [debouncedSearch, viewMode, selectedTrack, selectedTier]);
-
-  // Fetch live members/leaderboard from backend API
-  const fetchDirectoryData = useCallback(async () => {
     if (!token) return;
-    try {
-      setLoading(true);
-      const res = await api.browseUsers(token, {
-        search: debouncedSearch.trim() || undefined,
-        track: viewMode === "LEADERBOARD" && selectedTrack !== "total" ? selectedTrack : undefined,
-        tier: selectedTier !== "all" ? selectedTier : undefined,
-        page,
-        page_size: pageSize,
-      }).catch(() => null);
+    const prev = prevFilterRef.current;
+    const filterChanged =
+      prev.debouncedSearch !== debouncedSearch ||
+      prev.viewMode !== viewMode ||
+      prev.selectedTrack !== selectedTrack ||
+      prev.selectedTier !== selectedTier;
 
-      if (res && res.items) {
-        setMembers(res.items);
-        setTotalCount(res.total ?? res.items.length);
-      } else {
+    if (filterChanged) {
+      prevFilterRef.current = { debouncedSearch, viewMode, selectedTrack, selectedTier };
+      if (page !== 1) {
+        setPage(1);
+        return;
+      }
+    }
+
+    let active = true;
+    setLoading(true);
+    api.browseUsers(token, {
+      search: debouncedSearch.trim() || undefined,
+      track: viewMode === "LEADERBOARD" && selectedTrack !== "total" ? selectedTrack : undefined,
+      tier: selectedTier !== "all" ? selectedTier : undefined,
+      page,
+      page_size: pageSize,
+    })
+      .then((res) => {
+        if (!active) return;
+        if (res && res.items) {
+          setMembers(res.items);
+          setTotalCount(res.total ?? res.items.length);
+        } else {
+          setMembers([]);
+          setTotalCount(0);
+        }
+      })
+      .catch(() => {
+        if (!active) return;
         setMembers([]);
         setTotalCount(0);
-      }
-    } catch {
-      setMembers([]);
-      setTotalCount(0);
-    } finally {
-      setLoading(false);
-    }
-  }, [token, debouncedSearch, viewMode, selectedTrack, selectedTier, page, pageSize]);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
 
-  useEffect(() => {
-    void Promise.resolve().then(fetchDirectoryData);
-  }, [fetchDirectoryData]);
+    return () => {
+      active = false;
+    };
+  }, [token, debouncedSearch, viewMode, selectedTrack, selectedTier, page, pageSize]);
 
   // Compute leaderboard entries sorted by selected track score
   const sortedLeaderboard: LeaderboardEntry[] = [...members]

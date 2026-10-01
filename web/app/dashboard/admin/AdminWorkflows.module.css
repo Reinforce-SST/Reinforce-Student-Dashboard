@@ -82,3 +82,90 @@
 }
 @media (max-width: 340px) { .requestFacts { grid-template-columns:1fr; } .requestFacts .wideFact { grid-column:auto; } }
 @media (prefers-reduced-motion:reduce) { .reviewToggle svg { transition:none; } }
+
+/* Idea Review Panel Enhancements */
+.panelHeader { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.countBadge { display: inline-flex; align-items: center; padding: 2px 9px; font-size: 0.72rem; font-weight: 750; border-radius: 999px; background: rgba(229, 183, 49, 0.15); color: #e5b731; border: 1px solid rgba(229, 183, 49, 0.3); }
+.successNotice { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 8px; background: rgba(52, 199, 89, 0.1); border: 1px solid rgba(52, 199, 89, 0.3); color: #4cd964; font-size: 0.85rem; font-weight: 600; }
+.ideaCard { display: grid; gap: 14px; padding: 20px; border: 1px solid #333338; border-radius: 12px; background: #18181b; transition: border-color 0.15s ease; }
+.ideaCard:hover { border-color: #484850; }
+.ideaCardHeader { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.ideaBadges { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.trackPill { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 6px; font-size: 0.72rem; font-weight: 750; text-transform: uppercase; letter-spacing: 0.04em; background: #26262b; color: #f0f0f2; border: 1px solid #3c3c44; }
+.trackPill[data-track="ai"] { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border-color: rgba(56, 189, 248, 0.3); }
+.trackPill[data-track="web"] { background: rgba(168, 85, 247, 0.15); color: #c084fc; border-color: rgba(168, 85, 247, 0.3); }
+.trackPill[data-track="app"] { background: rgba(34, 197, 94, 0.15); color: #4ade80; border-color: rgba(34, 197, 94, 0.3); }
+.trackPill[data-track="systems"] { background: rgba(249, 115, 22, 0.15); color: #fb923c; border-color: rgba(249, 115, 22, 0.3); }
+.trackPill[data-track="cybersecurity"] { background: rgba(239, 68, 68, 0.15); color: #f87171; border-color: rgba(239, 68, 68, 0.3); }
+.difficultyPill { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 6px; font-size: 0.72rem; font-weight: 600; text-transform: capitalize; background: #222226; color: #a1a1aa; border: 1px solid #333338; }
+.sourcePill { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 6px; font-size: 0.71rem; font-weight: 700; background: rgba(229, 183, 49, 0.1); color: #f0cb5d; border: 1px solid rgba(229, 183, 49, 0.25); }
+.submitterTime { color: #888890; font-size: 0.75rem; }
+.ideaTitleLink { color: #f4f4f6; font-size: 1.12rem; font-weight: 750; text-decoration: none; line-height: 1.35; letter-spacing: -0.015em; }
+.ideaTitleLink:hover { color: var(--brand, #e5b731); text-decoration: underline; }
+.ideaDescription { margin: 0; color: #b8b8be; font-size: 0.88rem; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ideaActions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 4px; padding-top: 14px; border-top: 1px solid #28282d; }
+.approveActionBtn { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 8px 16px; border: 0; border-radius: 8px; background: var(--brand, #e5b731); color: #16140d; font: inherit; font-size: 0.82rem; font-weight: 800; cursor: pointer; transition: background 0.15s ease; }
+.approveActionBtn:hover:not(:disabled) { background: #f0c850; }
+.approveActionBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.rejectActionBtn { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 8px 14px; border: 1px solid #5a3838; border-radius: 8px; background: rgba(239, 68, 68, 0.1); color: #f87171; font: inherit; font-size: 0.8rem; font-weight: 700; cursor: pointer; transition: all 0.15s ease; }
+.rejectActionBtn:hover:not(:disabled) { background: rgba(239, 68, 68, 0.2); border-color: #f87171; }
+.rejectActionBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.viewDetailLink { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 8px 14px; border: 1px solid #3e3e44; border-radius: 8px; background: #222226; color: #e4e4e7; font: inherit; font-size: 0.8rem; font-weight: 700; text-decoration: none; transition: all 0.15s ease; }
+.viewDetailLink:hover { border-color: #666672; color: #fff; text-decoration: none; }
+.emptyContainer { display: grid; justify-items: center; text-align: center; gap: 10px; padding: 48px 24px; border: 1px dashed #3a3a40; border-radius: 12px; background: #17171a; }
+.emptyContainer h3 { margin: 0; color: #f4f4f6; font-size: 1.05rem; }
+.emptyContainer p { margin: 0; color: #8a8a92; font-size: 0.85rem; max-width: 440px; line-height: 1.5; }
+.loadingSkeleton { padding: 36px 20px; text-align: center; color: #8e8e93; font-size: 0.9rem; font-weight: 600; }
+
+/* Filter Bar & Controls */
+.filterToolbar { display: grid; gap: 14px; margin-top: 4px; padding-bottom: 18px; border-bottom: 1px solid #2d2d34; }
+.statusTabs { display: flex; align-items: center; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+.statusTabBtn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; border: 1px solid #36363e; background: #202024; color: #9c9ca4; font: inherit; font-size: 0.78rem; font-weight: 700; cursor: pointer; white-space: nowrap; transition: all 0.15s ease; }
+.statusTabBtn:hover { color: #fff; border-color: #555560; }
+.statusTabBtnActive { background: rgba(229, 183, 49, 0.15); border-color: var(--brand, #e5b731); color: #e5b731; }
+.filterControls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.searchInputWrapper { flex: 1 1 240px; min-width: 200px; position: relative; }
+.filterSearchInput { width: 100%; min-height: 38px; padding: 8px 12px; border-radius: 8px; border: 1px solid #36363e; background: #1c1c20; color: #fff; font: inherit; font-size: 0.82rem; }
+.filterSearchInput:focus { outline: 2px solid var(--brand, #e5b731); outline-offset: -1px; }
+.filterSelect { min-height: 38px; padding: 8px 12px; border-radius: 8px; border: 1px solid #36363e; background: #1c1c20; color: #f0f0f4; font: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
+.filterSelect:focus { outline: 2px solid var(--brand, #e5b731); outline-offset: -1px; }
+
+/* Status Indicators on Cards */
+.statusIndicator { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 6px; font-size: 0.72rem; font-weight: 750; }
+.statusApproved { background: rgba(34, 197, 94, 0.12); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3); }
+.statusPending { background: rgba(229, 183, 49, 0.12); color: #f0cb5d; border: 1px solid rgba(229, 183, 49, 0.3); }
+.statusClosed { background: rgba(148, 163, 184, 0.12); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.25); }
+
+/* Edit Action Button */
+.editActionBtn { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 8px 14px; border: 1px solid #484852; border-radius: 8px; background: #26262c; color: #f4f4f6; font: inherit; font-size: 0.8rem; font-weight: 700; cursor: pointer; transition: all 0.15s ease; }
+.editActionBtn:hover:not(:disabled) { border-color: #6a6a78; background: #2e2e36; }
+.editActionBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Edit Modal */
+.modalOverlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+.modalDialog { width: 100%; max-width: 720px; max-height: 90vh; display: flex; flex-direction: column; background: #18181b; border: 1px solid #3a3a42; border-radius: 14px; box-shadow: 0 24px 60px rgba(0,0,0,0.6); overflow: hidden; animation: modalEnter 0.18s ease-out; }
+@keyframes modalEnter { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+.modalHeader { display: flex; align-items: center; justify-content: space-between; padding: 18px 24px; border-bottom: 1px solid #2e2e36; background: #1c1c20; }
+.modalHeader h3 { margin: 0; font-size: 1.15rem; font-weight: 800; color: #fff; letter-spacing: -0.015em; }
+.modalCloseBtn { background: transparent; border: 0; color: #8e8e96; font-size: 1.3rem; line-height: 1; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+.modalCloseBtn:hover { color: #fff; background: #282830; }
+.modalForm { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+.modalScrollContent { padding: 22px 24px; overflow-y: auto; display: grid; gap: 16px; scrollbar-width: thin; }
+.formRow { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 600px) { .formRow { grid-template-columns: 1fr; } }
+.formField { display: grid; gap: 6px; }
+.formField label { font-size: 0.78rem; font-weight: 750; color: #d0d0d6; }
+.formField input, .formField select, .formField textarea { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #383842; background: #222227; color: #fff; font: inherit; font-size: 0.86rem; }
+.formField input:focus, .formField select:focus, .formField textarea:focus { outline: 2px solid var(--brand, #e5b731); outline-offset: -1px; }
+.formField textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
+.fieldHint { font-size: 0.72rem; color: #888892; margin-top: 2px; }
+.modalFooter { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; padding: 16px 24px; border-top: 1px solid #2e2e36; background: #1c1c20; }
+.cancelBtn { padding: 9px 16px; border-radius: 8px; border: 1px solid #3c3c44; background: #24242a; color: #d8d8de; font: inherit; font-size: 0.82rem; font-weight: 700; cursor: pointer; }
+.cancelBtn:hover { background: #2c2c34; color: #fff; }
+.saveBtn { padding: 9px 18px; border-radius: 8px; border: 0; background: var(--brand, #e5b731); color: #16140d; font: inherit; font-size: 0.82rem; font-weight: 800; cursor: pointer; }
+.saveBtn:hover:not(:disabled) { background: #f0c850; }
+.saveBtn:disabled, .saveApproveBtn:disabled { opacity: 0.55; cursor: not-allowed; }
+.saveApproveBtn { padding: 9px 18px; border-radius: 8px; border: 1px solid #34c759; background: #1b4d29; color: #a3f7b5; font: inherit; font-size: 0.82rem; font-weight: 800; cursor: pointer; }
+.saveApproveBtn:hover:not(:disabled) { background: #246336; color: #fff; }
+
+

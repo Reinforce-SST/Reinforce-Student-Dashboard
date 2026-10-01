@@ -45,6 +45,7 @@ export type IconName =
   | "alert-circle"
   | "info"
   | "log-out"
+  | "sparkles"
   | "user";
 
 const paths: Record<IconName, ReactNode> = {
@@ -295,6 +296,12 @@ const paths: Record<IconName, ReactNode> = {
     <>
       <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
       <circle cx="12" cy="7" r="4" />
+    </>
+  ),
+  sparkles: (
+    <>
+      <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
+      <path d="M5 3v4M3 5h4M19 17v4M17 19h4" />
     </>
   ),
 };
