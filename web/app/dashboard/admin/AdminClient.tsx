@@ -5,13 +5,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useMember } from "@/lib/useMember";
 import { useAdminMode } from "@/lib/useAdminMode";
-import { api, type StudentProfile } from "@/lib/api";
+import { api, type StudentProfile, type EventSummaryItem } from "@/lib/api";
 import { getEventGraduationBatches } from "@/lib/eventsData";
 import { getBannerPresentation, isBannerDestination } from "@/lib/dashboardData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import PaginationBar from "@/components/dashboard/PaginationBar";
 import LoadingBar from "@/components/dashboard/LoadingBar";
 import AdminTicketsPanel from "./AdminTicketsPanel";
+import AdminPendingContributionsPanel from "./AdminPendingContributionsPanel";
 import AdminContentPanel from "./AdminContentPanel";
 import AdminEventEditPanel from "./AdminEventEditPanel";
 import AdminBannerEditPanel from "./AdminBannerEditPanel";
@@ -34,6 +35,19 @@ function formatBannerDate(startStr: string): string {
   return startStr && Number.isFinite(start.getTime())
     ? start.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" })
     : "Date not set";
+}
+
+function formatDateTimeInput(isoStr?: string | null): string {
+  if (!isoStr) return "";
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return "";
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+  } catch {
+    return "";
+  }
 }
 
 export default function AdminClient() {
@@ -85,6 +99,47 @@ export default function AdminClient() {
   const [bannerFilePreview, setBannerFilePreview] = useState<string | null>(null);
   const [bannerFile, setBannerFile] = useState<File | null>(null);
 
+  // Autofill from Existing Event State
+  const [autofillEvents, setAutofillEvents] = useState<EventSummaryItem[]>([]);
+  const [loadingAutofillEvents, setLoadingAutofillEvents] = useState(false);
+  const [showAutofillModal, setShowAutofillModal] = useState(false);
+
+  const handleOpenAutofill = async () => {
+    setShowAutofillModal(true);
+    if (token) {
+      setLoadingAutofillEvents(true);
+      try {
+        const res = await api.listEvents(token, { limit: 100 });
+        setAutofillEvents(res.events || []);
+      } catch (e) {
+        console.error("Could not load events for autofill", e);
+      } finally {
+        setLoadingAutofillEvents(false);
+      }
+    }
+  };
+
+  const handleApplyAutofill = (ev: EventSummaryItem) => {
+    setBannerTitle(ev.title || "");
+    setBannerDescription(ev.description || "");
+    if (ev.schedule?.start_time) {
+      setBannerStartDateTime(formatDateTimeInput(ev.schedule.start_time));
+    }
+    if (ev.schedule?.end_time) {
+      setBannerEndDateTime(formatDateTimeInput(ev.schedule.end_time));
+    }
+    if (ev.banner_url) {
+      setBannerUrl(ev.banner_url);
+      setBannerFile(null);
+      setBannerFilePreview(null);
+    }
+    setBannerBadgeText(ev.event_type ? ev.event_type.toUpperCase() : "EVENT");
+    setBannerCtaText("View Event →");
+    setBannerCtaUrl(`/dashboard/events/${ev.slug || ev.id}`);
+    setShowAutofillModal(false);
+    setSubmitSuccess(`Autofilled banner details from event "${ev.title}"!`);
+  };
+
   // --- TAB 2: Full Club Event Publisher State ---
   const [eventTitle, setEventTitle] = useState("");
   const [eventSlug, setEventSlug] = useState("");
@@ -106,6 +161,9 @@ export default function AdminClient() {
   const [eventMinTeamSize, setEventMinTeamSize] = useState(1);
   const [eventMaxTeamSize, setEventMaxTeamSize] = useState(1);
   const [eventMaxParticipants, setEventMaxParticipants] = useState<number | "">("");
+  // A team event forms one project group per registered team unless the admin
+  // opts out. Solo events never do; the server enforces that too.
+  const [eventFormsTeamSpg, setEventFormsTeamSpg] = useState(true);
   const [eventPointsReward, setEventPointsReward] = useState<number | "">("");
   const [eventSlidesUrl, setEventSlidesUrl] = useState("");
   const [eventDiscordThread, setEventDiscordThread] = useState("");
@@ -340,7 +398,7 @@ export default function AdminClient() {
         throw new Error("Use a site path starting with / or a full HTTPS URL for the button destination.");
       }
       const imageUrl = bannerFile
-        ? (await api.adminUploadEventMedia(token, bannerFile)).url
+        ? (await api.adminUploadBannerMedia(token, bannerFile)).url
         : bannerUrl.trim();
       if (bannerFile) {
         setBannerUrl(imageUrl);
@@ -354,9 +412,6 @@ export default function AdminClient() {
       const payload = {
         title: bannerTitle.trim(),
         description: bannerDescription.trim(),
-        event_type: "Featured Banner",
-        track: bannerTrack,
-        format: bannerFormat,
         schedule: {
           start_time: startDateObj.toISOString(),
           end_time: endDateObj ? endDateObj.toISOString() : undefined,
@@ -366,11 +421,11 @@ export default function AdminClient() {
         banner_badge_text: bannerBadgeText.trim() || undefined,
         banner_cta_text: bannerCtaText.trim() || undefined,
         banner_cta_url: ctaUrl || undefined,
-        status: "published" as const,
+        status: "published",
       };
 
-      const result = await api.adminCreateEvent(token || "", payload);
-      setSubmitSuccess(`Dashboard hero banner "${result.title}" published successfully!`);
+      const result = await api.adminCreateBanner(token || "", payload);
+      setSubmitSuccess(`Dashboard hero banner "${result.title}" published successfully to separate Banners collection!`);
     } catch (err: unknown) {
       console.error("Failed to publish banner:", err);
       const msg = err instanceof Error ? err.message : "Failed to create banner on the backend.";
@@ -461,7 +516,7 @@ export default function AdminClient() {
           min_team_size: Number(eventMinTeamSize),
           max_team_size: Number(eventMaxTeamSize),
           max_participants: eventMaxParticipants ? Number(eventMaxParticipants) : undefined,
-          requires_event_spg: false,
+          requires_event_spg: eventParticipationMode === "team" && eventFormsTeamSpg,
           spg_auto_disband_days: 3,
         },
         points_reward: {
@@ -733,7 +788,75 @@ export default function AdminClient() {
                   Upload image and configure the top 22:9 announcement slider on the student dashboard.
                 </div>
               </div>
+              <button
+                type="button"
+                className={styles.viewActionBtn}
+                onClick={handleOpenAutofill}
+                title="Autofill banner fields from an existing club event"
+              >
+                <MemberIcon name="lightning" size={14} />
+                Autofill from Event
+              </button>
             </div>
+
+            {showAutofillModal && (
+              <div style={{
+                background: "#16161a",
+                border: "1px solid #33333e",
+                borderRadius: "10px",
+                padding: "16px",
+                marginBottom: "16px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--brand, #E5B731)" }}>
+                    Select an existing event to autofill banner details:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAutofillModal(false)}
+                    style={{ background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: "16px" }}
+                  >
+                    ✕
+                  </button>
+                </div>
+                {loadingAutofillEvents ? (
+                  <p style={{ fontSize: "12px", color: "#a0a0a8", margin: 0 }}>Loading club events...</p>
+                ) : autofillEvents.length === 0 ? (
+                  <p style={{ fontSize: "12px", color: "#a0a0a8", margin: 0 }}>No existing events found.</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "220px", overflowY: "auto" }}>
+                    {autofillEvents.map((ev) => (
+                      <button
+                        key={ev.id}
+                        type="button"
+                        onClick={() => handleApplyAutofill(ev)}
+                        style={{
+                          textAlign: "left",
+                          background: "#1e1e24",
+                          border: "1px solid #2b2b36",
+                          borderRadius: "6px",
+                          padding: "8px 12px",
+                          color: "#fff",
+                          cursor: "pointer",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          fontSize: "12px",
+                        }}
+                      >
+                        <span style={{ fontWeight: 600 }}>{ev.title}</span>
+                        <span style={{ fontSize: "11px", color: "#8c8c98" }}>
+                          {ev.banner_url ? "📷 Has Cover" : "No Cover"} • Click to Fill
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <form onSubmit={handleSubmitBanner} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
               {/* Image Upload Dropzone */}
@@ -1171,8 +1294,9 @@ export default function AdminClient() {
                 </select>
               </div>
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Participation Mode</label>
+                <label className={styles.formLabel} htmlFor="new-event-mode">Participation Mode</label>
                 <select
+                  id="new-event-mode"
                   value={eventParticipationMode}
                   onChange={(e) => setEventParticipationMode(e.target.value as "solo" | "team")}
                   className={styles.formSelect}
@@ -1226,8 +1350,9 @@ export default function AdminClient() {
                 />
               </div>
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Min Team Size</label>
+                <label className={styles.formLabel} htmlFor="new-event-min-team">Min Team Size</label>
                 <input
+                  id="new-event-min-team"
                   type="number"
                   value={eventMinTeamSize}
                   onChange={(e) => setEventMinTeamSize(Number(e.target.value))}
@@ -1236,8 +1361,9 @@ export default function AdminClient() {
                 />
               </div>
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Max Team Size</label>
+                <label className={styles.formLabel} htmlFor="new-event-max-team">Max Team Size</label>
                 <input
+                  id="new-event-max-team"
                   type="number"
                   value={eventMaxTeamSize}
                   onChange={(e) => setEventMaxTeamSize(Number(e.target.value))}
@@ -1246,6 +1372,17 @@ export default function AdminClient() {
                 />
               </div>
             </div>
+
+            {eventParticipationMode === "team" && (
+              <label className={styles.batchOption}>
+                <input
+                  type="checkbox"
+                  checked={eventFormsTeamSpg}
+                  onChange={(e) => setEventFormsTeamSpg(e.target.checked)}
+                />
+                Form a project group (SPG) for each registered team
+              </label>
+            )}
 
             {/* Section 4: Event Poster & Resources */}
             <div className={styles.formSectionHeading}>4. Event Poster & Resources</div>
@@ -1374,9 +1511,11 @@ export default function AdminClient() {
 
       {activeTab === "spg" && <AdminTicketsPanel token={token} spgOnly />}
 
-      {activeTab === "tickets" && <AdminTicketsPanel token={token} />}
+      {activeTab === "tickets" && <AdminTicketsPanel token={token} adminId={profile.id} />}
 
       {/* TAB 5: Merit Auditing */}
+      {activeTab === "contributions" && <AdminPendingContributionsPanel token={token} />}
+
       {activeTab === "contributions" && (
         <div className={`${styles.managerGrid} ${styles.meritGrid}`}>
           <div className={styles.card}>

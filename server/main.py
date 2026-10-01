@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     spg,
     ideas,
     events,
+    banners,
 )
 
 settings = get_settings()
@@ -109,6 +110,7 @@ app.include_router(tickets.router, prefix=API_PREFIX)
 app.include_router(blogs.router, prefix=API_PREFIX)
 app.include_router(ideas.router, prefix=API_PREFIX)
 app.include_router(events.router, prefix=API_PREFIX)
+app.include_router(banners.router, prefix=API_PREFIX)
 
 
 @app.get("/")

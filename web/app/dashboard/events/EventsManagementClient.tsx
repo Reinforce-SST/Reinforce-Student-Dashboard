@@ -58,6 +58,7 @@ export default function EventsManagementClient() {
 
         if (upcomingEvents.length > 0) {
           const mapped: CalendarEventItem[] = upcomingEvents.filter((ev) =>
+            !ev.event_type?.toLowerCase().includes("banner") &&
             ["published", "registration_closed", "ongoing"].includes(ev.status) &&
             new Date(ev.schedule.start_time).getTime() >= Date.now()).map((ev) => {
             const start = new Date(ev.schedule.start_time);

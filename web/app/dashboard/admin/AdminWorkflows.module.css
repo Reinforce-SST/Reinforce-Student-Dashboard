@@ -142,7 +142,12 @@
 .editActionBtn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Edit Modal */
-.modalOverlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+/* A native <dialog> opened with showModal(). The UA styles size and border it
+   like a small box; reset them so the element itself is the full-screen overlay.
+   display:flex would otherwise override the UA's display:none on a closed dialog. */
+.modalOverlay { position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; border: 0; color: inherit; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+.modalOverlay:not([open]) { display: none; }
+.modalOverlay::backdrop { background: transparent; }
 .modalDialog { width: 100%; max-width: 720px; max-height: 90vh; display: flex; flex-direction: column; background: #18181b; border: 1px solid #3a3a42; border-radius: 14px; box-shadow: 0 24px 60px rgba(0,0,0,0.6); overflow: hidden; animation: modalEnter 0.18s ease-out; }
 @keyframes modalEnter { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
 .modalHeader { display: flex; align-items: center; justify-content: space-between; padding: 18px 24px; border-bottom: 1px solid #2e2e36; background: #1c1c20; }
@@ -169,3 +174,26 @@
 .saveApproveBtn:hover:not(:disabled) { background: #246336; color: #fff; }
 
 
+.filterBar { display:flex; flex-wrap:wrap; align-items:end; gap:12px; padding:14px; border:1px solid #333; border-radius:8px; background:#1a1a1c; }
+.filterBar label { display:grid; gap:6px; min-width:0; flex:1 1 160px; color:#c9c9cd; font-size:.74rem; font-weight:700; }
+.filterBar select { width:100%; min-width:0; min-height:40px; padding:8px 10px; border:1px solid #4a4a50; border-radius:8px; background:#232326; color:#f5f5f5; font:inherit; font-size:.82rem; font-weight:500; }
+.filterBar .filterCheck { display:flex; flex:0 0 auto; align-items:center; gap:8px; min-height:40px; font-size:.8rem; font-weight:650; color:#e1e1e4; cursor:pointer; }
+.filterCheck input { width:16px; height:16px; accent-color:var(--brand,#e5b731); }
+.filterClear { flex:0 0 auto; min-height:40px; padding:8px 14px; border:1px solid #4a4a50; border-radius:8px; background:transparent; color:var(--brand,#e5b731); font:inherit; font-size:.8rem; font-weight:750; cursor:pointer; }
+.filterClear:disabled { color:#6b6b70; border-color:#333; cursor:default; }
+@media (max-width:640px) { .filterBar label { flex-basis:100%; } }
+.reviewNotice { color: #86efac !important; }
+.reviewRow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px 20px; padding: 14px 16px; border: 1px solid #333; border-radius: 10px; background: #18181a; min-width: 0; }
+.reviewSummary { display: grid; gap: 3px; min-width: 0; flex: 1 1 260px; }
+.reviewSummary strong { color: #f5f5f4; font-size: .92rem; }
+.reviewSummary span { color: #d4d4d8; font-size: .85rem; overflow-wrap: anywhere; }
+.reviewSummary small { color: #9a9aa0; font-size: .74rem; text-transform: capitalize; }
+.reviewActions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 0 1 auto; }
+.reviewActions label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.reviewActions input { min-height: 40px; padding: 8px 10px; border: 1px solid #4a4a50; border-radius: 8px; background: #232326; color: #f5f5f5; font: inherit; font-size: .84rem; }
+.reviewActions input[type="number"] { width: 96px; }
+.reviewActions input[type="text"] { width: min(280px, 100%); }
+.reviewActions button { min-height: 40px; padding: 8px 14px; border: 0; border-radius: 8px; background: var(--brand, #e5b731); color: #0c0c0e; font: inherit; font-size: .8rem; font-weight: 800; cursor: pointer; }
+.reviewActions button:disabled { opacity: .55; cursor: progress; }
+.reviewActions .reviewSecondary { border: 1px solid #4a4a50; background: transparent; color: #e4e4e7; }
+@media (max-width: 640px) { .reviewActions { width: 100%; } .reviewActions input[type="text"] { width: 100%; } }

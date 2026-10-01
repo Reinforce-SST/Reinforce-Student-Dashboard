@@ -267,6 +267,86 @@ class EventHardeningTests(unittest.TestCase):
             self.db.store["events/event-one"]["stats"]["registered_count"], 1
         )
 
+    def _participation(self, **values):
+        self.db.store["events/event-one"]["participation"].update(values)
+
+    def _event_spgs(self):
+        return {path: doc for path, doc in self.db.store.items() if path.startswith("spgs/")}
+
+    def test_team_registration_forms_an_spg_under_that_event(self):
+        self._participation(mode="team", min_team_size=2, max_team_size=3, max_participants=10, requires_event_spg=True)
+        response = self.client.post(
+            "/api/v1/events/event-one/register",
+            json={"team_name": "Gradient Descenders", "member_uids": ["uid-two"]},
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        spg_id = response.json()["spg_id"]
+        self.assertIsNotNone(spg_id)
+        spg = self.db.store[f"spgs/{spg_id}"]
+        self.assertEqual(spg["event_id"], "event-one")
+        self.assertTrue(spg["is_event_derived"])
+        self.assertEqual(spg["type"], "event")
+        self.assertEqual(spg["name"], "Gradient Descenders")
+        self.assertEqual(spg["lead_id"], "uid-one")
+        self.assertEqual(set(spg["member_ids"]), {"uid-one", "uid-two"})
+
+    def test_an_individual_event_never_forms_an_spg(self):
+        """A one-person "team" group is noise, even if the flag was set."""
+        self._participation(mode="solo", requires_event_spg=True, max_participants=10)
+        response = self.client.post("/api/v1/events/event-one/register", json={})
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertIsNone(response.json()["spg_id"])
+        self.assertEqual(self._event_spgs(), {})
+
+    def test_an_individual_event_reads_back_as_not_requiring_an_spg(self):
+        self._participation(mode="solo", requires_event_spg=True)
+        event = self.client.get("/api/v1/events/event-one").json()
+        self.assertFalse(event["participation"]["requires_event_spg"])
+
+    def test_a_promoted_solo_registrant_never_gets_an_spg(self):
+        self._participation(mode="solo", max_participants=1, requires_event_spg=True)
+        self.db.store["events/event-one"]["stats"]["registered_count"] = 1
+        self.db.store["events/event-one/registrations/active"] = {
+            "id": "active", "event_id": "event-one", "user_id": "uid-one",
+            "member_uids": ["uid-one"], "status": "registered",
+            "registered_at": "2026-01-01T00:00:00+00:00",
+        }
+        self.db.store["events/event-one/registrations/waiting"] = {
+            "id": "waiting", "event_id": "event-one", "user_id": "uid-two",
+            "member_uids": ["uid-two"], "status": "waitlisted",
+            "registered_at": "2026-01-02T00:00:00+00:00",
+        }
+        self.client.delete("/api/v1/events/event-one/register")
+        promoted = self.db.store["events/event-one/registrations/waiting"]
+        self.assertEqual(promoted["status"], "registered")
+        self.assertIsNone(promoted.get("spg_id"))
+        self.assertEqual(self._event_spgs(), {})
+
+    def _attended(self):
+        self.db.store["events/event-one/registrations/reg-one"] = {
+            "id": "reg-one", "event_id": "event-one", "user_id": "uid-two",
+            "member_uids": ["uid-two"], "status": "disqualified",
+            "attendance_note": "Submitted another team's notebook as their own.",
+            "checked_in_by": "uid-admin",
+            "registered_at": "2026-01-01T00:00:00+00:00",
+        }
+
+    def test_members_never_receive_admin_attendance_notes(self):
+        """The member attendee list never shows these; they must not be sent."""
+        self._attended()
+        response = self.client.get("/api/v1/events/event-one/registrations")
+        self.assertEqual(response.status_code, 200, response.text)
+        [registration] = response.json()
+        self.assertIsNone(registration.get("attendance_note"))
+        self.assertIsNone(registration.get("checked_in_by"))
+
+    def test_admins_still_receive_attendance_notes(self):
+        self._attended()
+        self.sign_in_admin()
+        [registration] = self.client.get("/api/v1/events/event-one/registrations").json()
+        self.assertEqual(registration["attendance_note"], "Submitted another team's notebook as their own.")
+        self.assertEqual(registration["checked_in_by"], "uid-admin")
+
     def test_promoted_team_gets_required_spg_with_general_track(self):
         self.db.store["events/event-one"]["participation"].update(
             {

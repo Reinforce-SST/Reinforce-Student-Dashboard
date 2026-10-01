@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useMember } from "@/lib/useMember";
-import { api, type EventSummaryItem } from "@/lib/api";
+import { api, type EventSummaryItem, type BannerDocument } from "@/lib/api";
 import { getBannerPresentation, getDashboardEvents, indiaDateKey, indiaDateParts } from "@/lib/dashboardData";
 import { loadAllSpgs, loadAllUpcomingEvents } from "@/lib/memberData";
 import type { SPGRecord } from "@/lib/spgData";
@@ -49,6 +49,7 @@ export default function DashboardClient() {
   const { token, profile } = useMember();
   const [spgs, setSpgs] = useState<SPGRecord[]>([]);
   const [events, setEvents] = useState<EventSummaryItem[]>([]);
+  const [dedicatedBanners, setDedicatedBanners] = useState<BannerDocument[]>([]);
   const [contributions, setContributions] = useState<ContributionRecord[]>([]);
   const [contributionsComplete, setContributionsComplete] = useState(false);
   const [spgStatus, setSpgStatus] = useState<LoadStatus>("loading");
@@ -69,9 +70,10 @@ export default function DashboardClient() {
         loadAllSpgs(token),
         loadAllUpcomingEvents(token),
         profile.id ? api.getUserContributions(token, profile.id, 100) : Promise.reject(new Error("Missing member ID")),
+        api.listBanners(token, { limit: 20 }),
       ]);
       if (!active) return;
-      const [spgResult, eventResult, contributionResult] = results;
+      const [spgResult, eventResult, contributionResult, bannerResult] = results;
       if (spgResult.status === "fulfilled") {
         setSpgs(spgResult.value);
         setSpgStatus("ready");
@@ -91,6 +93,9 @@ export default function DashboardClient() {
       } else {
         setContributionStatus("error");
       }
+      if (bannerResult && bannerResult.status === "fulfilled") {
+        setDedicatedBanners(bannerResult.value.banners || []);
+      }
     };
     void load();
     return () => { active = false; };
@@ -100,15 +105,26 @@ export default function DashboardClient() {
   const memberSpgs = spgs.filter((spg) =>
     (spg.status === "active" || spg.status === "paused") &&
     (spg.lead_id === profile.id || spg.member_ids.includes(profile.id || "")));
-  const { banners, upcoming } = getDashboardEvents(events, now);
-  const slides: FeaturedBanner[] = banners.map((event) => ({
-    id: event.id,
-    ...getBannerPresentation(event),
-    date: eventDate(event).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" }),
-    title: event.title,
-    description: event.description,
-    imageSrc: event.banner_url || "/banners/reinforce-placeholder.png",
-  }));
+  const { banners: legacyBanners, upcoming } = getDashboardEvents(events, now);
+  const slides: FeaturedBanner[] = dedicatedBanners.length > 0
+    ? dedicatedBanners.map((b) => ({
+        id: b.id,
+        badge: b.banner_badge_text?.trim() || "FEATURED",
+        ctaText: b.banner_cta_text?.trim() || "Explore Event →",
+        ctaLink: b.banner_cta_url?.trim() || "/dashboard/events",
+        date: new Date(b.schedule.start_time).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" }),
+        title: b.title,
+        description: b.description,
+        imageSrc: b.banner_url || "/banners/reinforce-placeholder.png",
+      }))
+    : legacyBanners.map((event) => ({
+        id: event.id,
+        ...getBannerPresentation(event),
+        date: eventDate(event).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" }),
+        title: event.title,
+        description: event.description,
+        imageSrc: event.banner_url || "/banners/reinforce-placeholder.png",
+      }));
   const activeSlide = slides.length > 0 ? slides[slideIndex % slides.length] : null;
 
   useEffect(() => {

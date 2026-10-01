@@ -119,6 +119,19 @@ class AdminRevokeRecord(BaseModel):
     status_reason: NonBlankStr
 
 
+class AdminReviewRecord(BaseModel):
+    """Payload for PATCH /contributions/{record_id}/review.
+
+    Approving sets the points the reviewer chose; rejecting needs a reason. The
+    reviewer and time come from the authenticated caller, never the body.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["approve", "reject"]
+    points: Optional[int] = Field(default=None, strict=True, ge=0)
+    reason: Optional[NonBlankStr] = None
+
+
 class ContributionBase(ContributionDetails):
     # The Firebase UID of the member credited with the contribution.
     user_id: NonBlankStr

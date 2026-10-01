@@ -6,7 +6,7 @@
  */
 
 import type { SPGRecord, SPGReportRecord } from "./spgData";
-import type { ContributionRecord, PublicContributionRecord } from "./contributionData";
+import type { ContributionPage, ContributionRecord, PublicContributionRecord } from "./contributionData";
 
 const BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080/api/v1";
@@ -18,11 +18,17 @@ export class ApiError extends Error {
   }
 }
 
+export type ArticleKind = "article" | "research_paper";
+/** Present exactly when kind is "research_paper". paper_url is always http(s). */
+export type PaperDetails = { authors: string[]; venue?: string | null; paper_url: string };
 export type ArticleSummary = {
   id: string; slug: string; title: string; summary: string;
   cover_image_url?: string | null; tags: string[];
   reading_time_minutes: number; published_at?: string | null;
   stats: { upvote_count: number; comment_count: number; view_count: number };
+  /** Older articles predate kinds; the API reads them as "article". */
+  kind?: ArticleKind;
+  paper?: PaperDetails | null;
 };
 export type ArticleDetail = ArticleSummary & { content: string };
 export type IdeaSummary = {
@@ -176,6 +182,25 @@ export type EventDocument = {
   updated_at?: string;
 };
 
+export type BannerDocument = {
+  id: string;
+  title: string;
+  description: string;
+  banner_url?: string | null;
+  banner_badge_text?: string | null;
+  banner_cta_text?: string | null;
+  banner_cta_url?: string | null;
+  schedule: {
+    start_time: string;
+    end_time?: string | null;
+    duration_minutes?: number | null;
+  };
+  status: "published" | "draft" | "archived" | string;
+  created_by?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type AttendeeProfile = {
   id: string;
   full_name: string;
@@ -277,12 +302,22 @@ export type TicketCategory =
 
 export type TicketStatus = "open" | "in_progress" | "resolved" | "closed";
 
+export type TicketPriority = "low" | "medium" | "high" | "urgent";
+
+export type AdminTicketFilters = {
+  category?: TicketCategory;
+  status?: TicketStatus;
+  priority?: TicketPriority;
+  /** A lead's UID. The server has no "unassigned" filter. */
+  assignedTo?: string;
+};
+
 export type TicketSummary = {
   id: string;
   category: TicketCategory;
   title: string;
   status: TicketStatus;
-  priority?: "low" | "medium" | "high" | "urgent";
+  priority?: TicketPriority;
   created_by_uid?: string;
   assigned_to_uid?: string | null;
   spg_id?: string | null;
@@ -337,6 +372,7 @@ type ApiTicketMessage = {
 const FIELD_ORDER: Partial<Record<TicketCategory, string[]>> = {
   spg_registration: [
     "Project Name",
+    "Based on Idea",
     "Track",
     "Team Leader",
     "Team Members",
@@ -384,6 +420,9 @@ function ticketFields(category: TicketCategory, fields: Record<string, unknown>)
     if (val === undefined || val === null) continue;
     const strVal = String(val).trim();
     if (!strVal || strVal === "None specified" || strVal === "None") continue;
+    // A document id means nothing to a member. The server stores the idea's
+    // title alongside it as "Based on Idea".
+    if (key === "idea_id") continue;
 
     // Skip redundant raw snake_case keys if Title Case key exists
     if (
@@ -450,14 +489,20 @@ function ticketFields(category: TicketCategory, fields: Record<string, unknown>)
 /* --------------------------------------------------------------- requests */
 
 export const api = {
-  listArticles: (search = "", page = 1) => {
+  listArticles: (search = "", page = 1, kind?: ArticleKind) => {
     const query = new URLSearchParams({ page: String(page), page_size: "20" });
     if (search.trim()) query.set("search", search.trim());
+    if (kind) query.set("kind", kind);
     return request<{ items: ArticleSummary[]; has_more: boolean; total: number }>(`/blogs?${query}`);
   },
   getArticle: (slug: string) => request<ArticleDetail>(`/blogs/${encodeURIComponent(slug)}`),
-  publishArticle: (token: string, body: { title: string; summary: string; content: string; tags: string[] }) =>
+  publishArticle: (
+    token: string,
+    body: { title: string; summary: string; content: string; tags: string[]; kind?: ArticleKind; paper?: PaperDetails | null },
+  ) =>
     request<ArticleDetail>("/blogs", token, { method: "POST", body: JSON.stringify({ ...body, status: "published" }) }),
+  upvoteArticle: (token: string, id: string) =>
+    request<{ upvoted: boolean; upvote_count: number }>(`/blogs/${encodeURIComponent(id)}/upvote`, token, { method: "POST" }),
   listIdeas: (
     search = "",
     page = 1,
@@ -475,6 +520,8 @@ export const api = {
   },
   getIdea: (id: string, token?: string) => request<IdeaDetail>(`/ideas/${encodeURIComponent(id)}`, token),
   myIdeas: (token: string) => request<{ items: IdeaSummary[] }>("/ideas/my", token),
+  /** One approved idea, chosen by the server. 404 when the jar is empty. */
+  randomIdea: (token?: string | null) => request<IdeaDetail>("/ideas/random", token),
   createIdea: (token: string, body: { title: string; description: string; track: string }) =>
     request<IdeaDetail>("/ideas", token, { method: "POST", body: JSON.stringify(body) }),
   upvoteIdea: (token: string, id: string) =>
@@ -851,6 +898,65 @@ export const api = {
     method: "POST", body: JSON.stringify(payload),
   }),
 
+  /* ----------------------------------------------------------- Banner APIs */
+  listBanners: (token?: string | null, params?: { status?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const query = qs.toString();
+    return request<{ banners: BannerDocument[]; total: number }>(
+      `/banners${query ? `?${query}` : ""}`,
+      token || undefined
+    );
+  },
+
+  getBanner: (id: string, token?: string | null) =>
+    request<BannerDocument>(`/banners/${encodeURIComponent(id)}`, token || undefined),
+
+  adminCreateBanner: (token: string, payload: Record<string, unknown>) =>
+    request<BannerDocument>("/banners", token, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  adminUpdateBanner: (token: string, bannerId: string, payload: Record<string, unknown>) =>
+    request<BannerDocument>(`/banners/${encodeURIComponent(bannerId)}`, token, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  adminDeleteBanner: (token: string, bannerId: string) =>
+    request<{ message: string }>(`/banners/${encodeURIComponent(bannerId)}`, token, {
+      method: "DELETE",
+    }),
+
+  adminUploadBannerMedia: async (token: string, file: File): Promise<{ url: string }> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const response = await fetch(`${BASE}/banners/media`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new ApiError(typeof body?.detail === "string" ? body.detail : `Image upload failed (${response.status}).`, response.status);
+      }
+      return response.json() as Promise<{ url: string }>;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new ApiError("Image upload timed out. Try again.", 504);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+
   /* ----------------------------------------------------------- Admin APIs */
   adminUploadEventMedia: async (token: string, file: File): Promise<{ url: string }> => {
     const formData = new FormData();
@@ -941,8 +1047,15 @@ export const api = {
       }
     ),
 
+  /** Only registered or already checked-in attendees can be checked in; the rest come back in failed_uids. */
   adminRollCall: (token: string, eventId: string, attendeeUids: string[], awardPoints: boolean = true) =>
-    request<Record<string, unknown>>(`/events/${encodeURIComponent(eventId)}/attendance/roll-call`, token, {
+    request<{
+      event_id: string;
+      checked_in_count: number;
+      points_awarded_per_user: number;
+      awarded_uids: string[];
+      failed_uids: string[];
+    }>(`/events/${encodeURIComponent(eventId)}/attendance/roll-call`, token, {
       method: "POST",
       body: JSON.stringify({ attendee_uids: attendeeUids, award_points: awardPoints }),
     }),
@@ -984,15 +1097,36 @@ export const api = {
   adminRecalculateUserPoints: (token: string, userId: string) =>
     request<Record<string, unknown>>(`/contributions/recalculate/${encodeURIComponent(userId)}`, token, { method: "POST" }),
 
-  adminReviewContribution: (token: string, contribId: string, action: "approve" | "reject" | "revoke", reason?: string) =>
-    request<Record<string, unknown>>(`/contributions/${encodeURIComponent(contribId)}/review`, token, {
+  /** The admin ledger. `status: "pending"` is the review queue that actions fill. */
+  adminListContributions: (token: string, params: { status?: string; limit?: number; cursor?: string } = {}) => {
+    const query = new URLSearchParams();
+    if (params.status) query.set("status", params.status);
+    if (params.limit) query.set("limit", String(params.limit));
+    if (params.cursor) query.set("cursor", params.cursor);
+    const qs = query.toString();
+    return request<ContributionPage>(`/contributions${qs ? `?${qs}` : ""}`, token);
+  },
+  /**
+   * Settle a pending contribution. Approving sets the points the admin chose;
+   * rejecting needs a reason. An approved record is corrected by revocation.
+   */
+  adminReviewContribution: (
+    token: string,
+    contribId: string,
+    review: { action: "approve"; points: number } | { action: "reject"; reason: string },
+  ) =>
+    request<ContributionRecord>(`/contributions/${encodeURIComponent(contribId)}/review`, token, {
       method: "PATCH",
-      body: JSON.stringify({ action, reason }),
+      body: JSON.stringify(review),
     }),
 
-  adminGetAllTickets: (token: string, page = 1, category?: TicketCategory) => {
+  /** Every filter maps to an equality filter in list_all_tickets. Unset means "any". */
+  adminGetAllTickets: (token: string, page = 1, filters: AdminTicketFilters = {}) => {
     const query = new URLSearchParams({ page: String(page), page_size: "20" });
-    if (category) query.set("category", category);
+    if (filters.category) query.set("category", filters.category);
+    if (filters.status) query.set("status", filters.status);
+    if (filters.priority) query.set("priority", filters.priority);
+    if (filters.assignedTo) query.set("assigned_to_uid", filters.assignedTo);
     return request<{ total: number; items: TicketSummary[] }>(`/tickets?${query}`, token);
   },
   adminUpdateTicketStatus: (token: string, ticketId: string, nextStatus: TicketStatus, closeReason?: string) =>

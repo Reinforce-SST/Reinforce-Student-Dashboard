@@ -6,14 +6,18 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
 from google.cloud import firestore
 
-from app.api.security import get_current_user
-from app.utils import iso_str, now_iso, slugify
+from app.api.security import get_current_user, get_optional_current_user
+from app.utils import is_admin_user, iso_str, now_iso, slugify
 from app.services.firebase import db, upload_file_to_storage
+from app.services import contributions as contribution_service
 from app.schemas.blogs import (
+    paper_matches_kind,
     BlogCreate,
     BlogDetail,
     BlogListResponse,
     BlogStats,
+    PaperDetails,
+    BlogKind,
     BlogStatus,
     BlogSummary,
     BlogUpdate,
@@ -56,7 +60,20 @@ def _to_blog_summary(doc_id: str, data: Dict[str, Any]) -> BlogSummary:
         created_at=iso_str(data.get("created_at")),
         published_at=iso_str(data.get("published_at")),
         stats=stats,
+        kind=data.get("kind") or BlogKind.ARTICLE,
+        paper=_stored_paper(data.get("paper")),
     )
+
+
+def _stored_paper(raw: Any) -> Optional[PaperDetails]:
+    """Paper details as stored. Only validated writes store them, but one bad
+    document must not take the whole feed down, so an invalid one reads as none."""
+    if not raw:
+        return None
+    try:
+        return PaperDetails.model_validate(raw)
+    except Exception:
+        return None
 
 
 def _to_blog_detail(doc_id: str, data: Dict[str, Any]) -> BlogDetail:
@@ -113,6 +130,17 @@ def upload_blog_markdown(
     return {"message": "Blog uploaded", "url": public_url}
 
 
+# Only these are public. A draft or archived article belongs to its author and
+# the admins; an unlisted one is reachable by link but never listed to others.
+PUBLIC_STATUSES = {BlogStatus.PUBLISHED.value, BlogStatus.UNLISTED.value}
+
+
+def _may_read(data: Dict[str, Any], viewer: Optional[dict]) -> bool:
+    if data.get("status") in PUBLIC_STATUSES:
+        return True
+    return bool(viewer) and (is_admin_user(viewer) or data.get("author_uid") == viewer.get("uid"))
+
+
 @router.get("", response_model=BlogListResponse, summary="List published blogs")
 def list_blogs(
     page: int = Query(1, ge=1, description="Page number"),
@@ -120,9 +148,19 @@ def list_blogs(
     tag: Optional[str] = Query(None, description="Filter by tag"),
     search: Optional[str] = Query(None, description="Search term in title or summary"),
     status_filter: BlogStatus = Query(BlogStatus.PUBLISHED, alias="status", description="Status filter"),
+    kind: Optional[BlogKind] = Query(None, description="article or research_paper"),
+    viewer: Optional[dict] = Depends(get_optional_current_user),
 ) -> BlogListResponse:
-    """Fetch published blogs feed with pagination, tag filter, and search."""
+    """Fetch published blogs feed with pagination, tag filter, and search.
+
+    Anything but the published feed is private: a member sees only their own
+    drafts, archived or unlisted articles, and an admin sees everyone's.
+    """
+    if status_filter is not BlogStatus.PUBLISHED and not viewer:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sign in to see unpublished articles.")
     query = db.collection(BLOGS_COLLECTION).where("status", "==", status_filter.value)
+    if status_filter is not BlogStatus.PUBLISHED and not is_admin_user(viewer):
+        query = query.where("author_uid", "==", viewer["uid"])
 
     if tag:
         query = query.where("tags", "array_contains", tag.strip().lower())
@@ -133,6 +171,10 @@ def list_blogs(
     for doc in docs:
         data = doc.to_dict() or {}
         summary = _to_blog_summary(doc.id, data)
+        # Filtered here, not in the query: articles written before kinds
+        # existed have no kind field, and still count as articles.
+        if kind is not None and summary.kind is not kind:
+            continue
 
         if search:
             s = search.strip().lower()
@@ -162,13 +204,23 @@ def list_blogs(
 
 
 @router.get("/{id_or_slug}", response_model=BlogDetail, summary="Get single blog content")
-def get_blog(id_or_slug: str) -> BlogDetail:
-    """Fetch blog details by document ID or slug and increment view count."""
+def get_blog(
+    id_or_slug: str,
+    viewer: Optional[dict] = Depends(get_optional_current_user),
+) -> BlogDetail:
+    """Fetch blog details by document ID or slug and increment view count.
+
+    A draft or archived article answers 404 to anyone but its author and the
+    admins — not 403, which would confirm it exists. A refused read counts no
+    view.
+    """
     doc_ref, doc = _find_blog_doc(id_or_slug)
     if not doc or not doc.exists:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Blog not found")
 
     data = doc.to_dict() or {}
+    if not _may_read(data, viewer):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Blog not found")
 
     # Atomically increment view count
     try:
@@ -180,6 +232,22 @@ def get_blog(id_or_slug: str) -> BlogDetail:
         pass
 
     return _to_blog_detail(doc.id, data)
+
+
+def _credit_publication(blog_id: str, author_uid: Optional[str], title: str, published_at: str) -> None:
+    """Ask for points for a newly published article. Blogs have no editorial
+    review, so this pending record is where Reinforce decides what it is worth."""
+    contribution_service.credit_activity(
+        db,
+        user_id=author_uid,
+        activity=f"blog:{blog_id}",
+        details={
+            "category": "content",
+            "title": f"Published an article: {title}"[:200],
+            "source": {"type": "blog", "id": blog_id},
+            "occurred_at": published_at,
+        },
+    )
 
 
 @router.post("", response_model=BlogDetail, status_code=status.HTTP_201_CREATED, summary="Create a new blog post")
@@ -220,9 +288,13 @@ def create_blog(
             "comment_count": 0,
             "view_count": 0,
         },
+        "kind": blog_in.kind.value,
+        "paper": blog_in.paper.model_dump() if blog_in.paper else None,
     }
 
     doc_ref.set(blog_doc)
+    if published_at:
+        _credit_publication(doc_ref.id, user["uid"], blog_in.title, published_at)
     return _to_blog_detail(doc_ref.id, blog_doc)
 
 
@@ -263,10 +335,25 @@ def update_blog(
         updates["status"] = blog_in.status.value
         if blog_in.status == BlogStatus.PUBLISHED and not data.get("published_at"):
             updates["published_at"] = now
+    if blog_in.kind is not None or blog_in.paper is not None:
+        kind = blog_in.kind or BlogKind(data.get("kind") or BlogKind.ARTICLE)
+        # Turning a paper back into an article drops its details rather than
+        # leaving them stale; otherwise a supplied paper replaces the stored one.
+        paper = None if kind is BlogKind.ARTICLE and blog_in.paper is None else (blog_in.paper or _stored_paper(data.get("paper")))
+        try:
+            paper_matches_kind(kind, paper)
+        except ValueError as error:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from None
+        updates["kind"] = kind.value
+        updates["paper"] = paper.model_dump() if paper else None
 
     doc_ref.update(updates)
     updated_doc = doc_ref.get()
-    return _to_blog_detail(blog_id, updated_doc.to_dict() or {})
+    updated = updated_doc.to_dict() or {}
+    # Only the first publication is a new activity; re-saving does not repeat it.
+    if "published_at" in updates:
+        _credit_publication(blog_id, data.get("author_uid"), updated.get("title") or "", updates["published_at"])
+    return _to_blog_detail(blog_id, updated)
 
 
 @router.delete("/{blog_id}", summary="Delete a blog post")

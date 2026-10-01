@@ -71,22 +71,43 @@ value. An unresolvable profile requires an admin-confirmed correction.
 
 ---
 
-## `events/{event_id}` — dashboard banner presentation
+## `banners/{banner_id}` — dedicated dashboard hero banners
 
-The API owns event writes. Published events whose `event_type` contains
-`banner` appear in the dashboard hero. Alongside the normal event title,
-description, schedule, status, and `banner_url`, an event may store:
+The API owns banner writes under the dedicated `banners` collection. Banners
+manage the top 22:9 featured announcement carousel on the student dashboard,
+independent from the `events` collection.
 
-| Field | Meaning | Default for older events |
-|---|---|---|
-| `banner_badge_text` | Short badge above the title (max 40 characters) | Uppercase `event_type` |
-| `banner_cta_text` | Button label (max 40 characters) | `Explore Event →` |
-| `banner_cta_url` | Button target: site path or HTTPS URL | `/dashboard/events/{slug or id}` |
+```jsonc
+{
+  "id": "bnr_...",
+  "title": "string",
+  "description": "string",
+  "banner_url": "string | null",
+  "banner_badge_text": "string | null",
+  "banner_cta_text": "string | null",
+  "banner_cta_url": "string | null",
+  "schedule": {
+    "start_time": "ISO-8601",
+    "end_time": "ISO-8601 | null",
+    "duration_minutes": "number | null"
+  },
+  "status": "published | draft | archived",
+  "created_by": "string | null",
+  "created_at": "ISO-8601",
+  "updated_at": "ISO-8601"
+}
+```
 
-All three fields are optional and nullable. Create, update, detail, and list
-endpoints preserve them. YUVI does not read these fields. Deploy the API before
-using custom banner fields in the web admin form; an older API rejects unknown
-event fields.
+YUVI does not read or write to this collection.
+
+---
+
+## `events/{event_id}` — dashboard banner compatibility (legacy)
+
+Older dashboard hero banners were stored as events with `event_type: "Featured Banner"`.
+Going forward, banners are authored and managed in `banners/{banner_id}`. Event
+endpoints preserve legacy banner fields (`banner_badge_text`, `banner_cta_text`,
+`banner_cta_url`) for backwards compatibility.
 
 ---
 

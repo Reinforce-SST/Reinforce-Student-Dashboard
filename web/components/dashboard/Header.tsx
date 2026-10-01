@@ -18,6 +18,7 @@ const titles: Record<string, string> = {
   "/dashboard/leaderboard": "Club Leaderboard",
   "/dashboard/admin": "Admin Command Center",
   "/dashboard/search": "Search",
+  "/dashboard/profile": "Member Profile",
   "/profile": "Member Profile",
 };
 

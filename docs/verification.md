@@ -20,17 +20,30 @@ npm test
 npm run lint
 npm run build
 
-cd ../client
-npm ci
-npm run lint
-npm run build
+# End-to-end. Builds and starts the app itself, then drives a real browser.
+npx playwright install --with-deps chromium
+npm run e2e
 ```
 
-The dashboard's browser checks should cover 320px and 390px phones, 768px and
-1024px tablets, and desktop. Check the overview, profile, SPG and ticket
-screens, admin forms, article and idea lists, detail links, and search. Mocked
-API responses can verify layout and error states; they cannot prove a live
-account works. Capture screenshots after UI changes.
+The end-to-end suite lives in `web/tests/e2e/` and runs in CI. It signs a
+member in, walks every dashboard section, and asserts the behaviour that unit
+tests cannot reach: header titles, the mobile drawer, master-detail filtering,
+RSVP, attachment safety, Discord linking, and the recovery paths for a failed
+profile, ticket, event or report load. Every API and Firebase call is fulfilled
+in the browser by `web/tests/e2e/fixtures/`, so the suite needs no server, no
+credentials and no network.
+
+To reuse an installed Chrome instead of downloading Chromium:
+
+```bash
+PLAYWRIGHT_CHANNEL=chrome npm run e2e
+```
+
+The suite covers 320px and 390px phones, 768px and 1024px tablets, and desktop,
+and fails on any horizontal overflow. What it still cannot prove is that a live
+account works: mocked responses verify layout, contracts and error states, not
+Firestore permissions, Discord role assignment or ticket thread delivery. Those
+remain live acceptance checks. Capture screenshots after UI changes.
 
 The 29 September mobile layout pass used a temporary local member fixture that
 was removed before the final build. See the [Idea Jar](screenshots/audit-2026-09-29/ideas-mobile.png),

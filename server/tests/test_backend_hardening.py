@@ -311,6 +311,48 @@ class BackendHardeningTests(unittest.TestCase):
         self.assertEqual(len(search_res["items"]), 1)
         self.assertEqual(search_res["items"][0]["id"], "tkt-edit-me")
 
+    def test_admin_edits_survive_approving_a_ticket_idea(self):
+        """The console's "Edit & Approve" is PATCH then approve on the ticket id.
+
+        Approval builds the published idea from the ticket's fields, so the
+        admin's edits only survive if PATCH wrote them where approval reads.
+        """
+        self.db.store["tickets/tkt-refine"] = {
+            "id": "tkt-refine",
+            "title": "rough title",
+            "description": "rough description",
+            "category": "idea_jar",
+            "status": "open",
+            "fields": {"track": "misc", "difficulty": "beginner"},
+            "created_by_uid": "member-1",
+            "created_at": "2026-09-30T10:00:00Z",
+        }
+        self.user = dict(ADMIN)
+
+        edits = {
+            "title": "Course-feedback clustering",
+            "description": "Group free-text feedback into themes.",
+            "track": "research",
+            "difficulty": "advanced",
+            "prerequisites": ["Python", "scikit-learn"],
+            "rough_roadmap": ["Collect the export", "Cluster", "Review with faculty"],
+            "learning_outcomes": ["Topic modelling"],
+        }
+        self.assertEqual(self.client.patch("/api/v1/ideas/tkt-refine", json=edits).status_code, 200)
+
+        approved = self.client.post("/api/v1/ideas/tkt-refine/approve")
+        self.assertEqual(approved.status_code, 200)
+        published = approved.json()
+
+        # The published idea is a new document; check it, not the ticket.
+        self.assertNotEqual(published["id"], "tkt-refine")
+        for field, value in edits.items():
+            self.assertEqual(published[field], value, f"{field} was lost on approval")
+
+        stored = self.db.store[f"ideas/{published['id']}"]
+        for field, value in edits.items():
+            self.assertEqual(stored[field], value, f"{field} not persisted on the idea")
+
 
 if __name__ == "__main__":
     unittest.main()

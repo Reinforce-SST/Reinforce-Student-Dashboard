@@ -157,6 +157,27 @@ validates one record in isolation: the transition rules shown above need the
 previous record, so the endpoint enforces them. Nothing is deleted; rejected and
 revoked records remain as audit history.
 
+### Recording from actions
+
+Three actions record a `pending` contribution automatically, worth `0` points:
+
+| Action | Credited to | `category` | Context / `source` | Activity key |
+|---|---|---|---|---|
+| An article is first published | its author | `content` | `source=blog:B` | `blog:B` |
+| An admin verifies a progress report | the report's submitter | `project_work` | `spg_id=S` | `spg_report:R` |
+| An idea is accepted into the jar | the idea's author | `content` | none — `idea` is not a source type | `idea:I` |
+
+An admin then reviews each one in Merit Auditing (`PATCH
+/contributions/{id}/review`): approving sets the points, rejecting records a
+reason. Recording is idempotent per member and activity, so re-publishing an
+article or verifying a report twice asks once. It never fails the action it
+credits: by then the article is published, and failing the request would invite
+a retry that publishes it twice. A member with no Firebase UID — some legacy
+YUVI ideas carry only a Discord id — is not credited.
+
+Event attendance is not in this table: roll-call records attendance as
+`approved` at once, with the event's `attendance_points`.
+
 ### Verification
 
 `is_verified` is a read-only property, true exactly when `status` is `approved` —
@@ -216,7 +237,13 @@ total on the SPG: it is one record per member, each summed like any other.
 
 Once recorded, the content fields (§3, recorder-owned) are treated as immutable;
 only lifecycle fields change, through review and revocation. A correction is a
-rejection (if pending) or revocation (if approved) plus a new record. There is no
+rejection (if pending) or revocation (if approved) plus a new record.
+
+**One exception (decision #9):** a reviewer sets `points` when approving a
+`pending` record. An action records its request before anyone has judged what
+it is worth, so the recorded `0` is a placeholder, not a value. The server sets
+it once, on the `pending → approved` transition, from the authenticated
+reviewer; no other transition and no request body can change it. There is no
 `updated_at`: each lifecycle change carries its own timestamp. The schema does not
 enforce this — if approved for persistence, the write paths must.
 
@@ -267,11 +294,14 @@ Known mismatches in the endpoints as of `backend@c0c9680`, for Aryan to align:
 6. Points policy: per-category defaults, caps, penalties.
 7. Leaderboard windows, track segmentation and tie-breaking.
 8. HTTP error codes for business-rule failures.
-9. Whether a reviewer may adjust points while pending, or must reject and re-record.
+9. ~~Whether a reviewer may adjust points while pending, or must reject and re-record.~~
+   **Decided 2026-10-01:** the reviewer sets the points on approval (§9).
 10. Maximum lengths for `status_reason` and `deduplication_key` — none set yet.
 11. `trophy_item` vs `library_item`: a rename, or two different concepts (§4).
 12. Whether `SPGRecord`'s provisional statuses stand, and whether SPGs later need a
     separate tier or priority field.
 13. Event type, status and dates, once an event workflow exists.
-14. How an SPG completion request (report → review → award) is modelled. It is a
-    request for review, not a contribution; only the resulting award is.
+14. ~~How an SPG completion request (report → review → award) is modelled.~~
+    **Decided 2026-10-01:** verifying a report records a `pending` contribution
+    for its submitter, and the reviewer sets its points (§6, Recording from
+    actions). Report verification itself still awards nothing.

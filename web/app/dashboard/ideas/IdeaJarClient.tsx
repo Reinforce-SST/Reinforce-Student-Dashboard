@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { api, type IdeaSummary } from "@/lib/api";
+import { api, ApiError, type IdeaDetail, type IdeaSummary } from "@/lib/api";
 import { useMember } from "@/lib/useMember";
 import { useDebounce } from "@/lib/useDebounce";
 import MemberIcon from "@/components/dashboard/MemberIcon";
@@ -57,6 +57,10 @@ export default function IdeaJarClient() {
   const [pageSize, setPageSize] = useState(12);
 
   const [pendingIdeas, setPendingIdeas] = useState<IdeaSummary[]>([]);
+
+  // Drawing from the jar: the server picks one approved idea at random.
+  const [drawn, setDrawn] = useState<IdeaDetail | null>(null);
+  const [drawState, setDrawState] = useState<"idle" | "drawing" | "empty" | "error">("idle");
   const [votedIds, setVotedIds] = useState<Set<string>>(new Set());
   const [votingId, setVotingId] = useState<string | null>(null);
 
@@ -205,6 +209,18 @@ export default function IdeaJarClient() {
     }
   };
 
+  async function drawFromJar() {
+    setDrawState("drawing");
+    try {
+      setDrawn(await api.randomIdea(token));
+      setDrawState("idle");
+    } catch (cause) {
+      setDrawn(null);
+      // 404 is the server's answer for a jar with no approved ideas.
+      setDrawState(cause instanceof ApiError && cause.status === 404 ? "empty" : "error");
+    }
+  }
+
   return (
     <div className={styles.pageContainer}>
       {/* Header Section */}
@@ -222,6 +238,15 @@ export default function IdeaJarClient() {
         </div>
 
         <div className={styles.headerActions}>
+          <button
+            type="button"
+            className={styles.drawBtn}
+            onClick={() => void drawFromJar()}
+            disabled={drawState === "drawing"}
+          >
+            <MemberIcon name="ideas" size={15} />
+            <span>{drawState === "drawing" ? "Drawing…" : "Draw from the jar"}</span>
+          </button>
           <Link
             href="/dashboard/tickets?category=idea_jar"
             className={styles.submitBtn}
@@ -233,6 +258,36 @@ export default function IdeaJarClient() {
           </Link>
         </div>
       </section>
+
+      {/* Drawn idea. aria-live so the draw is announced, not just painted. */}
+      {(drawn || drawState === "empty" || drawState === "error") && (
+        <section className={styles.drawnCard} aria-label="Drawn idea" aria-live="polite">
+          {drawn ? (
+            <>
+              <div className={styles.cardTopMeta}>
+                <span className={styles.badgePill}>Drawn from the jar</span>
+                {drawn.difficulty && <span className={styles.difficultyTag}>{drawn.difficulty}</span>}
+              </div>
+              <h2 className={styles.drawnTitle}>{drawn.title}</h2>
+              <p className={styles.ideaDescription}>{drawn.description}</p>
+              <div className={styles.drawnActions}>
+                <Link href={`/dashboard/ideas/${encodeURIComponent(drawn.id)}`} className={styles.submitBtn}>
+                  Open this idea →
+                </Link>
+                <button type="button" className={styles.drawBtn} onClick={() => void drawFromJar()} disabled={drawState === "drawing"}>
+                  Draw another
+                </button>
+              </div>
+            </>
+          ) : (
+            <p role="status" className={styles.ideaDescription}>
+              {drawState === "empty"
+                ? "The jar is empty — there are no approved ideas to draw yet."
+                : "An idea could not be drawn. Try again."}
+            </p>
+          )}
+        </section>
+      )}
 
       {/* Pending User Submissions Notice Tray */}
       {pendingIdeas.length > 0 && (

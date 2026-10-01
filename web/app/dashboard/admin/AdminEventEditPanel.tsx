@@ -81,6 +81,7 @@ export default function AdminEventEditPanel({
   const [participationMode, setParticipationMode] = useState<"solo" | "team">("solo");
   const [minTeamSize, setMinTeamSize] = useState(1);
   const [maxTeamSize, setMaxTeamSize] = useState(1);
+  const [formsTeamSpg, setFormsTeamSpg] = useState(false);
   const [maxParticipants, setMaxParticipants] = useState<number | "">("");
 
   const [pointsReward, setPointsReward] = useState<number | "">("");
@@ -150,6 +151,9 @@ export default function AdminEventEditPanel({
         setEligibleBatches(ev.eligibility?.allowed_years || allGraduationBatches);
 
         setParticipationMode(ev.participation?.mode || "solo");
+        // Load the stored choice. Saving used to hard-code false, which wiped
+        // the setting on every edit.
+        setFormsTeamSpg(Boolean(ev.participation?.requires_event_spg));
         setMinTeamSize(ev.participation?.min_team_size || 1);
         setMaxTeamSize(ev.participation?.max_team_size || 1);
         setMaxParticipants(ev.participation?.max_participants ?? "");
@@ -284,7 +288,7 @@ export default function AdminEventEditPanel({
           min_team_size: Number(minTeamSize),
           max_team_size: Number(maxTeamSize),
           max_participants: maxParticipants ? Number(maxParticipants) : undefined,
-          requires_event_spg: false,
+          requires_event_spg: participationMode === "team" && formsTeamSpg,
           spg_auto_disband_days: 3,
         },
         points_reward: {
@@ -718,10 +722,17 @@ export default function AdminEventEditPanel({
                   </select>
                 </div>
                 <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>Participation Mode</label>
+                  <label className={styles.formLabel} htmlFor="edit-event-mode">Participation Mode</label>
                   <select
+                    id="edit-event-mode"
                     value={participationMode}
-                    onChange={(e) => setParticipationMode(e.target.value as "solo" | "team")}
+                    onChange={(e) => {
+                      const next = e.target.value as "solo" | "team";
+                      // Turning a solo event into a team event starts with groups on,
+                      // the same default a new team event gets.
+                      if (next === "team" && participationMode === "solo") setFormsTeamSpg(true);
+                      setParticipationMode(next);
+                    }}
                     className={styles.formSelect}
                   >
                     <option value="solo">Solo (Individual)</option>
@@ -748,6 +759,17 @@ export default function AdminEventEditPanel({
                   ))}
                 </div>
               </div>
+
+              {participationMode === "team" && (
+                <label className={`${styles.checkboxPill} ${formsTeamSpg ? styles.checkboxPillActive : ""}`}>
+                  <input
+                    type="checkbox"
+                    checked={formsTeamSpg}
+                    onChange={(e) => setFormsTeamSpg(e.target.checked)}
+                  />
+                  <span>Form a project group (SPG) for each registered team</span>
+                </label>
+              )}
 
               {participationMode === "team" && (
                 <div className={styles.formRowThree}>

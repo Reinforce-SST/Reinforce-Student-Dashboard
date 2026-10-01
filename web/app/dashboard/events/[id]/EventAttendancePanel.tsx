@@ -253,13 +253,22 @@ export default function EventAttendancePanel({
   // Bulk Roll Call (Mark all filtered registered as Present)
   const [bulkBusy, setBulkBusy] = useState(false);
   const handleBulkCheckIn = async () => {
-    const targets = filtered.filter(
-      (r) => r.status === "registered" || r.status === "waitlisted"
-    );
-    if (targets.length === 0) return;
+    // Only people who hold a place. A waitlisted person did not get one, and the
+    // server refuses to check them in, so sending them only inflated the count
+    // the admin was shown.
+    const targets = filtered.filter((r) => r.status === "registered");
+    const allAttendeeUids: string[] = [];
+    for (const t of targets) {
+      if (t.member_uids && t.member_uids.length > 0) {
+        allAttendeeUids.push(...t.member_uids);
+      } else if (t.user_id) {
+        allAttendeeUids.push(t.user_id);
+      }
+    }
+    if (allAttendeeUids.length === 0) return;
     if (
       !confirm(
-        `Are you sure you want to mark ${targets.length} attendee(s) as PRESENT? ${
+        `Are you sure you want to mark ${allAttendeeUids.length} attendee(s) as PRESENT? ${
           awardPoints ? `They will each receive +${attendancePoints} merit points.` : ""
         }`
       )
@@ -272,18 +281,16 @@ export default function EventAttendancePanel({
     setSuccessMsg(null);
 
     try {
-      const allAttendeeUids: string[] = [];
-      for (const t of targets) {
-        if (t.member_uids && t.member_uids.length > 0) {
-          allAttendeeUids.push(...t.member_uids);
-        } else if (t.user_id) {
-          allAttendeeUids.push(t.user_id);
-        }
-      }
-
-      await api.adminRollCall(token, eventId, allAttendeeUids, awardPoints);
+      const result = await api.adminRollCall(token, eventId, allAttendeeUids, awardPoints);
       await loadRegistrations();
-      setSuccessMsg(`Bulk roll-call completed! ${targets.length} registrations marked Present.`);
+      // Report what the server did, not what was asked for. A place can be
+      // cancelled between loading the roster and the roll-call.
+      const done = result.awarded_uids.length;
+      const refused = result.failed_uids.length;
+      setSuccessMsg(`${done} ${done === 1 ? "person" : "people"} checked in.`);
+      if (refused > 0) {
+        setError(`${refused} ${refused === 1 ? "person" : "people"} could not be checked in — they no longer hold a place. Refresh to see the current roster.`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bulk roll-call failed.");
     } finally {
@@ -717,6 +724,9 @@ export default function EventAttendancePanel({
             const isBusy = updatingIds[r.id] || false;
             const isTeam = Boolean(r.team_name || (r.member_uids && r.member_uids.length > 1) || r.spg_id);
             const leadName = r.user_profile?.full_name || r.user_id;
+            // Each row's status control says whose status it is; a bare select is
+            // announced as "combo box" once per person.
+            const rowName = isTeam ? `team ${r.team_name || leadName}` : leadName;
 
             return (
               <div key={r.id} className={styles.rosterCard}>
@@ -786,6 +796,7 @@ export default function EventAttendancePanel({
                     <label className={styles.selectorLabel}>Attendance Status:</label>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                       <select
+                        aria-label={`Attendance status for ${rowName}`}
                         value={r.status}
                         disabled={isBusy}
                         onChange={(e) => handleUpdateStatus(r.id, e.target.value as AttendanceStatus)}

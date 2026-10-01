@@ -64,6 +64,24 @@ export default function DiscoveryDetail({
     };
   }, [kind, id, token, revision]);
 
+  // Articles are voted on through their own route; the idea handler below is
+  // idea-only.
+  const [articleVotes, setArticleVotes] = useState<number | null>(null);
+  const [articleVoted, setArticleVoted] = useState(false);
+  async function handleToggleArticleVote() {
+    if (!token || upvoting || !item || !("content" in item)) return;
+    setUpvoting(true);
+    try {
+      const res = await api.upvoteArticle(token, item.id);
+      setArticleVotes(res.upvote_count);
+      setArticleVoted(res.upvoted);
+    } catch {
+      // A failed vote leaves the count as it was.
+    } finally {
+      setUpvoting(false);
+    }
+  }
+
   async function handleToggleUpvote() {
     if (!token || upvoting || !item || "content" in item) return;
     setUpvoting(true);
@@ -111,11 +129,56 @@ export default function DiscoveryDetail({
       {!loading && article && (
         <article className={styles.detail}>
           <div className={styles.meta}>
-            {article.reading_time_minutes} min read
+            {article.kind === "research_paper" ? "Research paper" : `${article.reading_time_minutes} min read`}
           </div>
           <h1>{article.title}</h1>
           <p className={styles.muted}>{article.summary}</p>
+
+          {article.kind === "research_paper" && article.paper && (
+            <section className={styles.paperBox} aria-label="Paper details">
+              <dl>
+                <dt>Authors</dt>
+                <dd>{article.paper.authors.join(", ")}</dd>
+                {article.paper.venue && (
+                  <>
+                    <dt>Venue</dt>
+                    <dd>{article.paper.venue}</dd>
+                  </>
+                )}
+              </dl>
+              {/* The server only stores http(s) links; checked again here so a
+                  javascript: address can never become a link. */}
+              {/^https?:\/\//i.test(article.paper.paper_url) && (
+                <a className={styles.paperLink} href={article.paper.paper_url} target="_blank" rel="noopener noreferrer">
+                  Read the paper ↗
+                </a>
+              )}
+            </section>
+          )}
+
           <div className={styles.articleText}>{article.content}</div>
+
+          <footer className={styles.articleFooter}>
+            {article.published_at && <span>Published {formatDate(article.published_at)}</span>}
+            {article.tags.length > 0 && (
+              <span className={styles.articleTags} aria-label="Tags">
+                {article.tags.map((tag) => <span key={tag}>{tag}</span>)}
+              </span>
+            )}
+            {token ? (
+              <button
+                type="button"
+                className={styles.articleVote}
+                aria-pressed={articleVoted}
+                disabled={upvoting}
+                onClick={() => void handleToggleArticleVote()}
+              >
+                ▲ Upvote ({articleVotes ?? article.stats.upvote_count})
+              </button>
+            ) : (
+              <span>▲ {article.stats.upvote_count} upvotes</span>
+            )}
+          </footer>
         </article>
       )}
 
@@ -208,7 +271,32 @@ export default function DiscoveryDetail({
                 Updated: <strong>{formatDate(idea.updated_at)}</strong>
               </span>
             )}
+
+            {/* claims_count counts the project groups started from this idea. */}
+            {(idea.stats?.claims_count ?? 0) > 0 && (
+              <span className={styles.metaStatItem}>
+                Groups started: <strong>{idea.stats.claims_count}</strong>
+              </span>
+            )}
           </div>
+
+          {/* Only an approved idea is in the jar, and only those can seed a group. */}
+          {idea.is_verified && (
+            <div className={styles.startGroupCard}>
+              <div>
+                <h3 className={styles.overviewTitle}>Want to build this?</h3>
+                <p className={styles.overviewText}>
+                  Register a project group around this idea. The club reviews the registration like any other.
+                </p>
+              </div>
+              <Link
+                href={`/dashboard/tickets?category=spg_registration&idea=${encodeURIComponent(idea.id)}`}
+                className={styles.startGroupLink}
+              >
+                Start a project group from this idea →
+              </Link>
+            </div>
+          )}
 
           {/* Prerequisites */}
           <div className={styles.sectionCard}>

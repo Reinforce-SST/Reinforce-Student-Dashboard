@@ -20,6 +20,13 @@ const eslintConfig = defineConfig([
       "@next/next/no-img-element": "warn",
     },
   },
+  {
+    // Playwright fixtures receive a callback conventionally named `use`, which
+    // the React Hooks plugin reads as React's `use` hook. These files contain
+    // no React.
+    files: ["tests/e2e/**/*.ts"],
+    rules: { "react-hooks/rules-of-hooks": "off" },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     ".test-build/**",

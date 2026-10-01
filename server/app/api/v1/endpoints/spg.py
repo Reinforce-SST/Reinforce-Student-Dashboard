@@ -49,6 +49,7 @@ from app.schemas.spgs import (
     SPGUpdate,
     SPGVisibility,
 )
+from app.services import contributions as contribution_service
 from app.services import spg_reports as reports_service
 from app.services import spgs as service
 from app.services import uploads
@@ -124,12 +125,34 @@ def verify_report(
     """Record that a reviewer has checked the report.
 
     This awards nothing. Whether the work earns points is a separate decision
-    the admin makes through the contribution workflow.
+    the admin makes through the contribution workflow — so verifying puts that
+    decision in the queue as a pending contribution worth nothing until it is
+    reviewed. Verifying again changes nothing.
     """
     try:
-        return reports_service.verify_report(db, report_id=report_id, admin_id=_uid(admin))
+        report = reports_service.verify_report(db, report_id=report_id, admin_id=_uid(admin))
     except reports_service.SPGReportError as error:
         raise _handle(error) from None
+    # The report is already verified; nothing below may fail this request.
+    try:
+        group = service.get_spg(db, report.spg_id)
+    except Exception:
+        group = None
+    # SPGs call the catch-all track "general"; contributions call it "misc".
+    track = getattr(getattr(group, "track", None), "value", None) or "misc"
+    contribution_service.credit_activity(
+        db,
+        user_id=report.submitted_by,
+        activity=f"spg_report:{report.id}",
+        spg_id=report.spg_id,
+        details={
+            "category": "project_work",
+            "track": "misc" if track == "general" else track,
+            "title": f"Progress report verified: {report.heading}"[:200],
+            "occurred_at": report.submitted_at,
+        },
+    )
+    return report
 
 
 # ---------------------------------------------------------------------------

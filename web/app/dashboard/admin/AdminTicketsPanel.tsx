@@ -2,13 +2,36 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { api, type ApiTicketDetail, type TicketStatus, type TicketSummary } from "@/lib/api";
+import { api, type AdminTicketFilters, type ApiTicketDetail, type TicketCategory, type TicketPriority, type TicketStatus, type TicketSummary } from "@/lib/api";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import PaginationBar from "@/components/dashboard/PaginationBar";
 import LoadingBar from "@/components/dashboard/LoadingBar";
 import styles from "./AdminWorkflows.module.css";
 
-export default function AdminTicketsPanel({ token, spgOnly = false }: { token: string; spgOnly?: boolean }) {
+const CATEGORY_OPTIONS: [TicketCategory, string][] = [
+  ["support", "Support"],
+  ["resource_request", "Resource request"],
+  ["compute_resource_request", "Compute request"],
+  ["learning_resource_request", "Learning resource request"],
+  ["idea_jar", "Idea jar"],
+  ["feedback", "Feedback"],
+  ["report", "Report"],
+  ["misc", "Other"],
+];
+const STATUS_OPTIONS: [TicketStatus, string][] = [
+  ["open", "Open"],
+  ["in_progress", "In progress"],
+  ["resolved", "Resolved"],
+  ["closed", "Closed"],
+];
+const PRIORITY_OPTIONS: [TicketPriority, string][] = [
+  ["urgent", "Urgent"],
+  ["high", "High"],
+  ["medium", "Medium"],
+  ["low", "Low"],
+];
+
+export default function AdminTicketsPanel({ token, adminId, spgOnly = false }: { token: string; adminId?: string; spgOnly?: boolean }) {
   const [items, setItems] = useState<TicketSummary[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -16,16 +39,27 @@ export default function AdminTicketsPanel({ token, spgOnly = false }: { token: s
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState("");
+  const [filters, setFilters] = useState<AdminTicketFilters>({});
+  const filtered = Object.values(filters).some(Boolean);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    api.adminGetAllTickets(token, page, spgOnly ? "spg_registration" : undefined)
+    // The SPG view is pinned to one category; the console filters are not shown there.
+    const query: AdminTicketFilters = spgOnly ? { category: "spg_registration" } : filters;
+    api.adminGetAllTickets(token, page, query)
       .then((result) => { if (active) { setItems(result.items); setTotal(result.total); setError(""); } })
       .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "Tickets could not be loaded."); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [token, page, spgOnly, revision]);
+  }, [token, page, spgOnly, revision, filters]);
+
+  // A narrower filter can have fewer pages than the one before it. Staying on
+  // page 3 of a one-page result shows an empty list that looks like "no match".
+  function applyFilter(next: AdminTicketFilters) {
+    setFilters(next);
+    setPage(1);
+  }
 
   async function updateStatus(id: string, status: TicketStatus) {
     setSaving(id);
@@ -54,9 +88,63 @@ export default function AdminTicketsPanel({ token, spgOnly = false }: { token: s
           {error} <button type="button" onClick={() => setRevision((value) => value + 1)}>Retry</button>
         </p>
       )}
+      {!spgOnly && (
+        <div className={styles.filterBar} role="group" aria-label="Ticket filters">
+          <label>
+            Category
+            <select
+              aria-label="Filter by category"
+              value={filters.category ?? ""}
+              onChange={(event) => applyFilter({ ...filters, category: (event.target.value || undefined) as TicketCategory | undefined })}
+            >
+              <option value="">All categories</option>
+              {CATEGORY_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <label>
+            Status
+            <select
+              aria-label="Filter by status"
+              value={filters.status ?? ""}
+              onChange={(event) => applyFilter({ ...filters, status: (event.target.value || undefined) as TicketStatus | undefined })}
+            >
+              <option value="">Any status</option>
+              {STATUS_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <label>
+            Priority
+            <select
+              aria-label="Filter by priority"
+              value={filters.priority ?? ""}
+              onChange={(event) => applyFilter({ ...filters, priority: (event.target.value || undefined) as TicketPriority | undefined })}
+            >
+              <option value="">Any priority</option>
+              {PRIORITY_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          {adminId && (
+            <label className={styles.filterCheck}>
+              <input
+                type="checkbox"
+                checked={filters.assignedTo === adminId}
+                onChange={(event) => applyFilter({ ...filters, assignedTo: event.target.checked ? adminId : undefined })}
+              />
+              Assigned to me
+            </label>
+          )}
+          <button type="button" className={styles.filterClear} disabled={!filtered} onClick={() => applyFilter({})}>
+            Clear filters
+          </button>
+        </div>
+      )}
       {loading && items.length === 0 && <p>Loading tickets…</p>}
       {!loading && !error && items.length === 0 && (
-        <p>No {spgOnly ? "SPG registration requests" : "tickets"} found.</p>
+        <p>
+          {filtered
+            ? "No tickets match these filters."
+            : `No ${spgOnly ? "SPG registration requests" : "tickets"} found.`}
+        </p>
       )}
       {!loading && !error && (
         <div className={styles.list}>
@@ -64,7 +152,7 @@ export default function AdminTicketsPanel({ token, spgOnly = false }: { token: s
             <AdminSpgReview key={item.id} item={item} token={token} onUpdated={() => setRevision((value) => value + 1)} />
           ) : (
             <article key={item.id} className={styles.row}>
-              <div><Link href={`/dashboard/tickets/${encodeURIComponent(item.id)}`}>{item.title}</Link><small>{item.category.replaceAll("_", " ")} · {item.status.replaceAll("_", " ")}</small></div>
+              <div><Link href={`/dashboard/tickets/${encodeURIComponent(item.id)}`}>{item.title}</Link><small>{item.category.replaceAll("_", " ")} · {item.status.replaceAll("_", " ")}{item.priority ? ` · ${item.priority} priority` : ""}</small></div>
               {!spgOnly && (
                 <label>
                   Status

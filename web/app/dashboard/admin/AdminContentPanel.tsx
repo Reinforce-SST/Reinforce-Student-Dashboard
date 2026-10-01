@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { api } from "@/lib/api";
+import { api, type ArticleKind } from "@/lib/api";
 import AdminIdeaReviewPanel from "./AdminIdeaReviewPanel";
 import styles from "./AdminWorkflows.module.css";
 
@@ -16,6 +16,12 @@ export default function AdminContentPanel({
   const [summary, setSummary] = useState("");
   const [content, setContent] = useState("");
   const [tags, setTags] = useState("");
+  // A research paper is an article with paper details: who wrote it, where,
+  // and a link to the paper itself.
+  const [articleKind, setArticleKind] = useState<ArticleKind>("article");
+  const [authors, setAuthors] = useState("");
+  const [venue, setVenue] = useState("");
+  const [paperUrl, setPaperUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -26,6 +32,13 @@ export default function AdminContentPanel({
     setBusy(true);
     setError("");
     setNotice("");
+    const isPaper = articleKind === "research_paper";
+    const authorList = authors.split(",").map((name) => name.trim()).filter(Boolean);
+    if (isPaper && authorList.length === 0) {
+      setError("A research paper needs at least one author.");
+      setBusy(false);
+      return;
+    }
     try {
       const article = await api.publishArticle(token, {
         title: title.trim(),
@@ -36,12 +49,19 @@ export default function AdminContentPanel({
           .map((tag) => tag.trim())
           .filter(Boolean)
           .slice(0, 10),
+        kind: articleKind,
+        paper: isPaper
+          ? { authors: authorList, venue: venue.trim() || null, paper_url: paperUrl.trim() }
+          : null,
       });
       setTitle("");
       setSummary("");
       setContent("");
       setTags("");
-      setNotice(`Published “${article.title}”.`);
+      setAuthors("");
+      setVenue("");
+      setPaperUrl("");
+      setNotice(`Published “${article.title}”${isPaper ? " as a research paper" : ""}.`);
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : "Article could not be published."
@@ -70,6 +90,38 @@ export default function AdminContentPanel({
           {notice && <div className={styles.successNotice}>{notice}</div>}
 
           <form className={styles.form} onSubmit={(event) => void publish(event)}>
+            <label>
+              Kind
+              <select value={articleKind} onChange={(event) => setArticleKind(event.target.value as ArticleKind)}>
+                <option value="article">Article</option>
+                <option value="research_paper">Research paper</option>
+              </select>
+            </label>
+            {articleKind === "research_paper" && (
+              <>
+                <label>
+                  Authors (comma-separated)
+                  <input required value={authors} onChange={(event) => setAuthors(event.target.value)} />
+                </label>
+                <label>
+                  Venue (optional)
+                  <input maxLength={200} value={venue} onChange={(event) => setVenue(event.target.value)} placeholder="e.g. NeurIPS 2025 Workshop" />
+                </label>
+                <label>
+                  Link to the paper
+                  <input
+                    required
+                    type="url"
+                    // The server accepts http(s) only; pattern keeps the browser in step.
+                    pattern="https?://.+"
+                    maxLength={500}
+                    value={paperUrl}
+                    onChange={(event) => setPaperUrl(event.target.value)}
+                    placeholder="https://arxiv.org/abs/…"
+                  />
+                </label>
+              </>
+            )}
             <label>
               Title
               <input

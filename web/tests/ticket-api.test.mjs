@@ -36,3 +36,28 @@ test("ticket detail is fetched from the API with its real fields", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("admin ticket filters map to the server's query parameters", async () => {
+  const originalFetch = globalThis.fetch;
+  const urls = [];
+  globalThis.fetch = async (url) => {
+    urls.push(new URL(url));
+    return { ok: true, json: async () => ({ total: 0, items: [] }) };
+  };
+  try {
+    await api.adminGetAllTickets("admin-token", 2, {
+      category: "support", status: "open", priority: "urgent", assignedTo: "admin-1",
+    });
+    await api.adminGetAllTickets("admin-token");
+    const [filtered, unfiltered] = urls;
+    assert.equal(filtered.searchParams.get("page"), "2");
+    assert.equal(filtered.searchParams.get("category"), "support");
+    assert.equal(filtered.searchParams.get("status"), "open");
+    assert.equal(filtered.searchParams.get("priority"), "urgent");
+    // The server names this assigned_to_uid, not assignedTo.
+    assert.equal(filtered.searchParams.get("assigned_to_uid"), "admin-1");
+    assert.deepEqual([...unfiltered.searchParams.keys()].sort(), ["page", "page_size"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
