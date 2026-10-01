@@ -2,9 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main, backend]
+    branches: [main, staging]
   pull_request:
-    branches: [main, backend, feat/ledger-web]
+    # staging is the integration branch everything merges into, so it needs the
+    # same gate as main. Without it a pull request into staging ran no checks at
+    # all, and the first CI any of that work saw was the staging -> main PR.
+    # backend and feat/ledger-web were listed here and no longer exist.
+    branches: [main, staging]
 
 concurrency:
   group: ci-${{ github.ref }}
