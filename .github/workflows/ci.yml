@@ -2,9 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main, backend]
+    branches: [main, staging]
   pull_request:
-    branches: [main, backend, feat/ledger-web]
+    # staging is the integration branch everything merges into, so it needs the
+    # same gate as main. Without it a pull request into staging ran no checks at
+    # all, and the first CI any of that work saw was the staging -> main PR.
+    # backend and feat/ledger-web were listed here and no longer exist.
+    branches: [main, staging]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -38,6 +42,41 @@ jobs:
       # preview does not have Firebase environment variables.
       - name: Build
         run: npm run build
+
+  e2e:
+    name: Web — end-to-end
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Playwright builds and starts the app itself (see playwright.config.ts)
+      # so the bundle under test is built with the same NEXT_PUBLIC_* values the
+      # suite mocks against. Every API and Firebase call is intercepted in the
+      # browser; the suite reaches no network.
+      - name: End-to-end suite
+        run: npm run e2e
+
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: web/.playwright/results
+          retention-days: 7
 
   server:
     name: Server — dependencies, syntax and tests
@@ -77,3 +116,15 @@ jobs:
             exit 1
           fi
           echo "No credential files tracked."
+
+      # A CI run log (server/error.log) was committed in #35 and shipped for
+      # two days. .gitignore cannot help once a file is already tracked, so the
+      # guard belongs here.
+      - name: Block build and run artifacts
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -E '(^|/)[^/]*\.log$|(^|/)next-env\.d\.ts$'; then
+            echo "::error::A build or run artifact is tracked. Remove it with 'git rm --cached <path>'."
+            exit 1
+          fi
+          echo "No build or run artifacts tracked."

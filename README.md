@@ -53,7 +53,6 @@ servers; the browser calls the API with a Firebase ID token.
 |---|---|
 | [`web/`](web/) | Next.js public site, `/auth`, dashboard, admin console |
 | [`server/`](server/) | FastAPI routes and Firestore services |
-| [`client/`](client/) | Legacy Vite client at the older Vercel URL |
 | [`docs/`](docs/) | Data contract, workflows, and verification |
 
 ## Run locally
@@ -81,6 +80,19 @@ The API docs are at <http://localhost:8080/docs>. To verify a change, run
 `uv run --locked pytest -q` in `server/` and `npm test && npm run lint && npm run build`
 in `web/`. Local tests use fixtures; they do not exercise Discord or production
 Firestore.
+
+For anything that touches the dashboard UI, also run the end-to-end suite, which
+drives a real browser over every member-facing route:
+
+```bash
+cd web
+npx playwright install --with-deps chromium   # once
+npm run e2e                                   # or PLAYWRIGHT_CHANNEL=chrome npm run e2e
+```
+
+It builds and starts the app itself and intercepts every API and Firebase call,
+so it needs no running server and no credentials. See
+[docs/verification.md](docs/verification.md) for what it does and does not prove.
 
 ## Before changing shared behavior
 
