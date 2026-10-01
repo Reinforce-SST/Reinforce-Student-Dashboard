@@ -113,7 +113,8 @@ test("a member registers a team with a name and teammates", async ({ page, app }
   app.world.events = [teamEvent];
   await app.enter(`/dashboard/events/${teamEvent.id}`);
   await page.getByLabel("Team name").fill("Gradient Descenders");
-  await page.getByLabel("Teammate user IDs").fill("member-2");
+  await page.getByRole("combobox", { name: "Teammates" }).fill("Second");
+  await page.getByRole("option", { name: "Second Member" }).click();
   await page.getByRole("button", { name: /Register Team/ }).click();
 
   await expect.poll(() => app.world.calls.find(call => call.method === "POST" && call.path.endsWith("/register"))).toBeTruthy();

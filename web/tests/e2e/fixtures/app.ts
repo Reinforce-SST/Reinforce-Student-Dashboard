@@ -41,6 +41,8 @@ export type World = {
   registrations: Record<string, unknown>[];
   /** The contribution ledger, every status. */
   contributions: Record<string, unknown>[];
+  /** When set, registering for an event fails with this response. */
+  registerError?: { status: number; detail: string };
   /** Learning Resources, published and hidden. */
   resources: Record<string, unknown>[];
 };
@@ -140,7 +142,13 @@ async function handleApi(route: Route, world: World) {
     return ok({ track: search.get("track") ?? "total", total: fixture.leaderboardRows.length, entries: fixture.leaderboardRows });
   }
   if (path === "/users/admin-directory") return ok(page1(fixture.directoryRows));
-  if (path === "/users" && method === "GET") return ok(page1(fixture.directoryRows));
+  if (path === "/users" && method === "GET") {
+    // Like the API: search matches name, email or id, case-insensitively.
+    const q = (search.get("search") ?? "").toLowerCase();
+    const rows = fixture.directoryRows.filter(row =>
+      !q || [row.full_name, row.email, row.id].some(value => value.toLowerCase().includes(q)));
+    return ok(page1(rows));
+  }
   if (/^\/users\/[^/]+\/status$/.test(path)) return ok({ ...world.profile, is_member: true });
   if (/^\/users\/[^/]+$/.test(path)) {
     const uid = decodeURIComponent(path.split("/")[2] ?? "");
@@ -283,6 +291,7 @@ async function handleApi(route: Route, world: World) {
     );
   }
   if (/^\/events\/[^/]+\/register$/.test(path)) {
+    if (method === "POST" && world.registerError) return fail(world.registerError.status, world.registerError.detail);
     world.registered = method !== "DELETE";
     return ok({ status: world.registered ? "registered" : "cancelled" });
   }
