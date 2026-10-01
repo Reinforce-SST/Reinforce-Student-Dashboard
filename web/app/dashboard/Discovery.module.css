@@ -33,6 +33,23 @@
 .articleText { white-space: pre-wrap; line-height: 1.7; color: #ddd; }
 @media (max-width: 600px) { .heading { align-items: start; flex-direction: column; } .heading .primary { width: 100%; } }
 
+/* Articles and research papers */
+.kindTabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.kindTabs button { min-height: 38px; padding: 7px 14px; border: 1px solid #393939; border-radius: 999px; background: transparent; color: #c9c9cd; font: inherit; font-size: .8rem; font-weight: 700; cursor: pointer; }
+.kindTabs .kindTabActive { border-color: var(--brand, #e5b731); background: rgba(229, 183, 49, .12); color: var(--brand, #e5b731); }
+.paperByline { color: #d6d6da !important; font-size: .8rem !important; font-weight: 600; }
+.paperBox { display: grid; gap: 10px; padding: 16px 18px; border: 1px solid rgba(229, 183, 49, .35); border-radius: 10px; background: rgba(229, 183, 49, .06); }
+.paperBox dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; font-size: .86rem; }
+.paperBox dt { color: #9a9aa0; font-weight: 700; }
+.paperBox dd { margin: 0; color: #ececee; overflow-wrap: anywhere; }
+.paperLink { justify-self: start; display: inline-flex; align-items: center; min-height: 40px; padding: 8px 14px; border-radius: 8px; background: var(--brand, #e5b731); color: #0c0c0e; font-size: .82rem; font-weight: 800; text-decoration: none; }
+.articleFooter { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; color: #9a9aa0; font-size: .8rem; }
+.articleTags { display: flex; flex-wrap: wrap; gap: 6px; }
+.articleTags span { padding: 3px 9px; border: 1px solid #393939; border-radius: 999px; color: #c9c9cd; font-size: .72rem; }
+.articleVote { min-height: 38px; padding: 7px 14px; border: 1px solid #393939; border-radius: 8px; background: transparent; color: var(--brand, #e5b731); font: inherit; font-size: .8rem; font-weight: 800; cursor: pointer; }
+.articleVote[aria-pressed="true"] { border-color: var(--brand, #e5b731); background: rgba(229, 183, 49, .12); }
+@media (max-width: 480px) { .paperBox dl { grid-template-columns: 1fr; } }
+
 /* Rich Idea Full Proposal View */
 .ideaDetail { max-width: 880px; width: 100%; display: grid; gap: 24px; padding: clamp(20px, 4vw, 36px); border: 1px solid #303036; border-radius: 14px; background: #131315; overflow-wrap: anywhere; box-shadow: 0 16px 40px rgba(0,0,0,0.35); }
 .topNavRow { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }

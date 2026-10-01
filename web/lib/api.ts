@@ -18,11 +18,17 @@ export class ApiError extends Error {
   }
 }
 
+export type ArticleKind = "article" | "research_paper";
+/** Present exactly when kind is "research_paper". paper_url is always http(s). */
+export type PaperDetails = { authors: string[]; venue?: string | null; paper_url: string };
 export type ArticleSummary = {
   id: string; slug: string; title: string; summary: string;
   cover_image_url?: string | null; tags: string[];
   reading_time_minutes: number; published_at?: string | null;
   stats: { upvote_count: number; comment_count: number; view_count: number };
+  /** Older articles predate kinds; the API reads them as "article". */
+  kind?: ArticleKind;
+  paper?: PaperDetails | null;
 };
 export type ArticleDetail = ArticleSummary & { content: string };
 export type IdeaSummary = {
@@ -464,14 +470,20 @@ function ticketFields(category: TicketCategory, fields: Record<string, unknown>)
 /* --------------------------------------------------------------- requests */
 
 export const api = {
-  listArticles: (search = "", page = 1) => {
+  listArticles: (search = "", page = 1, kind?: ArticleKind) => {
     const query = new URLSearchParams({ page: String(page), page_size: "20" });
     if (search.trim()) query.set("search", search.trim());
+    if (kind) query.set("kind", kind);
     return request<{ items: ArticleSummary[]; has_more: boolean; total: number }>(`/blogs?${query}`);
   },
   getArticle: (slug: string) => request<ArticleDetail>(`/blogs/${encodeURIComponent(slug)}`),
-  publishArticle: (token: string, body: { title: string; summary: string; content: string; tags: string[] }) =>
+  publishArticle: (
+    token: string,
+    body: { title: string; summary: string; content: string; tags: string[]; kind?: ArticleKind; paper?: PaperDetails | null },
+  ) =>
     request<ArticleDetail>("/blogs", token, { method: "POST", body: JSON.stringify({ ...body, status: "published" }) }),
+  upvoteArticle: (token: string, id: string) =>
+    request<{ upvoted: boolean; upvote_count: number }>(`/blogs/${encodeURIComponent(id)}/upvote`, token, { method: "POST" }),
   listIdeas: (
     search = "",
     page = 1,
