@@ -6,8 +6,8 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
 from google.cloud import firestore
 
-from app.api.security import get_current_user
-from app.utils import iso_str, now_iso, slugify
+from app.api.security import get_current_user, get_optional_current_user
+from app.utils import is_admin_user, iso_str, now_iso, slugify
 from app.services.firebase import db, upload_file_to_storage
 from app.services import contributions as contribution_service
 from app.schemas.blogs import (
@@ -114,6 +114,17 @@ def upload_blog_markdown(
     return {"message": "Blog uploaded", "url": public_url}
 
 
+# Only these are public. A draft or archived article belongs to its author and
+# the admins; an unlisted one is reachable by link but never listed to others.
+PUBLIC_STATUSES = {BlogStatus.PUBLISHED.value, BlogStatus.UNLISTED.value}
+
+
+def _may_read(data: Dict[str, Any], viewer: Optional[dict]) -> bool:
+    if data.get("status") in PUBLIC_STATUSES:
+        return True
+    return bool(viewer) and (is_admin_user(viewer) or data.get("author_uid") == viewer.get("uid"))
+
+
 @router.get("", response_model=BlogListResponse, summary="List published blogs")
 def list_blogs(
     page: int = Query(1, ge=1, description="Page number"),
@@ -121,9 +132,18 @@ def list_blogs(
     tag: Optional[str] = Query(None, description="Filter by tag"),
     search: Optional[str] = Query(None, description="Search term in title or summary"),
     status_filter: BlogStatus = Query(BlogStatus.PUBLISHED, alias="status", description="Status filter"),
+    viewer: Optional[dict] = Depends(get_optional_current_user),
 ) -> BlogListResponse:
-    """Fetch published blogs feed with pagination, tag filter, and search."""
+    """Fetch published blogs feed with pagination, tag filter, and search.
+
+    Anything but the published feed is private: a member sees only their own
+    drafts, archived or unlisted articles, and an admin sees everyone's.
+    """
+    if status_filter is not BlogStatus.PUBLISHED and not viewer:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sign in to see unpublished articles.")
     query = db.collection(BLOGS_COLLECTION).where("status", "==", status_filter.value)
+    if status_filter is not BlogStatus.PUBLISHED and not is_admin_user(viewer):
+        query = query.where("author_uid", "==", viewer["uid"])
 
     if tag:
         query = query.where("tags", "array_contains", tag.strip().lower())
@@ -163,13 +183,23 @@ def list_blogs(
 
 
 @router.get("/{id_or_slug}", response_model=BlogDetail, summary="Get single blog content")
-def get_blog(id_or_slug: str) -> BlogDetail:
-    """Fetch blog details by document ID or slug and increment view count."""
+def get_blog(
+    id_or_slug: str,
+    viewer: Optional[dict] = Depends(get_optional_current_user),
+) -> BlogDetail:
+    """Fetch blog details by document ID or slug and increment view count.
+
+    A draft or archived article answers 404 to anyone but its author and the
+    admins — not 403, which would confirm it exists. A refused read counts no
+    view.
+    """
     doc_ref, doc = _find_blog_doc(id_or_slug)
     if not doc or not doc.exists:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Blog not found")
 
     data = doc.to_dict() or {}
+    if not _may_read(data, viewer):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Blog not found")
 
     # Atomically increment view count
     try:
