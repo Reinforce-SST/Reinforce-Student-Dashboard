@@ -18,6 +18,16 @@ function formatDate(iso?: string | null): string {
   });
 }
 
+// The filters live in a tablist, so each one is a tab with a selected state.
+// Without role="tab" assistive technology announces an empty tab list and never
+// reads out which filter is active.
+const STATUS_TABS: [string, string][] = [
+  ["all", "All Submissions"],
+  ["pending", "⏳ Pending Review"],
+  ["approved", "✓ Approved & Live"],
+  ["closed", "✕ Closed / Rejected"],
+];
+
 export default function AdminIdeaReviewPanel({ token }: { token: string }) {
   // Filter & Pagination States
   const [status, setStatus] = useState<string>("all");
@@ -38,6 +48,11 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
 
   // Edit Modal States
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  // The Edit button disables itself while the idea loads, and a disabled button
+  // drops focus — so by the time showModal() runs the browser would remember
+  // <body> and restore focus there. Capture the trigger at click time instead.
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const [editingIdea, setEditingIdea] = useState<IdeaDetail | null>(null);
   const [editLoading, setEditLoading] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
@@ -50,6 +65,15 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
   const [formPrerequisites, setFormPrerequisites] = useState("");
   const [formRoadmap, setFormRoadmap] = useState("");
   const [formOutcomes, setFormOutcomes] = useState("");
+
+  // Opened with showModal, like the drawer in DashboardShell: the browser then
+  // closes it on Escape, keeps focus inside it, and returns focus to the Edit
+  // button afterwards. The guard keeps Strict Mode's effect replay from calling
+  // showModal on a dialog that is already open, which throws.
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (editingIdea && dialog && !dialog.open) dialog.showModal();
+  }, [editingIdea]);
 
   // Load ideas with active filters
   useEffect(() => {
@@ -89,7 +113,8 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
   }, [token, status, track, difficulty, debouncedSearch, page, pageSize, revision]);
 
   // Open Edit Modal and pre-fill form
-  async function handleOpenEdit(summary: IdeaSummary) {
+  async function handleOpenEdit(summary: IdeaSummary, trigger?: HTMLElement) {
+    returnFocusRef.current = trigger ?? null;
     setEditError("");
     setEditLoading(true);
     try {
@@ -114,8 +139,17 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
   }
 
   function handleCloseEdit() {
+    if (dialogRef.current?.open) dialogRef.current.close();
+    else resetEdit();
+  }
+
+  function resetEdit() {
     setEditingIdea(null);
     setEditError("");
+    const trigger = returnFocusRef.current;
+    returnFocusRef.current = null;
+    // After a save the list re-renders; only restore focus if the button survived.
+    if (trigger?.isConnected) requestAnimationFrame(() => trigger.focus());
   }
 
   // Save changes (and optionally approve simultaneously)
@@ -166,7 +200,7 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
         setNotice(`“${formTitle.trim()}” changes saved successfully.`);
       }
 
-      setEditingIdea(null);
+      handleCloseEdit();
       setRevision((v) => v + 1);
     } catch (cause) {
       setEditError(
@@ -252,47 +286,22 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
       {/* Filter & Search Toolbar */}
       <div className={styles.filterToolbar}>
         {/* Status Filter Tabs */}
-        <div className={styles.statusTabs} role="tablist">
-          <button
-            type="button"
-            className={`${styles.statusTabBtn} ${status === "all" ? styles.statusTabBtnActive : ""}`}
-            onClick={() => {
-              setStatus("all");
-              setPage(1);
-            }}
-          >
-            All Submissions
-          </button>
-          <button
-            type="button"
-            className={`${styles.statusTabBtn} ${status === "pending" ? styles.statusTabBtnActive : ""}`}
-            onClick={() => {
-              setStatus("pending");
-              setPage(1);
-            }}
-          >
-            ⏳ Pending Review
-          </button>
-          <button
-            type="button"
-            className={`${styles.statusTabBtn} ${status === "approved" ? styles.statusTabBtnActive : ""}`}
-            onClick={() => {
-              setStatus("approved");
-              setPage(1);
-            }}
-          >
-            ✓ Approved & Live
-          </button>
-          <button
-            type="button"
-            className={`${styles.statusTabBtn} ${status === "closed" ? styles.statusTabBtnActive : ""}`}
-            onClick={() => {
-              setStatus("closed");
-              setPage(1);
-            }}
-          >
-            ✕ Closed / Rejected
-          </button>
+        <div className={styles.statusTabs} role="tablist" aria-label="Filter ideas by status">
+          {STATUS_TABS.map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={status === value}
+              className={`${styles.statusTabBtn} ${status === value ? styles.statusTabBtnActive : ""}`}
+              onClick={() => {
+                setStatus(value);
+                setPage(1);
+              }}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         {/* Search & Select Controls */}
@@ -438,7 +447,7 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
                   <button
                     type="button"
                     className={styles.editActionBtn}
-                    onClick={() => void handleOpenEdit(idea)}
+                    onClick={(event) => void handleOpenEdit(idea, event.currentTarget)}
                     disabled={editLoading || actionBusyId === idea.id}
                   >
                     ✏️ Edit Proposal
@@ -509,10 +518,17 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
 
       {/* Edit Idea Modal */}
       {editingIdea && (
-        <div className={styles.modalOverlay} role="dialog" aria-modal="true">
+        <dialog
+          ref={dialogRef}
+          className={styles.modalOverlay}
+          aria-labelledby="edit-idea-heading"
+          onClose={resetEdit}
+          // Cancel is disabled while saving; Escape should not get around that.
+          onCancel={(event) => { if (editSaving) event.preventDefault(); }}
+        >
           <div className={styles.modalDialog}>
             <div className={styles.modalHeader}>
-              <h3>Edit Idea Proposal</h3>
+              <h3 id="edit-idea-heading">Edit Idea Proposal</h3>
               <button
                 type="button"
                 className={styles.modalCloseBtn}
@@ -525,6 +541,7 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
 
             {editError && (
               <div
+                role="alert"
                 style={{
                   margin: "12px 24px 0",
                   padding: "10px 14px",
@@ -549,8 +566,9 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
               <div className={styles.modalScrollContent}>
                 {/* Title */}
                 <div className={styles.formField}>
-                  <label>Idea Title *</label>
+                  <label htmlFor="edit-idea-title">Idea Title *</label>
                   <input
+                    id="edit-idea-title"
                     type="text"
                     required
                     value={formTitle}
@@ -562,8 +580,9 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
                 {/* Track & Difficulty */}
                 <div className={styles.formRow}>
                   <div className={styles.formField}>
-                    <label>Domain Track *</label>
+                    <label htmlFor="edit-idea-track">Domain Track *</label>
                     <select
+                      id="edit-idea-track"
                       value={formTrack}
                       onChange={(e) => setFormTrack(e.target.value)}
                     >
@@ -575,8 +594,9 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
                   </div>
 
                   <div className={styles.formField}>
-                    <label>Target Difficulty *</label>
+                    <label htmlFor="edit-idea-difficulty">Target Difficulty *</label>
                     <select
+                      id="edit-idea-difficulty"
                       value={formDifficulty}
                       onChange={(e) => setFormDifficulty(e.target.value)}
                     >
@@ -589,8 +609,9 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
 
                 {/* Description */}
                 <div className={styles.formField}>
-                  <label>Project Overview & Description *</label>
+                  <label htmlFor="edit-idea-description">Project Overview & Description *</label>
                   <textarea
+                    id="edit-idea-description"
                     rows={4}
                     required
                     value={formDescription}
@@ -601,8 +622,9 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
 
                 {/* Prerequisites */}
                 <div className={styles.formField}>
-                  <label>Prerequisites (One item per line)</label>
+                  <label htmlFor="edit-idea-prerequisites">Prerequisites (One item per line)</label>
                   <textarea
+                    id="edit-idea-prerequisites"
                     rows={3}
                     value={formPrerequisites}
                     onChange={(e) => setFormPrerequisites(e.target.value)}
@@ -615,8 +637,9 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
 
                 {/* Roadmap */}
                 <div className={styles.formField}>
-                  <label>Implementation Roadmap (One milestone per line)</label>
+                  <label htmlFor="edit-idea-roadmap">Implementation Roadmap (One milestone per line)</label>
                   <textarea
+                    id="edit-idea-roadmap"
                     rows={3}
                     value={formRoadmap}
                     onChange={(e) => setFormRoadmap(e.target.value)}
@@ -629,8 +652,9 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
 
                 {/* Learning Outcomes */}
                 <div className={styles.formField}>
-                  <label>Learning Outcomes (One outcome per line)</label>
+                  <label htmlFor="edit-idea-outcomes">Learning Outcomes (One outcome per line)</label>
                   <textarea
+                    id="edit-idea-outcomes"
                     rows={3}
                     value={formOutcomes}
                     onChange={(e) => setFormOutcomes(e.target.value)}
@@ -675,7 +699,7 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
               </div>
             </form>
           </div>
-        </div>
+        </dialog>
       )}
     </div>
   );
