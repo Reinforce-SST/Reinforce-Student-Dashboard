@@ -7,6 +7,7 @@ An event's recording, slides and write-up can be saved into the list. Those
 entries carry the event's id so the hub can link back to the event.
 """
 from enum import Enum
+import re
 from typing import Annotated, List, Optional
 from urllib.parse import urlparse
 
@@ -22,6 +23,50 @@ class ResourceTrack(str, Enum):
     PRODUCT = "product"
     KAGGLE = "kaggle"
     GENERAL = "general"
+
+
+def resource_category_path(value: str) -> str:
+    """Allow safe slash-separated folder paths, up to eight levels deep."""
+    segments = value.split("/")
+    if len(segments) > 8 or any(
+        not segment
+        or len(segment) > 48
+        or not re.fullmatch(r"[\w]+(?:-[\w]+)*", segment, re.UNICODE)
+        for segment in segments
+    ):
+        raise ValueError("must be a slash-separated category path with up to 8 safe folder names")
+    return value
+
+
+ResourceCategoryId = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=240),
+    AfterValidator(resource_category_path),
+]
+
+
+def default_category_for_track(track: ResourceTrack) -> Optional[ResourceCategoryId]:
+    """Place legacy resources in the closest matching fixed folder."""
+    return {
+        ResourceTrack.RESEARCH: "theory",
+        ResourceTrack.PRODUCT: "product",
+        ResourceTrack.KAGGLE: "kaggle",
+        ResourceTrack.GENERAL: None,
+    }[track]
+
+
+def track_for_category(category_id: Optional[ResourceCategoryId]) -> ResourceTrack:
+    """Keep the old track field aligned with the top-level folder."""
+    if category_id is None:
+        return ResourceTrack.GENERAL
+    root = category_id.split("/", 1)[0]
+    if root == "theory":
+        return ResourceTrack.RESEARCH
+    if root == "kaggle":
+        return ResourceTrack.KAGGLE
+    if root == "product":
+        return ResourceTrack.PRODUCT
+    return ResourceTrack.GENERAL
 
 
 class ResourceType(str, Enum):
@@ -67,6 +112,7 @@ class LearningResourceCreate(BaseModel):
     url: ResourceUrl
     description: ResourceDescription = ""
     track: ResourceTrack = ResourceTrack.GENERAL
+    category_id: Optional[ResourceCategoryId] = None
     type: ResourceType = ResourceType.OTHER
     tags: List[Tag] = Field(default_factory=list, max_length=10)
     event_id: Optional[str] = None
@@ -82,6 +128,7 @@ class LearningResourceUpdate(BaseModel):
     url: Optional[ResourceUrl] = None
     description: Optional[ResourceDescription] = None
     track: Optional[ResourceTrack] = None
+    category_id: Optional[ResourceCategoryId] = None
     type: Optional[ResourceType] = None
     tags: Optional[List[Tag]] = Field(default=None, max_length=10)
     event_id: Optional[str] = None
@@ -94,6 +141,7 @@ class LearningResourceDocument(BaseModel):
     url: str
     description: str = ""
     track: ResourceTrack = ResourceTrack.GENERAL
+    category_id: Optional[ResourceCategoryId] = None
     type: ResourceType = ResourceType.OTHER
     tags: List[str] = Field(default_factory=list)
     event_id: Optional[str] = None

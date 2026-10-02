@@ -6,11 +6,20 @@ import {
   type EventSummaryItem,
   type LearningResource,
   type LearningResourceInput,
+  type ResourceCategoryId,
   type ResourceStatus,
-  type ResourceTrack,
   type ResourceType,
 } from "@/lib/api";
-import { RESOURCE_TRACKS, RESOURCE_TYPES, isWebAddress, trackLabel, typeLabel } from "@/lib/learningResources";
+import {
+  RESOURCE_TYPES,
+  isWebAddress,
+  parseResourceCategoryPath,
+  resourceCategoryId,
+  resourceFolderLabel,
+  resourceFolders,
+  resourceTrackForCategory,
+  typeLabel,
+} from "@/lib/learningResources";
 import styles from "./AdminWorkflows.module.css";
 
 /** Event resource fields, as the API names them, in words. */
@@ -24,7 +33,7 @@ const EMPTY_FORM = {
   title: "",
   url: "",
   description: "",
-  track: "general" as ResourceTrack,
+  categoryId: "" as ResourceCategoryId | "",
   type: "article" as ResourceType,
   tags: "",
   eventId: "",
@@ -81,7 +90,9 @@ export default function AdminLearningResourcesPanel({ token }: { token: string }
       title: resource.title,
       url: resource.url,
       description: resource.description,
-      track: resource.track,
+      categoryId: resourceFolderLabel(resourceCategoryId(resource)) === "General pool"
+        ? ""
+        : resourceFolderLabel(resourceCategoryId(resource)),
       type: resource.type,
       tags: resource.tags.join(", "),
       eventId: resource.event_id ?? "",
@@ -113,11 +124,17 @@ export default function AdminLearningResourcesPanel({ token }: { token: string }
 
   function submit(event: FormEvent) {
     event.preventDefault();
+    const categoryPath = parseResourceCategoryPath(form.categoryId);
+    if (!categoryPath.valid) {
+      setError("Use up to eight folder names separated by /. Each folder name must contain letters or numbers.");
+      return;
+    }
     const payload: LearningResourceInput = {
       title: form.title.trim(),
       url: form.url.trim(),
       description: form.description.trim(),
-      track: form.track,
+      category_id: categoryPath.categoryId,
+      track: resourceTrackForCategory(categoryPath.categoryId),
       type: form.type,
       tags: form.tags.split(",").map((tag) => tag.trim()).filter(Boolean).slice(0, 10),
       event_id: form.eventId || null,
@@ -214,10 +231,20 @@ export default function AdminLearningResourcesPanel({ token }: { token: string }
           <textarea maxLength={2000} value={form.description} onChange={(event) => update("description", event.target.value)} />
         </label>
         <label>
-          Track
-          <select className={styles.field} value={form.track} onChange={(event) => update("track", event.target.value as ResourceTrack)}>
-            {RESOURCE_TRACKS.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
-          </select>
+          Category path
+          <input
+            list="learning-resource-category-paths"
+            value={form.categoryId}
+            onChange={(event) => update("categoryId", event.target.value)}
+            placeholder="e.g. Theory / CML / MNIST"
+            aria-describedby="learning-resource-category-hint"
+          />
+          <datalist id="learning-resource-category-paths">
+            {resourceFolders(resources).map((folder) => <option key={folder.id} value={resourceFolderLabel(folder.id)} />)}
+          </datalist>
+          <small id="learning-resource-category-hint" className={styles.fieldHint}>
+            Use / between nested folders. Leave blank for the General pool. A folder appears after a link is saved in it.
+          </small>
         </label>
         <label>
           Type
@@ -263,7 +290,7 @@ export default function AdminLearningResourcesPanel({ token }: { token: string }
                 ? <a href={resource.url} target="_blank" rel="noopener noreferrer">{resource.title}</a>
                 : <strong>{resource.title}</strong>}
               <small className={styles.resourceMeta}>
-                {typeLabel(resource.type)} · {trackLabel(resource.track)}
+                {typeLabel(resource.type)} · {resourceFolderLabel(resourceCategoryId(resource))}
                 {resource.event_title ? ` · from ${resource.event_title}` : ""}
                 {resource.status === "hidden" ? " · hidden" : ""}
               </small>

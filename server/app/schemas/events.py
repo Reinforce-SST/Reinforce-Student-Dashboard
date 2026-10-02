@@ -18,6 +18,8 @@ from pydantic import (
     ConfigDict,
     Field,
     PlainSerializer,
+    StringConstraints,
+    field_validator,
     model_validator,
 )
 
@@ -170,6 +172,16 @@ class EventResources(BaseModel):
     slides_url: Optional[str] = None
     writeup_url: Optional[str] = None
     discord_thread_id: Optional[str] = None
+    learning_resource_ids: List[
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")]
+    ] = Field(default_factory=list, max_length=50)
+
+    @field_validator("learning_resource_ids")
+    @classmethod
+    def resource_ids_are_unique(cls, values: List[str]) -> List[str]:
+        if len(values) != len(set(values)):
+            raise ValueError("Learning resource ids must be unique.")
+        return values
 
 
 class EventStats(BaseModel):

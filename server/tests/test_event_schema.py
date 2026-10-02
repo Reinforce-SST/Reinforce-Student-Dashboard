@@ -12,6 +12,7 @@ from app.schemas.events import (
     EventCreate,
     EventDocument,
     EventEligibility,
+    EventResources,
     current_graduation_batches,
     EventFormat,
     EventParticipationConfig,
@@ -76,6 +77,15 @@ def sample_event_create(**overrides):
 
 
 class EventCreateTests(unittest.TestCase):
+    def test_event_can_reference_multiple_distinct_learning_resources(self):
+        resources = EventResources(learning_resource_ids=["lr_one", "lr_two"])
+        self.assertEqual(resources.learning_resource_ids, ["lr_one", "lr_two"])
+
+    def test_event_rejects_duplicate_or_blank_learning_resource_ids(self):
+        for ids in (["lr_one", "lr_one"], [" "], ["bad/id"]):
+            with self.subTest(ids=ids), self.assertRaises(ValidationError):
+                EventResources(learning_resource_ids=ids)
+
     def test_default_eligibility_uses_current_graduation_batches(self):
         self.assertEqual(EventEligibility().allowed_years, current_graduation_batches())
 

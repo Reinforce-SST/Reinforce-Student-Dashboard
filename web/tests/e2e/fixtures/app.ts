@@ -283,6 +283,19 @@ async function handleApi(route: Route, world: World) {
     return ok({ events: matching, total: matching.length });
   }
   if (path === "/events" && method === "POST") return ok(fixture.upcomingEvent);
+  const eventDetailPath = path.match(/^\/events\/([^/]+)$/);
+  if (eventDetailPath && method === "PUT") {
+    const index = world.events.findIndex(item => item.id === eventDetailPath[1] || item.slug === eventDetailPath[1]);
+    if (index < 0) return fail(404, "Event not found");
+    const update = body as Record<string, unknown>;
+    const oldResources = (world.events[index].resources ?? {}) as Record<string, unknown>;
+    world.events[index] = {
+      ...world.events[index],
+      ...update,
+      resources: { ...oldResources, ...((update.resources ?? {}) as Record<string, unknown>) },
+    };
+    return ok(world.events[index]);
+  }
   if (/^\/events\/[^/]+\/my-registration$/.test(path)) {
     return ok(
       world.registered
@@ -406,14 +419,28 @@ async function handleApi(route: Route, world: World) {
   // saving an event's links is keyed per link so a second save adds nothing.
   if (path === "/learning-resources" && method === "GET") {
     const q = (search.get("q") ?? "").toLowerCase();
-    const items = world.resources.filter(item =>
-      (auth || item.status === "published") &&
+    const legacyCategory = (track: unknown) => ({ research: "theory", product: "product", kaggle: "kaggle", general: null }[String(track)] ?? null);
+    const items = world.resources.map(item => item.category_id === undefined
+      ? { ...item, category_id: legacyCategory(item.track) }
+      : item).filter(item =>
+      ((auth && Boolean(world.profile.is_admin)) || item.status === "published") &&
       (!search.get("status") || item.status === search.get("status")) &&
       (!search.get("track") || item.track === search.get("track")) &&
       (!search.get("type") || item.type === search.get("type")) &&
       (!search.get("event_id") || item.event_id === search.get("event_id")) &&
       (!q || [item.title, item.description, ...(item.tags as string[])].join(" ").toLowerCase().includes(q)));
     return ok({ resources: items, total: items.length });
+  }
+  const eventResourcesMatch = path.match(/^\/learning-resources\/for-event\/([^/]+)$/);
+  if (eventResourcesMatch && method === "GET") {
+    const event = world.events.find(item => item.id === eventResourcesMatch[1]);
+    if (!event) return fail(404, "Event not found");
+    const ids = ((event.resources as Record<string, unknown> | undefined)?.learning_resource_ids ?? []) as string[];
+    const resources = ids.flatMap(id => {
+      const resource = world.resources.find(item => item.id === id);
+      return resource && ((auth && Boolean(world.profile.is_admin)) || resource.status === "published") ? [resource] : [];
+    });
+    return ok({ resources, total: resources.length });
   }
   if (path === "/learning-resources" && method === "POST") {
     const payload = body as Record<string, unknown>;
@@ -439,7 +466,7 @@ async function handleApi(route: Route, world: World) {
       if (world.resources.some(item => item.id === id)) { result.already_saved.push(field); continue; }
       const created = {
         id, title: `${event.title}: ${label}`, url, description: "", track: "research", type, tags: [],
-        event_id: event.id, event_title: event.title, status: "published",
+        category_id: "theory", event_id: event.id, event_title: event.title, status: "published",
       };
       world.resources.push(created);
       result.created.push(created);

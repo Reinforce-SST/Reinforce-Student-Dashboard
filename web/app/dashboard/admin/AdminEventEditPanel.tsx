@@ -2,8 +2,17 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { api, type EventSummaryItem, type EventDocument } from "@/lib/api";
+import { api, type EventSummaryItem, type EventDocument, type LearningResource, type ResourceType } from "@/lib/api";
 import { getEventGraduationBatches } from "@/lib/eventsData";
+import {
+  RESOURCE_TYPES,
+  eventResourceCategoryPath,
+  parseResourceCategoryPath,
+  resourceCategoryId,
+  resourceFolderLabel,
+  resourceFolders,
+  resourceTrackForCategory,
+} from "@/lib/learningResources";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import styles from "./Admin.module.css";
 
@@ -87,6 +96,14 @@ export default function AdminEventEditPanel({
   const [pointsReward, setPointsReward] = useState<number | "">("");
   const [slidesUrl, setSlidesUrl] = useState("");
   const [discordThread, setDiscordThread] = useState("");
+  const [poolResources, setPoolResources] = useState<LearningResource[]>([]);
+  const [selectedResourceIds, setSelectedResourceIds] = useState<string[]>([]);
+  const [resourcesLoading, setResourcesLoading] = useState(false);
+  const [newResourceTitle, setNewResourceTitle] = useState("");
+  const [newResourceUrl, setNewResourceUrl] = useState("");
+  const [newResourceCategory, setNewResourceCategory] = useState("");
+  const [newResourceType, setNewResourceType] = useState<ResourceType>("other");
+  const [isAddingResource, setIsAddingResource] = useState(false);
 
   const [bannerUrl, setBannerUrl] = useState("");
   const [bannerFile, setBannerFile] = useState<File | null>(null);
@@ -124,6 +141,7 @@ export default function AdminEventEditPanel({
     let active = true;
     setLoadingDetail(true);
     setErrorMessage(null);
+    setSelectedResourceIds([]);
 
     api
       .getEvent(selectedId, token)
@@ -131,6 +149,7 @@ export default function AdminEventEditPanel({
         if (!active) return;
         setTitle(ev.title || "");
         setSlug(ev.slug || "");
+        setNewResourceCategory(resourceFolderLabel(eventResourceCategoryPath(ev.slug, ev.title || "Event")));
         setEventType(ev.event_type || "");
         setTrack(ev.track || "research");
         setFormat(ev.format || "offline");
@@ -161,6 +180,7 @@ export default function AdminEventEditPanel({
         setPointsReward(ev.points_reward?.attendance_points ?? "");
         setSlidesUrl(ev.resources?.slides_url || "");
         setDiscordThread(ev.resources?.discord_thread_id || "");
+        setSelectedResourceIds(ev.resources?.learning_resource_ids || []);
 
         setBannerUrl(ev.banner_url || "");
         setBannerFile(null);
@@ -177,6 +197,54 @@ export default function AdminEventEditPanel({
       active = false;
     };
   }, [selectedId, token]);
+
+  useEffect(() => {
+    if (!selectedId || !token) {
+      setPoolResources([]);
+      setResourcesLoading(false);
+      return;
+    }
+    let active = true;
+    setPoolResources([]);
+    setResourcesLoading(true);
+    api.listLearningResources({ status: "published" }, token)
+      .then((result) => { if (active) setPoolResources(result.resources); })
+      .catch(() => { if (active) setErrorMessage("The shared resource pool could not be loaded."); })
+      .finally(() => { if (active) setResourcesLoading(false); });
+    return () => { active = false; };
+  }, [selectedId, token]);
+
+  const handleAddPoolResource = async () => {
+    if (!newResourceTitle.trim() || !newResourceUrl.trim()) {
+      setErrorMessage("Enter a title and web link for the resource.");
+      return;
+    }
+    const categoryPath = parseResourceCategoryPath(newResourceCategory);
+    if (!categoryPath.valid) {
+      setErrorMessage("Use up to eight folder names separated by /. Each folder name must contain letters or numbers.");
+      return;
+    }
+    setIsAddingResource(true);
+    setErrorMessage(null);
+    try {
+      const created = await api.adminCreateLearningResource(token, {
+        title: newResourceTitle.trim(),
+        url: newResourceUrl.trim(),
+        category_id: categoryPath.categoryId,
+        track: resourceTrackForCategory(categoryPath.categoryId),
+        type: newResourceType,
+        status: "published",
+      });
+      setPoolResources((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+      setSelectedResourceIds((current) => current.includes(created.id) ? current : [...current, created.id]);
+      setNewResourceTitle("");
+      setNewResourceUrl("");
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "The resource could not be added.");
+    } finally {
+      setIsAddingResource(false);
+    }
+  };
 
   // Filtered list
   const filteredEvents = useMemo(() => {
@@ -296,8 +364,9 @@ export default function AdminEventEditPanel({
           track,
         },
         resources: {
-          slides_url: slidesUrl.trim() || undefined,
-          discord_thread_id: discordThread.trim() || undefined,
+          slides_url: slidesUrl.trim() || null,
+          discord_thread_id: discordThread.trim() || null,
+          learning_resource_ids: selectedResourceIds,
         },
         banner_url: imageUrl || undefined,
         status,
@@ -834,6 +903,110 @@ export default function AdminEventEditPanel({
                   />
                 </div>
               </div>
+
+              <div className={styles.formSectionHeading}>6. Shared Learning Links</div>
+              <fieldset className={styles.eventResourcePicker}>
+                <legend>Links shown on this event</legend>
+                <p className={styles.cardSubtitle}>
+                  Choose several links from the shared pool. A link can be reused on other events.
+                </p>
+                {resourcesLoading ? (
+                  <p className={styles.cardSubtitle}>Loading shared links…</p>
+                ) : poolResources.length ? (
+                  <div className={styles.eventResourceOptions}>
+                    {poolResources.map((resource) => (
+                      <label key={resource.id} className={styles.eventResourceOption}>
+                        <input
+                          type="checkbox"
+                          checked={selectedResourceIds.includes(resource.id)}
+                          onChange={(event) => setSelectedResourceIds((current) =>
+                            event.target.checked
+                              ? [...current, resource.id]
+                              : current.filter((id) => id !== resource.id)
+                          )}
+                          aria-label={`Show ${resource.title} on this event`}
+                        />
+                        <span className={styles.eventResourceText}>
+                          <span>{resource.title}</span>
+                          <small>{resourceFolderLabel(resourceCategoryId(resource))} · {resource.url}</small>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <p className={styles.cardSubtitle}>The shared pool has no published links yet.</p>
+                )}
+
+                <div className={styles.eventResourceAdd}>
+                  <p className={styles.cardSubtitle}>
+                    New links are added to the shared pool immediately. Save event changes below to attach them to this event.
+                  </p>
+                  <div className={styles.formRowThree}>
+                    <div className={styles.formGroup}>
+                      <label className={styles.formLabel} htmlFor="event-resource-title">Link title</label>
+                      <input
+                        id="event-resource-title"
+                        className={styles.formInput}
+                        value={newResourceTitle}
+                        onChange={(event) => setNewResourceTitle(event.target.value)}
+                        placeholder="e.g. Workshop notes"
+                      />
+                    </div>
+                    <div className={styles.formGroup}>
+                      <label className={styles.formLabel} htmlFor="event-resource-url">Web link</label>
+                      <input
+                        id="event-resource-url"
+                        type="url"
+                        className={styles.formInput}
+                        value={newResourceUrl}
+                        onChange={(event) => setNewResourceUrl(event.target.value)}
+                        placeholder="https://…"
+                      />
+                    </div>
+                    <div className={styles.formGroup}>
+                      <label className={styles.formLabel} htmlFor="event-resource-category">Category path</label>
+                      <input
+                        id="event-resource-category"
+                        className={styles.formInput}
+                        list="event-resource-category-paths"
+                        value={newResourceCategory}
+                        onChange={(event) => setNewResourceCategory(event.target.value)}
+                        placeholder="Events / event name"
+                        aria-describedby="event-resource-category-hint"
+                      />
+                      <datalist id="event-resource-category-paths">
+                        {resourceFolders(poolResources).map((folder) => (
+                          <option key={folder.id} value={resourceFolderLabel(folder.id)} />
+                        ))}
+                      </datalist>
+                      <small id="event-resource-category-hint" className={styles.formLabelHint}>
+                        Use / between nested folders. This event’s folder is preselected.
+                      </small>
+                    </div>
+                  </div>
+                  <div className={styles.eventResourceAddActions}>
+                    <label className={styles.formGroup} htmlFor="event-resource-type">
+                      <span className={styles.formLabel}>Link type</span>
+                      <select
+                        id="event-resource-type"
+                        className={styles.formSelect}
+                        value={newResourceType}
+                        onChange={(event) => setNewResourceType(event.target.value as ResourceType)}
+                      >
+                        {RESOURCE_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      className={styles.smallAction}
+                      disabled={isAddingResource || !newResourceTitle.trim() || !newResourceUrl.trim()}
+                      onClick={handleAddPoolResource}
+                    >
+                      {isAddingResource ? "Adding link…" : "Add to shared pool"}
+                    </button>
+                  </div>
+                </div>
+              </fieldset>
 
               {/* Banner Image */}
               <div className={styles.formGroup}>
