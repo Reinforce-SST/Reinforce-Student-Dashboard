@@ -110,6 +110,20 @@
 .filterRow .searchLabel { flex: 1 1 220px; }
 .filterRow .searchLabel:first-child { flex: 0 1 200px; }
 .searchLabel select { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid #393939; border-radius: 8px; background: #171717; color: #fff; font: inherit; }
+.breadcrumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 26px; color: #aaa; font-size: .85rem; }
+.breadcrumbs button { padding: 2px 0; color: var(--brand, #e5b731); font: inherit; font-weight: 700; cursor: pointer; }
+.crumbPart { display: inline-flex; align-items: center; gap: 8px; }
+.crumbPart [aria-current="page"] { color: #f2f2f2; font-weight: 700; }
+.directoryHeading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; }
+.directoryHeading h2 { margin: 0; font-size: 1.15rem; }
+.directorySection { display: grid; gap: 12px; }
+.directorySection > h3 { margin: 0; color: #a8a8ae; font-size: .78rem; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+.folderGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 12px; }
+.folderTile { display: grid; grid-template-columns: 30px 1fr; grid-template-rows: auto auto; align-items: center; column-gap: 10px; min-height: 74px; padding: 14px; border: 1px solid #303036; border-radius: 10px; background: #151518; color: #f0f0f2; text-align: left; cursor: pointer; }
+.folderTile:hover, .folderTile:focus-visible { border-color: var(--brand, #e5b731); background: rgba(229, 183, 49, .06); outline: none; }
+.folderTile > span { font-weight: 750; }
+.folderTile small { grid-column: 2; color: #9999a1; font-size: .72rem; }
+.folderIcon { grid-row: 1 / span 2; width: 28px; height: 28px; color: var(--brand, #e5b731); }
 .resourceTags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .resourceTags li { padding: 3px 9px; border: 1px solid #35353e; border-radius: 999px; color: #c9c9cd; font-size: .72rem; font-weight: 650; }
 .resourceEvent { color: #aaa !important; font-size: .8rem !important; }
