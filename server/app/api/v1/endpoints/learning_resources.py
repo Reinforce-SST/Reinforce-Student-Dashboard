@@ -14,16 +14,18 @@ from pydantic import ValidationError
 
 from app.api.security import get_admin_user, get_optional_current_user
 from app.services.firebase import db
-from app.utils import get_user_uid, is_admin_user, now_iso
+from app.utils import get_user_uid, is_admin_user, now_iso, slugify
 from app.schemas.learning_resources import (
     EventResourceImport,
     LearningResourceCreate,
     LearningResourceDocument,
     LearningResourceListResponse,
     LearningResourceUpdate,
+    default_category_for_track,
     ResourceStatus,
     ResourceTrack,
     ResourceType,
+    track_for_category,
 )
 
 router = APIRouter(prefix="/learning-resources", tags=["learning-resources"])
@@ -40,7 +42,12 @@ EVENT_LINKS = (
 
 
 def _to_document(doc: firestore.DocumentSnapshot) -> LearningResourceDocument:
-    return LearningResourceDocument.model_validate({**(doc.to_dict() or {}), "id": doc.id})
+    data = doc.to_dict() or {}
+    if "category_id" not in data:
+        # Backfill the API representation for old documents without writing
+        # to Firestore. The fixed folder tree remains additive and reversible.
+        data["category_id"] = default_category_for_track(ResourceTrack(data.get("track", "general")))
+    return LearningResourceDocument.model_validate({**data, "id": doc.id})
 
 
 def _not_found(resource_id: str) -> HTTPException:
@@ -59,14 +66,6 @@ def _event_title(event_id: str) -> str:
             detail=f"Event '{event_id}' not found",
         )
     return (doc.to_dict() or {}).get("title") or event_id
-
-
-def _resource_track(event_track: Optional[str]) -> ResourceTrack:
-    """Events also use `misc` and `all`; both mean no one track."""
-    try:
-        return ResourceTrack(event_track)
-    except ValueError:
-        return ResourceTrack.GENERAL
 
 
 @router.get("", response_model=LearningResourceListResponse)
@@ -125,6 +124,32 @@ def get_resource(
     return item
 
 
+@router.get("/for-event/{event_id}", response_model=LearningResourceListResponse)
+def list_event_resources(
+    event_id: str,
+    current_user: Optional[Dict[str, Any]] = Depends(get_optional_current_user),
+):
+    """Return the shared-pool links attached to an event, in saved order."""
+    event_doc = db.collection(EVENTS_COLLECTION).document(event_id).get()
+    if not event_doc.exists:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    event = event_doc.to_dict() or {}
+    if event.get("status", "published") in {"draft", "archived"} and not is_admin_user(current_user):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
+    resources = []
+    is_admin = is_admin_user(current_user)
+    resource_ids = (event.get("resources") or {}).get("learning_resource_ids") or []
+    for resource_id in dict.fromkeys(resource_ids):
+        resource_doc = db.collection(RESOURCES_COLLECTION).document(resource_id).get()
+        if not resource_doc.exists:
+            continue
+        item = _to_document(resource_doc)
+        if item.status == ResourceStatus.PUBLISHED or is_admin:
+            resources.append(item)
+    return LearningResourceListResponse(resources=resources, total=len(resources))
+
+
 @router.post("", response_model=LearningResourceDocument, status_code=status.HTTP_201_CREATED)
 def create_resource(
     payload: LearningResourceCreate,
@@ -141,6 +166,10 @@ def create_resource(
         "created_at": now,
         "updated_at": now,
     }
+    if "category_id" not in payload.model_fields_set:
+        data["category_id"] = default_category_for_track(payload.track)
+    elif "track" not in payload.model_fields_set:
+        data["track"] = track_for_category(payload.category_id).value
     ref = db.collection(RESOURCES_COLLECTION).document(resource_id)
     ref.set(data)
     return _to_document(ref.get())
@@ -168,6 +197,10 @@ def update_resource(
         updates["tags"] = []
     if "description" in updates and updates["description"] is None:
         updates["description"] = ""
+    if "category_id" in updates and "track" not in updates:
+        updates["track"] = track_for_category(updates["category_id"]).value
+    elif "track" in updates and "category_id" not in updates:
+        updates["category_id"] = default_category_for_track(ResourceTrack(updates["track"]))
     if "event_id" in updates:
         updates["event_title"] = _event_title(updates["event_id"]) if updates["event_id"] else None
     updates["updated_at"] = now_iso()
@@ -209,7 +242,8 @@ def save_event_resources(
     event = doc.to_dict() or {}
     title = event.get("title") or event_id
     links = event.get("resources") or {}
-    track = _resource_track(event.get("track"))
+    event_category = f"events/{slugify(str(event.get('slug') or title))}"
+    track = track_for_category(event_category)
     result = EventResourceImport()
 
     for field, resource_type, label in EVENT_LINKS:
@@ -223,6 +257,7 @@ def save_event_resources(
                 title=f"{title}: {label}"[:200],
                 url=url,
                 track=track,
+                category_id=event_category,
                 type=resource_type,
                 event_id=event_id,
             ).model_dump(mode="json")

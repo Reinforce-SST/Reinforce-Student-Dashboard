@@ -252,6 +252,16 @@ def _contribution_track(track: str) -> ContributionTrack:
     )
 
 
+def _validate_learning_resource_ids(resource_ids: List[str]) -> None:
+    """Ensure event links point at resources that exist in the shared pool."""
+    for resource_id in resource_ids:
+        if not db.collection("learning_resources").document(resource_id).get().exists:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Learning resource '{resource_id}' does not exist.",
+            )
+
+
 def _event_spg_data(
     event: EventDocument,
     event_id: str,
@@ -870,6 +880,8 @@ def create_event(
 ):
     """Create a new event (Admin only)."""
     admin_uid = get_user_uid(current_user)
+    resource_ids = (payload.resources or EventResources()).learning_resource_ids
+    _validate_learning_resource_ids(resource_ids)
     now_timestamp = now_iso()
     event_id = f"evt_{uuid.uuid4().hex[:10]}"
     requested_slug = payload.slug or slugify(payload.title)
@@ -951,21 +963,35 @@ def update_event(
     if not update_dict:
         return _doc_to_event_document(event_doc)
 
+    incoming_resources = update_dict.get("resources")
+    if incoming_resources is not None:
+        resource_ids = incoming_resources.get("learning_resource_ids")
+        if resource_ids is not None:
+            _validate_learning_resource_ids(resource_ids)
+
     update_dict["updated_at"] = now_iso()
     event_ref = db.collection(EVENTS_COLLECTION).document(event_id)
 
     def update_with_slug(transaction):
         fresh_doc = event_ref.get(transaction=transaction)
         fresh = fresh_doc.to_dict() or {}
+        event_update = dict(update_dict)
+        if "resources" in event_update and event_update["resources"] is not None:
+            # Keep old URL fields and resource references when an older client
+            # only sends the fields it knows about.
+            event_update["resources"] = {
+                **(fresh.get("resources") or {}),
+                **event_update["resources"],
+            }
         old_slug = fresh.get("slug")
-        new_slug = update_dict.get("slug", old_slug)
+        new_slug = event_update.get("slug", old_slug)
         old_reservation = None
         if old_slug and old_slug != new_slug:
             old_reservation = _slug_ref(old_slug).get(transaction=transaction)
         if new_slug:
             _claim_event_slug(transaction, new_slug, event_id)
 
-        transaction.update(event_ref, update_dict)
+        transaction.update(event_ref, event_update)
         if (
             old_reservation is not None
             and old_reservation.exists

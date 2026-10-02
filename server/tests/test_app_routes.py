@@ -75,6 +75,7 @@ EXPECTED_ROUTES = {
     ("GET", "/api/v1/events"),
     ("POST", "/api/v1/events"),
     ("GET", "/api/v1/events/{id_or_slug}"),
+    ("GET", "/api/v1/learning-resources/for-event/{event_id}"),
     ("PUT", "/api/v1/events/{id}"),
     ("PATCH", "/api/v1/events/{id}/status"),
     ("GET", "/api/v1/events/{id}/my-registration"),

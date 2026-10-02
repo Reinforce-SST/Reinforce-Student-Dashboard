@@ -264,6 +264,7 @@ export const learningResources = [
     url: "https://course.fast.ai",
     description: "A top-down deep learning course.",
     track: "research",
+    category_id: "theory/cml",
     type: "course",
     tags: ["deep-learning"],
     event_id: null,

@@ -19,8 +19,10 @@ ADMIN = {"uid": "uid_admin", "email": "admin@sst.scaler.com", "admin": True}
 MEMBER = {"uid": "uid_member", "email": "member@sst.scaler.com"}
 
 EVENT = {
+    "slug": "intro-to-diffusion",
     "title": "Intro to Diffusion",
     "track": "research",
+    "status": "published",
     "resources": {
         "recording_url": "https://youtu.be/abc123",
         "slides_url": "https://slides.com/reinforce/diffusion",
@@ -73,6 +75,7 @@ class LearningResourceTests(unittest.TestCase):
         body = self.create()
         self.assertTrue(body["id"].startswith("lr_"))
         self.assertEqual((body["track"], body["type"], body["status"]), ("research", "course", "published"))
+        self.assertEqual(body["category_id"], "theory")
         self.assertEqual(body["created_by"], "uid_admin")
         self.assertEqual(self.client.get(f"/api/v1/learning-resources/{body['id']}").json()["url"], "https://course.fast.ai")
 
@@ -91,11 +94,37 @@ class LearningResourceTests(unittest.TestCase):
                 response = self.client.post("/api/v1/learning-resources", json=resource(url=url))
                 self.assertEqual(response.status_code, 422)
 
-    def test_unknown_tracks_types_and_fields_are_refused(self):
-        for overrides in ({"track": "misc"}, {"type": "podcast"}, {"owner": "uid_x"}, {"title": " "}):
+    def test_unknown_tracks_types_and_unsafe_category_paths_are_refused(self):
+        for overrides in ({"track": "misc"}, {"type": "podcast"}, {"category_id": "../outside"}, {"category_id": "theory//cml"}, {"owner": "uid_x"}, {"title": " "}):
             with self.subTest(overrides=overrides):
                 response = self.client.post("/api/v1/learning-resources", json=resource(**overrides))
                 self.assertEqual(response.status_code, 422)
+
+    def test_a_resource_can_be_placed_in_a_nested_category_path(self):
+        body = self.create(category_id="theory/cml/mnist/digit-recognition")
+        self.assertEqual(body["category_id"], "theory/cml/mnist/digit-recognition")
+        self.assertEqual(body["track"], "research")
+
+    def test_existing_resources_get_a_track_based_folder_when_read(self):
+        self.db.store["learning_resources/legacy-research"] = {
+            **resource(title="Old research resource"),
+            "id": "legacy-research",
+        }
+        self.db.store["learning_resources/legacy-general"] = {
+            **resource(title="Old general resource", track="general"),
+            "id": "legacy-general",
+        }
+        response = self.client.get("/api/v1/learning-resources")
+        self.assertEqual(response.status_code, 200)
+        by_id = {item["id"]: item for item in response.json()["resources"]}
+        self.assertEqual(by_id["legacy-research"]["category_id"], "theory")
+        self.assertIsNone(by_id["legacy-general"]["category_id"])
+
+    def test_moving_a_resource_to_the_root_clears_its_folder(self):
+        body = self.create(category_id="theory/cml")
+        moved = self.client.put(f"/api/v1/learning-resources/{body['id']}", json={"category_id": None})
+        self.assertEqual(moved.status_code, 200, moved.text)
+        self.assertIsNone(moved.json()["category_id"])
 
     def test_linking_an_event_records_its_title_and_needs_the_event(self):
         body = self.create(event_id="evt_diffusion")
@@ -142,6 +171,49 @@ class LearningResourceTests(unittest.TestCase):
                 self.assertEqual(self.client.get(f"/api/v1/learning-resources/{hidden['id']}").status_code, 404)
                 self.assertEqual(self.client.get("/api/v1/learning-resources?status=hidden").status_code, 403)
 
+    def test_event_resource_reads_preserve_link_order_and_hide_hidden_links_from_members(self):
+        self.db.store["learning_resources/lr-first"] = {
+            **resource(title="First link"), "id": "lr-first", "status": "published"
+        }
+        self.db.store["learning_resources/lr-hidden"] = {
+            **resource(title="Hidden link"), "id": "lr-hidden", "status": "hidden"
+        }
+        self.db.store["learning_resources/lr-last"] = {
+            **resource(title="Last link"), "id": "lr-last", "status": "published"
+        }
+        self.db.store["events/evt_diffusion"]["resources"]["learning_resource_ids"] = [
+            "lr-first", "lr-hidden", "lr-last", "lr-deleted"
+        ]
+
+        response = self.client.get("/api/v1/learning-resources/for-event/evt_diffusion")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual([item["id"] for item in response.json()["resources"]],
+                         ["lr-first", "lr-hidden", "lr-last"])
+        self.db.store["events/evt_other"] = {
+            **EVENT,
+            "resources": {"learning_resource_ids": ["lr-first"]},
+        }
+        reused = self.client.get("/api/v1/learning-resources/for-event/evt_other")
+        self.assertEqual([item["id"] for item in reused.json()["resources"]], ["lr-first"])
+
+        self.as_visitor()
+        response = self.client.get("/api/v1/learning-resources/for-event/evt_diffusion")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual([item["id"] for item in response.json()["resources"]],
+                         ["lr-first", "lr-last"])
+
+    def test_event_resource_reads_respect_event_visibility(self):
+        self.db.store["events/evt_draft"] = {"title": "Draft", "status": "draft"}
+        self.as_visitor()
+        self.assertEqual(
+            self.client.get("/api/v1/learning-resources/for-event/evt_draft").status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.get("/api/v1/learning-resources/for-event/evt_missing").status_code,
+            404,
+        )
+
     def test_the_list_filters_by_track_type_event_and_search(self):
         self.create(title="Kaggle tabular playbook", track="kaggle", type="article", tags=["tabular"])
         self.create(title="Diffusion recording", track="research", type="recording", event_id="evt_diffusion")
@@ -169,7 +241,8 @@ class LearningResourceTests(unittest.TestCase):
         self.assertEqual(created["slides"]["title"], "Intro to Diffusion: slides")
         for item in created.values():
             self.assertEqual((item["event_id"], item["event_title"], item["track"]),
-                             ("evt_diffusion", "Intro to Diffusion", "research"))
+                             ("evt_diffusion", "Intro to Diffusion", "general"))
+            self.assertEqual(item["category_id"], "events/intro-to-diffusion")
         # The Discord thread id is not a link and the empty write-up is not saved.
         self.assertEqual((result["already_saved"], result["skipped"]), ([], []))
         self.as_member()

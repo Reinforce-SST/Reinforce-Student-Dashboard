@@ -102,12 +102,21 @@ YUVI does not read or write to this collection.
 
 ---
 
-## `events/{event_id}` — dashboard banner compatibility (legacy)
+## `events/{event_id}`
 
 Older dashboard hero banners were stored as events with `event_type: "Featured Banner"`.
 Going forward, banners are authored and managed in `banners/{banner_id}`. Event
 endpoints preserve legacy banner fields (`banner_badge_text`, `banner_cta_text`,
 `banner_cta_url`) for backwards compatibility.
+
+The existing `events/{event_id}.resources` object also contains
+`learning_resource_ids`, an optional list of ids from the shared
+`learning_resources` collection. A link id can appear on more than one event,
+and each event can reference multiple links. The existing `recording_url`,
+`slides_url`, `writeup_url`, and `discord_thread_id` fields remain unchanged.
+Older API clients that update only legacy fields preserve the id list. Public
+event pages show linked resources that are published; hidden or deleted links
+remain absent from public responses.
 
 ---
 
@@ -263,9 +272,10 @@ are visible to admins only, and a hidden resource reads as 404 to everyone else.
   "url": "http(s) URL — anything else is refused",
   "description": "string (0-2000)",
   "track": "research | product | kaggle | general",
+  "category_id": "slash-separated folder path, e.g. theory/cml/mnist or events/sandbox-1 | null",
   "type": "article | video | course | docs | repo | slides | recording | other",
   "tags": ["string (1-40)"],          // at most 10
-  "event_id": "string | null",          // the event it came from or relates to
+  "event_id": "string | null",          // source event for imported links; event reuse is in events.resources.learning_resource_ids
   "event_title": "string | null",       // copied when linked, so the hub needs no event read
   "status": "published | hidden",
   "created_by": "Firebase UID",
@@ -274,13 +284,29 @@ are visible to admins only, and a hidden resource reads as 404 to everyone else.
 }
 ```
 
+`category_id` is optional for older documents. Missing values are represented
+by the API in the legacy track's root folder (`research` → `theory`,
+`kaggle` → `kaggle`, `product` → `product`, `general` → the pool root) without
+writing a migration. A new explicit `null` places a resource in the pool root.
+Category paths may contain up to eight slash-separated folder names. The
+dashboard infers each folder and its parent from resource paths, so the same
+category can contain direct links and nested categories without a separate
+folder collection. The dashboard starts with `theory` (`CML`, `DML`, and `RL`),
+`kaggle`, `product`, and `events`; admins can add deeper paths such as
+`theory/cml/mnist`. Links added from an event default to `events/{event_slug}`.
+The existing `track` field remains supported and follows the top-level folder
+(`theory` → `research`, `kaggle` → `kaggle`, `product` → `product`, other roots
+→ `general`).
+
 `POST /api/v1/learning-resources/from-event/{event_id}` saves an event's
 `resources.recording_url`, `slides_url` and `writeup_url` as `recording`,
 `slides` and `article` resources. Each gets the fixed id
 `lr_evt_<event_id>_<type>` and is written with `create`, so saving the same
 event again adds only links that are not saved yet and never overwrites an
 admin's edits. A link that is not an http(s) address is skipped and reported.
-An event's `misc` or `all` track is saved as `general`.
+Imported event resources are assigned to `events/{event_slug}` with the legacy
+track `general`. If an older event has no slug, its title is slugified for the
+category path.
 
 YUVI does not read or write to this collection.
 

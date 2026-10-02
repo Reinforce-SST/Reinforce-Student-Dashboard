@@ -400,6 +400,63 @@ class EventHardeningTests(unittest.TestCase):
         )
         self.assertIsInstance(self.db.store["events/event-one"]["schedule"], dict)
 
+    def test_event_resource_refs_validate_and_nested_updates_preserve_existing_fields(self):
+        self.sign_in_admin()
+        self.db.store["learning_resources/lr_shared"] = {
+            "id": "lr_shared", "title": "Shared link", "url": "https://example.com"
+        }
+        event = self.db.store["events/event-one"]
+        event["resources"] = {
+            "recording_url": "https://youtu.be/recording",
+            "learning_resource_ids": ["lr_shared"],
+        }
+
+        updated = self.client.put("/api/v1/events/event-one", json={
+            "resources": {"slides_url": "https://slides.example.com/deck"}
+        })
+        self.assertEqual(updated.status_code, 200, updated.text)
+        self.assertEqual(updated.json()["resources"]["recording_url"], "https://youtu.be/recording")
+        self.assertEqual(updated.json()["resources"]["learning_resource_ids"], ["lr_shared"])
+        self.assertEqual(updated.json()["resources"]["slides_url"], "https://slides.example.com/deck")
+
+        cleared = self.client.put("/api/v1/events/event-one", json={
+            "resources": {"slides_url": None}
+        })
+        self.assertEqual(cleared.status_code, 200, cleared.text)
+        self.assertIsNone(cleared.json()["resources"]["slides_url"])
+        self.assertEqual(cleared.json()["resources"]["recording_url"], "https://youtu.be/recording")
+        self.assertEqual(cleared.json()["resources"]["learning_resource_ids"], ["lr_shared"])
+
+        missing = self.client.put("/api/v1/events/event-one", json={
+            "resources": {"learning_resource_ids": ["lr_missing"]}
+        })
+        self.assertEqual(missing.status_code, 422)
+
+        duplicate = self.client.put("/api/v1/events/event-one", json={
+            "resources": {"learning_resource_ids": ["lr_shared", "lr_shared"]}
+        })
+        self.assertEqual(duplicate.status_code, 422)
+
+    def test_event_creation_accepts_shared_pool_resource_ids(self):
+        self.sign_in_admin()
+        self.db.store["learning_resources/lr_shared"] = {
+            "id": "lr_shared", "title": "Shared link", "url": "https://example.com"
+        }
+        response = self.client.post("/api/v1/events", json={
+            "title": "Workshop with links",
+            "description": "Learn from these resources.",
+            "event_type": "workshop",
+            "schedule": {"start_time": "2030-01-01T10:00:00+00:00"},
+            "resources": {"learning_resource_ids": ["lr_shared"]},
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        event_id = response.json()["id"]
+        self.assertEqual(response.json()["resources"]["learning_resource_ids"], ["lr_shared"])
+        self.assertEqual(
+            self.db.store[f"events/{event_id}"]["resources"]["learning_resource_ids"],
+            ["lr_shared"],
+        )
+
     def test_banner_content_round_trips_through_create_list_and_update(self):
         self.sign_in_admin()
         response = self.client.post("/api/v1/events", json={

@@ -705,6 +705,99 @@
 .memberMessage { flex-basis: 100%; color: #e5b731; font-size: 12px; margin: 0; }
 .smallAction { border: 1px solid #5d4d20; border-radius: 8px; background: #2a2518; color: #e5b731; padding: 9px 12px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
 .smallAction:disabled { opacity: .5; cursor: default; }
+
+.eventResourcePicker {
+  min-width: 0;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid #34343d;
+  border-radius: 10px;
+  background: #121214;
+}
+
+.eventResourcePicker legend {
+  padding: 0 6px;
+  color: #f1f1f4;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.eventResourceOptions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 260px;
+  margin-top: 12px;
+  overflow: auto;
+}
+
+.eventResourceOption {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #2e2e36;
+  border-radius: 8px;
+  color: #e5e5e9;
+  background: #17171b;
+  cursor: pointer;
+}
+
+.eventResourceOption input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  accent-color: #e5b731;
+}
+
+.eventResourceText {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.eventResourceText small {
+  color: #96969e;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.eventResourceAdd {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #2e2e36;
+}
+
+.eventResourceAddActions {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.eventResourceAddActions > label {
+  width: min(220px, 45%);
+}
+
+@media (max-width: 700px) {
+  .eventResourceOptions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .eventResourceAddActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .eventResourceAddActions > label {
+    width: 100%;
+  }
+}
 .directoryPager { display: flex; align-items: center; justify-content: flex-end; gap: 8px; color: #9e9ea4; font-size: 12px; }
 .directoryPager span { margin-right: auto; }
 .candidateList { display: flex; flex-direction: column; max-height: 240px; overflow-y: auto; border: 1px solid #31343a; border-radius: 8px; }

@@ -6,7 +6,7 @@ import { useMember } from "@/lib/useMember";
 import { api } from "@/lib/api";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import MemberPicker, { type PickedMember } from "@/components/dashboard/MemberPicker";
-import { type EventDocument } from "@/lib/api";
+import { type EventDocument, type LearningResource } from "@/lib/api";
 import { getEventGraduationBatches } from "@/lib/eventsData";
 import EventAttendeesPanel from "./EventAttendeesPanel";
 import EventAttendancePanel from "./EventAttendancePanel";
@@ -175,6 +175,10 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
   const maxTeamSize = Math.max(1, event.participation?.max_team_size ?? 1);
   const [registeredCount, setRegisteredCount] = useState(event.stats?.registered_count ?? 0);
   const [deadlinePassed, setDeadlinePassed] = useState(false);
+  const [linkedResources, setLinkedResources] = useState<LearningResource[]>([]);
+  const [linkedResourcesLoading, setLinkedResourcesLoading] = useState(false);
+  const [linkedResourcesError, setLinkedResourcesError] = useState(false);
+  const linkedResourceIdsKey = (event.resources?.learning_resource_ids ?? []).join("|");
 
   useEffect(() => {
     const deadline = event.schedule?.registration_deadline;
@@ -195,6 +199,23 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
       .finally(() => { if (active) setRegistrationLoading(false); });
     return () => { active = false; };
   }, [token, event.id]);
+
+  useEffect(() => {
+    let active = true;
+    if (!linkedResourceIdsKey) {
+      setLinkedResources([]);
+      setLinkedResourcesError(false);
+      setLinkedResourcesLoading(false);
+      return () => { active = false; };
+    }
+    setLinkedResourcesLoading(true);
+    setLinkedResourcesError(false);
+    api.getEventLearningResources(event.id, token)
+      .then((result) => { if (active) setLinkedResources(result.resources); })
+      .catch(() => { if (active) setLinkedResourcesError(true); })
+      .finally(() => { if (active) setLinkedResourcesLoading(false); });
+    return () => { active = false; };
+  }, [token, event.id, linkedResourceIdsKey]);
 
   const handleToggleRsvp = async () => {
     if (registrationBusy || registrationLoading) return;
@@ -567,13 +588,36 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                   <span>Watch →</span>
                 </a>
               )}
+              {linkedResources.map((resource) => (
+                <a
+                  key={resource.id}
+                  href={resource.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={styles.resourceLinkItem}
+                >
+                  <span>{resource.title}</span>
+                  <span>Open link →</span>
+                </a>
+              ))}
+              {linkedResourcesLoading && (
+                <p style={{ color: "#8c8c98", fontSize: "0.82rem", margin: 0 }}>
+                  Loading shared links…
+                </p>
+              )}
+              {linkedResourcesError && (
+                <p role="status" style={{ color: "#8c8c98", fontSize: "0.82rem", margin: 0 }}>
+                  Shared event links could not be loaded.
+                </p>
+              )}
               {!event.resources?.slides_url &&
                 !event.resources?.writeup_url &&
                 !event.resources?.recording_url && (
+                !linkedResourcesLoading && !linkedResourcesError && linkedResources.length === 0 && (
                   <p style={{ color: "#8c8c98", fontSize: "0.82rem", margin: 0 }}>
                     No event materials have been published yet.
                   </p>
-                )}
+                ))}
             </div>
           </section>
         </div>

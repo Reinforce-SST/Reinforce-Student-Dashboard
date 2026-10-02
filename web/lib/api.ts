@@ -45,12 +45,16 @@ export type IdeaDetail = IdeaSummary & {
 };
 
 export type ResourceTrack = "research" | "product" | "kaggle" | "general";
+/** Slash-separated category path in the shared resource pool; null is its root. */
+export type ResourceCategoryId = string;
 export type ResourceType = "article" | "video" | "course" | "docs" | "repo" | "slides" | "recording" | "other";
 export type ResourceStatus = "published" | "hidden";
 /** An admin-curated link. url is always http(s); the API refuses anything else. */
 export type LearningResource = {
   id: string; title: string; url: string; description: string;
   track: ResourceTrack; type: ResourceType; tags: string[];
+  /** Nested folder path in the shared resource pool; null means the pool root. */
+  category_id?: ResourceCategoryId | null;
   /** Set when the resource came from, or was linked to, an event. */
   event_id?: string | null; event_title?: string | null;
   status: ResourceStatus;
@@ -58,9 +62,10 @@ export type LearningResource = {
 };
 export type LearningResourceInput = {
   title: string; url: string; description?: string;
-  track?: ResourceTrack; type?: ResourceType; tags?: string[];
+  track?: ResourceTrack; category_id?: ResourceCategoryId | null; type?: ResourceType; tags?: string[];
   event_id?: string | null; status?: ResourceStatus;
 };
+export type EventLearningResourceList = { resources: LearningResource[]; total: number };
 export type LearningResourceFilters = {
   track?: ResourceTrack; type?: ResourceType; event_id?: string; q?: string; status?: ResourceStatus;
 };
@@ -190,6 +195,7 @@ export type EventDocument = {
     slides_url?: string | null;
     writeup_url?: string | null;
     discord_thread_id?: string | null;
+    learning_resource_ids?: string[];
   };
   stats?: {
     registered_count: number;
@@ -1200,6 +1206,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  getEventLearningResources: (eventId: string, token?: string | null) =>
+    request<EventLearningResourceList>(`/learning-resources/for-event/${encodeURIComponent(eventId)}`, token),
   adminUpdateLearningResource: (token: string, resourceId: string, payload: Partial<LearningResourceInput>) =>
     request<LearningResource>(`/learning-resources/${encodeURIComponent(resourceId)}`, token, {
       method: "PUT",
