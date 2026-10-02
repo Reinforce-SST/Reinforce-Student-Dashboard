@@ -249,6 +249,43 @@ is available. Existing legacy documents remain readable without a migration.
 
 ---
 
+## `learning_resources/{resource_id}`
+
+Admin-curated links for the Learning Resources hub (`/dashboard/resources`).
+Only the API writes here: admins create, edit, hide and delete through
+`/api/v1/learning-resources`. Anyone can read published resources; hidden ones
+are visible to admins only, and a hidden resource reads as 404 to everyone else.
+
+```jsonc
+{
+  "id": "lr_<12 hex> | lr_evt_<event_id>_<type>",
+  "title": "string (1-200)",
+  "url": "http(s) URL — anything else is refused",
+  "description": "string (0-2000)",
+  "track": "research | product | kaggle | general",
+  "type": "article | video | course | docs | repo | slides | recording | other",
+  "tags": ["string (1-40)"],          // at most 10
+  "event_id": "string | null",          // the event it came from or relates to
+  "event_title": "string | null",       // copied when linked, so the hub needs no event read
+  "status": "published | hidden",
+  "created_by": "Firebase UID",
+  "created_at": "ISO-8601",
+  "updated_at": "ISO-8601"
+}
+```
+
+`POST /api/v1/learning-resources/from-event/{event_id}` saves an event's
+`resources.recording_url`, `slides_url` and `writeup_url` as `recording`,
+`slides` and `article` resources. Each gets the fixed id
+`lr_evt_<event_id>_<type>` and is written with `create`, so saving the same
+event again adds only links that are not saved yet and never overwrites an
+admin's edits. A link that is not an http(s) address is skipped and reported.
+An event's `misc` or `all` track is saved as `general`.
+
+YUVI does not read or write to this collection.
+
+---
+
 ## `event_slugs/{sha256(slug)}`
 
 Internal reservation documents keep event slugs unique under concurrent admin

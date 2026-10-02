@@ -41,6 +41,10 @@ export type World = {
   registrations: Record<string, unknown>[];
   /** The contribution ledger, every status. */
   contributions: Record<string, unknown>[];
+  /** When set, registering for an event fails with this response. */
+  registerError?: { status: number; detail: string };
+  /** Learning Resources, published and hidden. */
+  resources: Record<string, unknown>[];
 };
 
 function freshWorld(): World {
@@ -59,6 +63,7 @@ function freshWorld(): World {
     draws: 0,
     registrations: [{ ...fixture.eventRegistration }],
     contributions: [{ ...fixture.contribution }],
+    resources: fixture.learningResources.map(item => ({ ...item })),
   };
 }
 
@@ -137,7 +142,13 @@ async function handleApi(route: Route, world: World) {
     return ok({ track: search.get("track") ?? "total", total: fixture.leaderboardRows.length, entries: fixture.leaderboardRows });
   }
   if (path === "/users/admin-directory") return ok(page1(fixture.directoryRows));
-  if (path === "/users" && method === "GET") return ok(page1(fixture.directoryRows));
+  if (path === "/users" && method === "GET") {
+    // Like the API: search matches name, email or id, case-insensitively.
+    const q = (search.get("search") ?? "").toLowerCase();
+    const rows = fixture.directoryRows.filter(row =>
+      !q || [row.full_name, row.email, row.id].some(value => value.toLowerCase().includes(q)));
+    return ok(page1(rows));
+  }
   if (/^\/users\/[^/]+\/status$/.test(path)) return ok({ ...world.profile, is_member: true });
   if (/^\/users\/[^/]+$/.test(path)) {
     const uid = decodeURIComponent(path.split("/")[2] ?? "");
@@ -280,6 +291,7 @@ async function handleApi(route: Route, world: World) {
     );
   }
   if (/^\/events\/[^/]+\/register$/.test(path)) {
+    if (method === "POST" && world.registerError) return fail(world.registerError.status, world.registerError.detail);
     world.registered = method !== "DELETE";
     return ok({ status: world.registered ? "registered" : "cancelled" });
   }
@@ -387,6 +399,65 @@ async function handleApi(route: Route, world: World) {
   }
   if (/^\/contributions\/[^/]+$/.test(path)) {
     return ok(world.contributions.find(item => item.id === path.split("/")[2]) ?? fixture.contribution);
+  }
+
+  /* --------------------------------------------------- learning resources */
+  // Mirrors the API: without a token only published resources come back, and
+  // saving an event's links is keyed per link so a second save adds nothing.
+  if (path === "/learning-resources" && method === "GET") {
+    const q = (search.get("q") ?? "").toLowerCase();
+    const items = world.resources.filter(item =>
+      (auth || item.status === "published") &&
+      (!search.get("status") || item.status === search.get("status")) &&
+      (!search.get("track") || item.track === search.get("track")) &&
+      (!search.get("type") || item.type === search.get("type")) &&
+      (!search.get("event_id") || item.event_id === search.get("event_id")) &&
+      (!q || [item.title, item.description, ...(item.tags as string[])].join(" ").toLowerCase().includes(q)));
+    return ok({ resources: items, total: items.length });
+  }
+  if (path === "/learning-resources" && method === "POST") {
+    const payload = body as Record<string, unknown>;
+    const event = world.events.find(item => item.id === payload.event_id);
+    const created = {
+      description: "", tags: [], track: "general", type: "other", status: "published", ...payload,
+      id: `lr-${world.resources.length + 1}`, event_title: event?.title ?? null,
+    };
+    world.resources.push(created);
+    return route.fulfill({ status: 201, json: created });
+  }
+  const eventSave = path.match(/^\/learning-resources\/from-event\/([^/]+)$/);
+  if (eventSave && method === "POST") {
+    const event = world.events.find(item => item.id === eventSave[1]);
+    if (!event) return fail(404, "Event not found");
+    const links = (event.resources ?? {}) as Record<string, string | null>;
+    const result = { created: [] as Record<string, unknown>[], already_saved: [] as string[], skipped: [] as string[] };
+    for (const [field, type, label] of [["recording_url", "recording", "recording"], ["slides_url", "slides", "slides"], ["writeup_url", "article", "write-up"]]) {
+      const url = links[field];
+      if (!url) continue;
+      if (!/^https?:\/\/[^/]/.test(url)) { result.skipped.push(field); continue; }
+      const id = `lr_evt_${event.id}_${type}`;
+      if (world.resources.some(item => item.id === id)) { result.already_saved.push(field); continue; }
+      const created = {
+        id, title: `${event.title}: ${label}`, url, description: "", track: "research", type, tags: [],
+        event_id: event.id, event_title: event.title, status: "published",
+      };
+      world.resources.push(created);
+      result.created.push(created);
+    }
+    return ok(result);
+  }
+  const resourceMatch = path.match(/^\/learning-resources\/([^/]+)$/);
+  if (resourceMatch) {
+    const index = world.resources.findIndex(item => item.id === resourceMatch[1]);
+    if (index < 0) return fail(404, "Learning resource not found");
+    if (method === "PUT") {
+      world.resources[index] = { ...world.resources[index], ...(body as object) };
+      return ok(world.resources[index]);
+    }
+    if (method === "DELETE") {
+      world.resources.splice(index, 1);
+      return ok({ message: "deleted" });
+    }
   }
 
   return fail(404, `Unmocked API route: ${method} ${path}`);

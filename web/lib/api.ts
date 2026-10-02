@@ -44,6 +44,31 @@ export type IdeaDetail = IdeaSummary & {
   updated_at?: string | null;
 };
 
+export type ResourceTrack = "research" | "product" | "kaggle" | "general";
+export type ResourceType = "article" | "video" | "course" | "docs" | "repo" | "slides" | "recording" | "other";
+export type ResourceStatus = "published" | "hidden";
+/** An admin-curated link. url is always http(s); the API refuses anything else. */
+export type LearningResource = {
+  id: string; title: string; url: string; description: string;
+  track: ResourceTrack; type: ResourceType; tags: string[];
+  /** Set when the resource came from, or was linked to, an event. */
+  event_id?: string | null; event_title?: string | null;
+  status: ResourceStatus;
+  created_by?: string | null; created_at?: string | null; updated_at?: string | null;
+};
+export type LearningResourceInput = {
+  title: string; url: string; description?: string;
+  track?: ResourceTrack; type?: ResourceType; tags?: string[];
+  event_id?: string | null; status?: ResourceStatus;
+};
+export type LearningResourceFilters = {
+  track?: ResourceTrack; type?: ResourceType; event_id?: string; q?: string; status?: ResourceStatus;
+};
+/** Per event link: created, already saved earlier, or skipped as not a web address. */
+export type EventResourceImport = {
+  created: LearningResource[]; already_saved: string[]; skipped: string[];
+};
+
 /** Nothing should hang the UI forever. Render cold starts are slow but finite. */
 const TIMEOUT_MS = 20_000;
 
@@ -1156,6 +1181,38 @@ export const api = {
     request<ApiTicketDetail>(`/tickets/${encodeURIComponent(ticketId)}/close`, token, {
       method: "POST",
       body: JSON.stringify({ close_reason: closeReason || null }),
+    }),
+
+  /* ------------------------------------------------ Learning Resources APIs */
+  listLearningResources: (filters: LearningResourceFilters = {}, token?: string | null) => {
+    const qs = new URLSearchParams();
+    for (const [key, value] of Object.entries(filters)) {
+      if (value) qs.set(key, value);
+    }
+    const query = qs.toString();
+    return request<{ resources: LearningResource[]; total: number }>(
+      `/learning-resources${query ? `?${query}` : ""}`,
+      token || undefined,
+    );
+  },
+  adminCreateLearningResource: (token: string, payload: LearningResourceInput) =>
+    request<LearningResource>("/learning-resources", token, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  adminUpdateLearningResource: (token: string, resourceId: string, payload: Partial<LearningResourceInput>) =>
+    request<LearningResource>(`/learning-resources/${encodeURIComponent(resourceId)}`, token, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  adminDeleteLearningResource: (token: string, resourceId: string) =>
+    request<{ message: string }>(`/learning-resources/${encodeURIComponent(resourceId)}`, token, {
+      method: "DELETE",
+    }),
+  /** Save an event's recording, slides and write-up links as resources. Safe to repeat. */
+  adminSaveEventResources: (token: string, eventId: string) =>
+    request<EventResourceImport>(`/learning-resources/from-event/${encodeURIComponent(eventId)}`, token, {
+      method: "POST",
     }),
 };
 

@@ -197,3 +197,9 @@
 .reviewActions button:disabled { opacity: .55; cursor: progress; }
 .reviewActions .reviewSecondary { border: 1px solid #4a4a50; background: transparent; color: #e4e4e7; }
 @media (max-width: 640px) { .reviewActions { width: 100%; } .reviewActions input[type="text"] { width: 100%; } }
+/* Learning Resources panel */
+ul.list { margin: 0; padding: 0; list-style: none; }
+.form .field { width: 100%; padding: 10px; }
+.formActions, .rowActions { display: flex; flex-wrap: wrap; gap: 8px; }
+.form .secondaryBtn { color: #e6e6ea; background: transparent; border: 1px solid #444; }
+.row small.resourceMeta { text-transform: none; }

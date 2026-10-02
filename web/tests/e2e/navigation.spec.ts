@@ -14,6 +14,7 @@ const titled: [path: string, title: string][] = [
   ["/dashboard/events", "Events Planner"],
   ["/dashboard/articles", "Article Hub"],
   ["/dashboard/ideas", "Idea Jar"],
+  ["/dashboard/resources", "Learning Resources"],
   ["/dashboard/leaderboard", "Club Leaderboard"],
   ["/dashboard/search", "Search"],
   ["/dashboard/profile", "Member Profile"],
@@ -36,16 +37,18 @@ test("sidebar walks every dashboard section", async ({ page, app }) => {
     [main, "Ticket System", "TICKET SYSTEM & DISPATCH"],
     [main, "Events Planner", "EVENTS CALENDAR"],
     [resources, "Idea Jar", "IDEA JAR & PROPOSALS"],
+    [resources, "Learning Resources", "Learning Resources"],
     [resources, "Leaderboard", "LEADERBOARD & DIRECTORY"],
   ] as const) {
     await nav.getByRole("link", { name: label, exact: true }).click();
-    await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+    // The header also renders the section title as a heading; check the page's own.
+    await expect(page.locator("#member-content").getByRole("heading", { name: heading, exact: true })).toBeVisible();
   }
 });
 
 test("layout never scrolls sideways, phone to desktop", async ({ page, app }) => {
   await app.enter("/dashboard");
-  for (const path of ["/dashboard", "/dashboard/tickets", "/dashboard/events", "/dashboard/spg", "/dashboard/profile"]) {
+  for (const path of ["/dashboard", "/dashboard/tickets", "/dashboard/events", "/dashboard/spg", "/dashboard/profile", "/dashboard/resources"]) {
     await page.goto(path);
     await expect(page.getByRole("banner")).toBeVisible();
     for (const width of [320, 390, 768, 1024, 1440]) {
