@@ -274,11 +274,13 @@ async function handleApi(route: Route, world: World) {
   // dashboard filtering an undefined array.
   if (path === "/events" && method === "GET") {
     const timeline = search.get("timeline");
+    const status = search.get("status");
     const start = (item: Record<string, unknown>) =>
       Date.parse(String((item.schedule as { start_time: string }).start_time));
     const cutoff = Date.parse(fixture.NOW_ISO);
     const matching = world.events.filter(item =>
-      timeline === "upcoming" ? start(item) >= cutoff : timeline === "past" ? start(item) < cutoff : true,
+      (timeline === "upcoming" ? start(item) >= cutoff : timeline === "past" ? start(item) < cutoff : true) &&
+      (status ? item.status === status : true),
     );
     return ok({ events: matching, total: matching.length });
   }

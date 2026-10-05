@@ -163,6 +163,16 @@ export const pastEvent = {
   status: "completed",
 };
 
+export const ongoingEvent = {
+  ...upcomingEvent,
+  id: "event-3",
+  slug: "math-neural-net",
+  title: "Neural nets, the math behind them",
+  schedule: schedule(-0.05),
+  stats: { registered_count: 24, checked_in_count: 6, feedback_count: 0, average_rating: 0 },
+  status: "ongoing",
+};
+
 export const eventDetail = {
   ...upcomingEvent,
   detailed_info: "Bring the paper annotated. We start on time.",
