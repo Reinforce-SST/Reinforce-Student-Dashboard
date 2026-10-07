@@ -105,22 +105,13 @@ class EnumTests(unittest.TestCase):
     # Changing one is a coordinated change, never a refactor.
 
     def test_category_values(self):
-        # The current, frozen set. Adding or removing a value is a coordinated
-        # product decision, not a refactor.
+        # The current category set, including participation.
         self.assertEqual(
             {c.value for c in ContributionCategory},
             {"achievement", "project_work", "teaching", "mentorship",
-             "content", "organizing", "service", "other"},
+             "content", "organizing", "service", "participation", "other"},
         )
 
-    @unittest.skip(
-        "UNRESOLVED: an earlier revision of this contract included "
-        "'participation'. The category set on backend does not. Whether "
-        "attendance-only credit is a category, a zero-point award or not "
-        "recorded at all is a product decision, not a schema one, so the "
-        "enum is left exactly as backend defines it and this assertion is "
-        "parked rather than answered here."
-    )
     def test_participation_is_a_category(self):
         self.assertIn("participation", {c.value for c in ContributionCategory})
 

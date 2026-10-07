@@ -55,6 +55,7 @@ export default function DashboardClient() {
   const [spgStatus, setSpgStatus] = useState<LoadStatus>("loading");
   const [eventStatus, setEventStatus] = useState<LoadStatus>("loading");
   const [contributionStatus, setContributionStatus] = useState<LoadStatus>("loading");
+  const [bannerStatus, setBannerStatus] = useState<LoadStatus>("loading");
   const [retryCount, setRetryCount] = useState(0);
   const [monthOffset, setMonthOffset] = useState(0);
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
@@ -66,6 +67,7 @@ export default function DashboardClient() {
       setSpgStatus("loading");
       setEventStatus("loading");
       setContributionStatus("loading");
+      setBannerStatus("loading");
       const results = await Promise.allSettled([
         loadAllSpgs(token),
         loadAllUpcomingEvents(token),
@@ -96,6 +98,7 @@ export default function DashboardClient() {
       if (bannerResult && bannerResult.status === "fulfilled") {
         setDedicatedBanners(bannerResult.value.banners || []);
       }
+      setBannerStatus("ready");
     };
     void load();
     return () => { active = false; };
@@ -172,26 +175,108 @@ export default function DashboardClient() {
         <Link href="/dashboard/tickets"><MemberIcon name="tickets" size={19} /><span><strong>Tickets</strong><small>Questions &amp; requests</small></span><span aria-hidden="true">→</span></Link>
       </nav>
       <div className={styles.leftColumn}>
-        {activeSlide && <section className={styles.heroBanner} aria-label="Featured club announcement" onMouseEnter={() => setIsPaused(true)} onMouseLeave={() => setIsPaused(false)}>
-          <div className={styles.bannerSlide} key={activeSlide.id}>
-            <div className={styles.heroContent}>
-              <div><div className={styles.heroTopRow}><span className={styles.eventBadge}>{activeSlide.badge}</span><span className={styles.eventDate}>{activeSlide.date}</span></div><h2 className={styles.heroTitle}>{activeSlide.title}</h2><p className={styles.heroDescription}>{activeSlide.description}</p></div>
-              <Link href={activeSlide.ctaLink} className={styles.heroCtaBtn}>{activeSlide.ctaText}</Link>
+        {(bannerStatus === "loading" && eventStatus === "loading") ? (
+          <section className={`${styles.heroBanner} ${styles.bannerSkeleton}`} aria-label="Loading featured club announcement">
+            <div className={styles.bannerSlide}>
+              <div className={styles.heroContent}>
+                <div style={{ width: "100%", minWidth: 0 }}>
+                  <div className={styles.heroTopRow}>
+                    <div className={`${styles.skeletonBadge} ${styles.shimmer}`} />
+                  </div>
+                  <div className={`${styles.skeletonHeroTitle} ${styles.shimmer}`} />
+                  <div className={`${styles.skeletonHeroDesc1} ${styles.shimmer}`} />
+                  <div className={`${styles.skeletonHeroDesc2} ${styles.shimmer}`} />
+                  <div className={styles.heroDateRow}>
+                    <div className={`${styles.skeletonDate} ${styles.shimmer}`} />
+                  </div>
+                </div>
+                <div className={`${styles.skeletonHeroBtn} ${styles.shimmer}`} />
+              </div>
+              <div className={styles.heroCoverRight}>
+                <div className={`${styles.skeletonImageCover} ${styles.shimmer}`} />
+              </div>
             </div>
-            <div className={styles.heroCoverRight}><img src={activeSlide.imageSrc} alt="" className={styles.coverImage} onError={(event) => { const image = event.currentTarget; if (!image.src.endsWith("/banners/reinforce-placeholder.png")) image.src = "/banners/reinforce-placeholder.png"; }} /></div>
-          </div>
-          {slides.length > 1 && <><div className={styles.heroNavArrows}><button type="button" onClick={() => setSlideIndex((index) => (index - 1 + slides.length) % slides.length)} aria-label="Previous featured event"><MemberIcon name="chevron-left" size={16} /></button><button type="button" onClick={() => setSlideIndex((index) => (index + 1) % slides.length)} aria-label="Next featured event"><MemberIcon name="chevron-right" size={16} /></button></div><div className={styles.dotsRow}>{slides.map((slide, index) => <button type="button" key={slide.id} aria-label={`Go to featured slide ${index + 1}`} aria-current={slideIndex === index ? "true" : undefined} className={slideIndex === index ? styles.dotActive : styles.dot} onClick={() => setSlideIndex(index)} />)}</div></>}
-        </section>}
+          </section>
+        ) : activeSlide ? (
+          <section className={styles.heroBanner} aria-label="Featured club announcement" onMouseEnter={() => setIsPaused(true)} onMouseLeave={() => setIsPaused(false)}>
+            <div className={styles.bannerSlide} key={activeSlide.id}>
+              <div className={styles.heroContent}>
+                <div style={{ width: "100%", minWidth: 0 }}>
+                  <div className={styles.heroTopRow}>
+                    <span className={styles.eventBadge}>{activeSlide.badge}</span>
+                  </div>
+                  <h2 className={styles.heroTitle}>{activeSlide.title}</h2>
+                  <p className={styles.heroDescription}>{activeSlide.description}</p>
+                  <div className={styles.heroDateRow}>
+                    <MemberIcon name="events" size={13} />
+                    <span className={styles.eventDate}>{activeSlide.date}</span>
+                  </div>
+                </div>
+                <Link href={activeSlide.ctaLink} className={styles.heroCtaBtn}>{activeSlide.ctaText}</Link>
+              </div>
+              <div className={styles.heroCoverRight}>
+                <img src={activeSlide.imageSrc} alt="" className={styles.coverImage} onError={(event) => { const image = event.currentTarget; if (!image.src.endsWith("/banners/reinforce-placeholder.png")) image.src = "/banners/reinforce-placeholder.png"; }} />
+              </div>
+            </div>
+            {slides.length > 1 && <>
+              <div className={styles.heroNavArrows}>
+                <button type="button" onClick={() => setSlideIndex((index) => (index - 1 + slides.length) % slides.length)} aria-label="Previous featured event"><MemberIcon name="chevron-left" size={16} /></button>
+                <button type="button" onClick={() => setSlideIndex((index) => (index + 1) % slides.length)} aria-label="Next featured event"><MemberIcon name="chevron-right" size={16} /></button>
+              </div>
+              <div className={styles.dotsRow}>
+                {slides.map((slide, index) => <button type="button" key={slide.id} aria-label={`Go to featured slide ${index + 1}`} aria-current={slideIndex === index ? "true" : undefined} className={slideIndex === index ? styles.dotActive : styles.dot} onClick={() => setSlideIndex(index)} />)}
+              </div>
+            </>}
+          </section>
+        ) : null}
 
         <section className={styles.metrics} aria-label="Activity summary">
-          <div className={styles.metric}><strong>{spgStatus === "ready" ? memberSpgs.filter((spg) => spg.status === "active").length : "—"}</strong><span><b>Active SPGs</b><small>From your membership</small></span></div>
-          <div className={styles.metric}><strong>{eventStatus === "ready" ? upcoming.length : "—"}</strong><span><b>Upcoming events</b><small>Published by the club</small></span></div>
-          <div className={styles.metric}><strong>{profile.points?.total ?? 0}</strong><span><b>Merit points</b><small>From your member profile</small></span></div>
+          <div className={styles.metric}>
+            {spgStatus === "loading" ? (
+              <div className={`${styles.skeletonMetricVal} ${styles.shimmer}`} />
+            ) : (
+              <strong>{spgStatus === "ready" ? memberSpgs.filter((spg) => spg.status === "active").length : "—"}</strong>
+            )}
+            <span><b>Active SPGs</b><small>From your membership</small></span>
+          </div>
+          <div className={styles.metric}>
+            {eventStatus === "loading" ? (
+              <div className={`${styles.skeletonMetricVal} ${styles.shimmer}`} />
+            ) : (
+              <strong>{eventStatus === "ready" ? upcoming.length : "—"}</strong>
+            )}
+            <span><b>Upcoming events</b><small>Published by the club</small></span>
+          </div>
+          <div className={styles.metric}>
+            <strong>{profile.points?.total ?? 0}</strong>
+            <span><b>Merit points</b><small>From your member profile</small></span>
+          </div>
         </section>
 
         <section className={styles.projectSection} aria-labelledby="project-heading">
           <div className={styles.sectionHeader}><h2 id="project-heading">Current projects (SPG)</h2><Link href="/dashboard/spg" className={styles.textLink}>View all groups ↗</Link></div>
-          {spgStatus === "loading" && <p className={styles.stateText}>Loading project groups…</p>}
+          {spgStatus === "loading" && (
+            <div className={styles.projectList} aria-label="Loading project groups">
+              {[1, 2].map((i) => (
+                <article className={styles.projectCard} key={i}>
+                  <div className={styles.projectTop}>
+                    <div className={`${styles.skeletonTrackTag} ${styles.shimmer}`} />
+                    <div className={`${styles.skeletonStatusTag} ${styles.shimmer}`} />
+                  </div>
+                  <div className={`${styles.skeletonSpgTitle} ${styles.shimmer}`} />
+                  <div className={`${styles.skeletonSpgDesc1} ${styles.shimmer}`} />
+                  <div className={`${styles.skeletonSpgDesc2} ${styles.shimmer}`} />
+                  <div className={styles.projectFooter}>
+                    <div className={styles.avatars}>
+                      <div className={`${styles.skeletonAvatar} ${styles.shimmer}`} />
+                      <div className={`${styles.skeletonAvatar} ${styles.shimmer}`} />
+                    </div>
+                    <div className={`${styles.skeletonReportBtn} ${styles.shimmer}`} />
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
           {spgStatus === "error" && <p className={styles.stateText} role="alert">Project groups could not be loaded. <button type="button" onClick={retry}>Retry</button></p>}
           {spgStatus === "ready" && memberSpgs.length === 0 && <div className={styles.projectEmpty}><span className={styles.emptyIcon}><MemberIcon name="spg" size={24} /></span><div><h3>No active project group yet</h3><p>When you join an SPG, its status and next action appear here. Browse groups to find work that fits your track.</p><Link href="/dashboard/spg" className={styles.textLink}>Explore SPGs ↗</Link></div></div>}
           {spgStatus === "ready" && memberSpgs.length > 0 && <div className={`${styles.projectList} ${memberSpgs.length === 1 ? styles.singleProject : ""}`}>{memberSpgs.slice(0, 2).map((spg) => {
@@ -204,7 +289,19 @@ export default function DashboardClient() {
       <div className={styles.rightColumn}>
         <section className={styles.widgetCard} aria-labelledby="upcoming-events-heading">
           <div className={styles.widgetHeader}><h2 id="upcoming-events-heading"><MemberIcon name="lightning" size={18} />Upcoming Events</h2><Link href="/dashboard/events" className={styles.textLink}>View all →</Link></div>
-          {eventStatus === "loading" && <p className={styles.stateText}>Loading upcoming events…</p>}
+          {eventStatus === "loading" && (
+            <div className={styles.eventsList} aria-label="Loading upcoming events">
+              {[1, 2, 3].map((i) => (
+                <div className={styles.eventItem} key={i}>
+                  <div className={`${styles.skeletonEventDateBox} ${styles.shimmer}`} />
+                  <div className={styles.eventDetails} style={{ flex: 1 }}>
+                    <div className={`${styles.skeletonEventItemTitle} ${styles.shimmer}`} />
+                    <div className={`${styles.skeletonEventItemMeta} ${styles.shimmer}`} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           {eventStatus === "error" && <p className={styles.stateText} role="alert">Events could not be loaded. <button type="button" onClick={retry}>Retry</button></p>}
           {eventStatus === "ready" && upcoming.length === 0 && <p className={styles.emptyEvents}>No upcoming club events scheduled.</p>}
           {eventStatus === "ready" && upcoming.length > 0 && <div className={styles.eventsList}>{upcoming.slice(0, 4).map((event) => {
@@ -230,7 +327,16 @@ export default function DashboardClient() {
         <section className={styles.contributionCard} aria-labelledby="contribution-heading">
           <div className={styles.sectionHeader}><h2 id="contribution-heading">Your contributions</h2><Link href="/profile" className={styles.textLink}>View history ↗</Link></div>
           <div className={styles.contributionScore}><strong>{profile.points?.total ?? 0}</strong><span>approved points</span></div>
-          {contributionStatus === "loading" && <p className={styles.stateText}>Loading contributions…</p>}
+          {contributionStatus === "loading" && (
+            <div className={styles.contributionList} aria-label="Loading contributions">
+              {[1, 2, 3].map((i) => (
+                <div className={styles.contributionItem} key={i}>
+                  <div className={`${styles.skeletonContributionTitle} ${styles.shimmer}`} />
+                  <div className={`${styles.skeletonContributionPts} ${styles.shimmer}`} />
+                </div>
+              ))}
+            </div>
+          )}
           {contributionStatus === "error" && <p className={styles.stateText} role="alert">Contribution history could not be loaded. <button type="button" onClick={retry}>Retry</button></p>}
           {contributionStatus === "ready" && recentContributions.length === 0 && <p className={styles.contributionEmpty}>Recent approved contributions will appear here.</p>}
           {contributionStatus === "ready" && recentContributions.length > 0 && <div className={styles.contributionList}>{recentContributions.map((record) => <div className={styles.contributionItem} key={record.id}><span title={record.title}>{record.title}</span><b>+{record.points}</b></div>)}</div>}

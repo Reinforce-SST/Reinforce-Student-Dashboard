@@ -20,6 +20,7 @@ import {
   resourceTrackForCategory,
   typeLabel,
 } from "@/lib/learningResources";
+import ConfirmModal from "@/components/dashboard/ConfirmModal";
 import styles from "./AdminWorkflows.module.css";
 
 /** Event resource fields, as the API names them, in words. */
@@ -58,6 +59,7 @@ export default function AdminLearningResourcesPanel({ token }: { token: string }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [deletingResource, setDeletingResource] = useState<LearningResource | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -161,11 +163,17 @@ export default function AdminLearningResourcesPanel({ token }: { token: string }
   }
 
   function remove(resource: LearningResource) {
-    if (!window.confirm(`Delete “${resource.title}”? This cannot be undone.`)) return;
+    setDeletingResource(resource);
+  }
+
+  function executeDelete() {
+    if (!deletingResource) return;
+    const res = deletingResource;
     void run(async () => {
-      await api.adminDeleteLearningResource(token, resource.id);
-      if (editingId === resource.id) cancelEdit();
-      return `Deleted “${resource.title}”.`;
+      await api.adminDeleteLearningResource(token, res.id);
+      if (editingId === res.id) cancelEdit();
+      setDeletingResource(null);
+      return `Deleted “${res.title}”.`;
     });
   }
 
@@ -305,6 +313,20 @@ export default function AdminLearningResourcesPanel({ token }: { token: string }
           </li>
         ))}
       </ul>
+
+      <ConfirmModal
+        isOpen={Boolean(deletingResource)}
+        title="Delete Resource"
+        message={`Delete “${deletingResource?.title}”? This cannot be undone.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        isLoading={busy}
+        onConfirm={executeDelete}
+        onCancel={() => {
+          if (!busy) setDeletingResource(null);
+        }}
+      />
     </section>
   );
 }

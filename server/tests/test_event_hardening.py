@@ -521,7 +521,7 @@ class EventHardeningTests(unittest.TestCase):
         ]
         self.assertEqual(len(contributions), 2)
         self.assertTrue(
-            all(item["category"].value == "achievement" for item in contributions)
+            all(item["category"].value == "participation" for item in contributions)
         )
         self.assertTrue(all(item["track"].value == "misc" for item in contributions))
 

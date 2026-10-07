@@ -13,6 +13,7 @@ import PaginationBar from "@/components/dashboard/PaginationBar";
 import LoadingBar from "@/components/dashboard/LoadingBar";
 import AdminTicketsPanel from "./AdminTicketsPanel";
 import AdminPendingContributionsPanel from "./AdminPendingContributionsPanel";
+import AdminContributionEditorPanel from "./AdminContributionEditorPanel";
 import AdminContentPanel from "./AdminContentPanel";
 import AdminLearningResourcesPanel from "./AdminLearningResourcesPanel";
 import AdminEventEditPanel from "./AdminEventEditPanel";
@@ -74,11 +75,13 @@ export default function AdminClient() {
     setDirectoryMessage("");
     setBannerSubTab("create");
     setEventSubTab("create");
+    setContributionSubTab("editor");
     router.push(`/dashboard/admin?tab=${tab}`);
   };
 
   const [bannerSubTab, setBannerSubTab] = useState<"create" | "edit">("create");
   const [eventSubTab, setEventSubTab] = useState<"create" | "edit">("create");
+  const [contributionSubTab, setContributionSubTab] = useState<"editor" | "award" | "review">("editor");
 
   // --- TAB 1: Dashboard Hero Banner State ---
   const [bannerStartDateTime, setBannerStartDateTime] = useState("");
@@ -198,6 +201,7 @@ export default function AdminClient() {
   const [manualAddInput, setManualAddInput] = useState("");
   const [manualAddLoading, setManualAddLoading] = useState(false);
   const [manualAddError, setManualAddError] = useState("");
+  const [awardOccurredAt, setAwardOccurredAt] = useState(() => formatDateTimeInput(new Date().toISOString()));
   const awardOccurredAtRef = useRef<string | null>(null);
   const [memberSearch, setMemberSearch] = useState("");
   const debouncedMemberSearch = useDebounce(memberSearch, 400);
@@ -567,7 +571,13 @@ export default function AdminClient() {
         community_support: "service",
         attendance: "other",
       }[awardType] || "other";
-      const occurredAt = awardOccurredAtRef.current || new Date().toISOString();
+      const occurredAt = (() => {
+        if (awardOccurredAt) {
+          const d = new Date(awardOccurredAt);
+          if (!isNaN(d.getTime())) return d.toISOString();
+        }
+        return awardOccurredAtRef.current || new Date().toISOString();
+      })();
       awardOccurredAtRef.current = occurredAt;
       const payload = {
         track: awardTrack,
@@ -601,6 +611,8 @@ export default function AdminClient() {
       if (!failed.length) {
         awardOccurredAtRef.current = null;
         setAwardReason("");
+        setAwardCustomType("");
+        setAwardOccurredAt(formatDateTimeInput(new Date().toISOString()));
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to award merit points.";
@@ -1523,11 +1535,54 @@ export default function AdminClient() {
 
       {activeTab === "tickets" && <AdminTicketsPanel token={token} adminId={profile.id} />}
 
-      {/* TAB 5: Merit Auditing */}
-      {activeTab === "contributions" && <AdminPendingContributionsPanel token={token} />}
-
+      {/* TAB 5: Merit Auditing & Contribution Points */}
       {activeTab === "contributions" && (
-        <div className={`${styles.managerGrid} ${styles.meritGrid}`}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+          <div className={styles.subTabsRow}>
+            <button
+              type="button"
+              className={`${styles.subTabBtn} ${contributionSubTab === "editor" ? styles.subTabBtnActive : ""}`}
+              onClick={() => {
+                setContributionSubTab("editor");
+                setSubmitSuccess(null);
+                setSubmitError(null);
+              }}
+            >
+              <MemberIcon name="edit" size={14} />
+              Contribution Points Editor (Events, SPGs & MISC)
+            </button>
+            <button
+              type="button"
+              className={`${styles.subTabBtn} ${contributionSubTab === "award" ? styles.subTabBtnActive : ""}`}
+              onClick={() => {
+                setContributionSubTab("award");
+                setSubmitSuccess(null);
+                setSubmitError(null);
+              }}
+            >
+              <MemberIcon name="plus" size={14} />
+              Award Student Merit Points
+            </button>
+            <button
+              type="button"
+              className={`${styles.subTabBtn} ${contributionSubTab === "review" ? styles.subTabBtnActive : ""}`}
+              onClick={() => {
+                setContributionSubTab("review");
+                setSubmitSuccess(null);
+                setSubmitError(null);
+              }}
+            >
+              <MemberIcon name="filter" size={14} />
+              Pending Review Queue
+            </button>
+          </div>
+
+          {contributionSubTab === "editor" && <AdminContributionEditorPanel token={token} />}
+
+          {contributionSubTab === "review" && <AdminPendingContributionsPanel token={token} />}
+
+          {contributionSubTab === "award" && (
+            <div className={`${styles.managerGrid} ${styles.meritGrid}`}>
           <div className={styles.card}>
             <div className={styles.cardHeader}>
               <div>
@@ -1726,8 +1781,8 @@ export default function AdminClient() {
                 </div>
               </div>
 
-              {/* Award Configuration: Points, Track, Contribution Type */}
-              <div className={styles.formRowThree}>
+              {/* Award Configuration: Points, Track, Contribution Type, Date */}
+              <div className={styles.formRow}>
                 <div className={styles.formGroup}>
                   <label className={styles.formLabel}>Merit Points (per member)</label>
                   <input
@@ -1754,7 +1809,9 @@ export default function AdminClient() {
                     <option value="kaggle">Kaggle Track</option>
                   </select>
                 </div>
+              </div>
 
+              <div className={styles.formRow}>
                 <div className={styles.formGroup}>
                   <label className={styles.formLabel}>Contribution Type</label>
                   <select
@@ -1769,6 +1826,20 @@ export default function AdminClient() {
                     <option value="attendance">Event Attendance</option>
                     <option value="other">Other (custom)</option>
                   </select>
+                </div>
+
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Contribution Date &amp; Time</label>
+                  <input
+                    type="datetime-local"
+                    value={awardOccurredAt}
+                    onChange={(e) => setAwardOccurredAt(e.target.value)}
+                    className={styles.formInput}
+                    required
+                  />
+                  <span className={styles.formLabelHint}>
+                    When the contribution took place (defaults to now)
+                  </span>
                 </div>
               </div>
 
@@ -1812,6 +1883,8 @@ export default function AdminClient() {
             </form>
           </div>
         </div>
+        )}
+      </div>
       )}
 
       {/* TAB 6: Member Directory */}

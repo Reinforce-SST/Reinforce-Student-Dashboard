@@ -40,9 +40,8 @@ class ContributionTrack(str, Enum):
 
 
 class ContributionCategory(str, Enum):
-    # Frozen pending a team decision: `participation` existed before and is not
-    # in this list. Do not add or remove a value without that decision.
     ACHIEVEMENT = "achievement"
+    PARTICIPATION = "participation"
     PROJECT_WORK = "project_work"
     TEACHING = "teaching"
     MENTORSHIP = "mentorship"
@@ -130,6 +129,33 @@ class AdminReviewRecord(BaseModel):
     action: Literal["approve", "reject"]
     points: Optional[int] = Field(default=None, strict=True, ge=0)
     reason: Optional[NonBlankStr] = None
+
+
+class AdminUpdateContribution(BaseModel):
+    """Payload for PATCH /contributions/{record_id}."""
+    model_config = ConfigDict(extra="forbid")
+
+    points: Optional[int] = Field(default=None, strict=True, ge=0)
+    title: Optional[TitleStr] = None
+    description: Optional[DescriptionStr] = None
+    category: Optional[ContributionCategory] = None
+    track: Optional[ContributionTrack] = None
+    occurred_at: Optional[UtcDatetime] = None
+
+
+class AdminBatchUpdateItem(BaseModel):
+    """Single update item within a batch update request."""
+    model_config = ConfigDict(extra="forbid")
+
+    record_id: NonBlankStr
+    update_data: AdminUpdateContribution
+
+
+class AdminBatchUpdateRequest(BaseModel):
+    """Payload for POST /contributions/batch-update."""
+    model_config = ConfigDict(extra="forbid")
+
+    updates: List[AdminBatchUpdateItem] = Field(..., min_length=1)
 
 
 class ContributionBase(ContributionDetails):

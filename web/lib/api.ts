@@ -6,6 +6,7 @@
  */
 
 import type { SPGRecord, SPGReportRecord } from "./spgData";
+export type { SPGRecord, SPGReportRecord } from "./spgData";
 import type { ContributionPage, ContributionRecord, PublicContributionRecord } from "./contributionData";
 
 const BASE =
@@ -1048,6 +1049,7 @@ export const api = {
       status: "checked_in" | "absent" | "disqualified" | "excused" | "registered" | "waitlisted" | "cancelled";
       attendance_note?: string | null;
       award_points?: boolean;
+      category?: string;
     }
   ) =>
     request<EventRegistration>(
@@ -1067,6 +1069,7 @@ export const api = {
       status: "checked_in" | "absent" | "disqualified" | "excused" | "registered" | "waitlisted" | "cancelled";
       attendance_note?: string | null;
       award_points?: boolean;
+      category?: string;
     }
   ) =>
     request<EventRegistration>(
@@ -1079,7 +1082,7 @@ export const api = {
     ),
 
   /** Only registered or already checked-in attendees can be checked in; the rest come back in failed_uids. */
-  adminRollCall: (token: string, eventId: string, attendeeUids: string[], awardPoints: boolean = true) =>
+  adminRollCall: (token: string, eventId: string, attendeeUids: string[], awardPoints: boolean = true, category: string = "participation") =>
     request<{
       event_id: string;
       checked_in_count: number;
@@ -1088,7 +1091,7 @@ export const api = {
       failed_uids: string[];
     }>(`/events/${encodeURIComponent(eventId)}/attendance/roll-call`, token, {
       method: "POST",
-      body: JSON.stringify({ attendee_uids: attendeeUids, award_points: awardPoints }),
+      body: JSON.stringify({ attendee_uids: attendeeUids, award_points: awardPoints, category }),
     }),
 
   adminUpdateUserStatus: (
@@ -1129,14 +1132,78 @@ export const api = {
     request<Record<string, unknown>>(`/contributions/recalculate/${encodeURIComponent(userId)}`, token, { method: "POST" }),
 
   /** The admin ledger. `status: "pending"` is the review queue that actions fill. */
-  adminListContributions: (token: string, params: { status?: string; limit?: number; cursor?: string } = {}) => {
+  adminListContributions: (
+    token: string,
+    params: {
+      status?: string;
+      user_id?: string;
+      track?: string;
+      category?: string;
+      spg_id?: string;
+      event_id?: string;
+      limit?: number;
+      cursor?: string;
+    } = {}
+  ) => {
     const query = new URLSearchParams();
     if (params.status) query.set("status", params.status);
+    if (params.user_id) query.set("user_id", params.user_id);
+    if (params.track && params.track !== "all") query.set("track", params.track);
+    if (params.category && params.category !== "all") query.set("category", params.category);
+    if (params.spg_id) query.set("spg_id", params.spg_id);
+    if (params.event_id) query.set("event_id", params.event_id);
     if (params.limit) query.set("limit", String(params.limit));
     if (params.cursor) query.set("cursor", params.cursor);
     const qs = query.toString();
     return request<ContributionPage>(`/contributions${qs ? `?${qs}` : ""}`, token);
   },
+
+  adminUpdateContribution: (
+    token: string,
+    recordId: string,
+    payload: {
+      points?: number;
+      title?: string;
+      description?: string | null;
+      category?: string;
+      track?: string;
+      occurred_at?: string;
+    }
+  ) =>
+    request<ContributionRecord>(`/contributions/${encodeURIComponent(recordId)}`, token, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  adminBatchUpdateContributions: (
+    token: string,
+    updates: Array<{
+      record_id: string;
+      update_data: {
+        points?: number;
+        title?: string;
+        description?: string | null;
+        category?: string;
+        track?: string;
+        occurred_at?: string;
+      };
+    }>
+  ) =>
+    request<ContributionRecord[]>("/contributions/batch-update", token, {
+      method: "POST",
+      body: JSON.stringify({ updates }),
+    }),
+
+  adminRevokeContribution: (
+    token: string,
+    recordId: string,
+    reason: string
+  ) =>
+    request<ContributionRecord>(`/contributions/${encodeURIComponent(recordId)}/revoke`, token, {
+      method: "PATCH",
+      body: JSON.stringify({ status_reason: reason }),
+    }),
+
   /**
    * Settle a pending contribution. Approving sets the points the admin chose;
    * rejecting needs a reason. An approved record is corrected by revocation.

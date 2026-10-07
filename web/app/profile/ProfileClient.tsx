@@ -250,23 +250,77 @@ function ProfileClientContent() {
 
   const batchDisplay = formatBatchDisplay(derivedBatchYear);
 
-  // Track Points strictly mapped from schema (Live API)
+  // Track Points strictly mapped from schema (Live API) with live fallback
   const trackPoints: TrackPoints = useMemo(() => {
     const raw = activeProfile?.points || (isOwner ? loggedInProfile?.points : null);
+    if (
+      raw &&
+      ((raw.total || 0) > 0 ||
+        (raw.research || 0) + (raw.product || 0) + (raw.kaggle || 0) + (raw.misc || 0) > 0)
+    ) {
+      return {
+        total: raw.total || 0,
+        research: raw.research || 0,
+        product: raw.product || 0,
+        kaggle: raw.kaggle || 0,
+        misc: raw.misc || 0,
+      };
+    }
+    // Fallback: calculate live from activeContributions if cached user points are 0 or empty
+    if (activeContributions && activeContributions.length > 0) {
+      const liveTotals: TrackPoints = { total: 0, research: 0, product: 0, kaggle: 0, misc: 0 };
+      for (const item of activeContributions) {
+        const pts = item.points || 0;
+        liveTotals.total += pts;
+        const tr = item.track as keyof TrackPoints;
+        if (tr && tr in liveTotals && tr !== "total") {
+          liveTotals[tr] += pts;
+        } else {
+          liveTotals.misc += pts;
+        }
+      }
+      return liveTotals;
+    }
     return {
-      total: raw?.total || 0,
-      research: raw?.research || 0,
-      product: raw?.product || 0,
-      kaggle: raw?.kaggle || 0,
-      misc: raw?.misc || 0,
+      total: 0,
+      research: 0,
+      product: 0,
+      kaggle: 0,
+      misc: 0,
     };
-  }, [activeProfile?.points, isOwner, loggedInProfile?.points]);
+  }, [activeProfile?.points, isOwner, loggedInProfile?.points, activeContributions]);
 
   // Dynamic Heatmap computed strictly from verified live contributions
   const heatmapData = useMemo(
     () => buildHeatmapGrid(activeContributions),
     [activeContributions]
   );
+
+  // Dynamic month labels positioned by column index to prevent alignment drift
+  const monthLabels = useMemo(() => {
+    const labels: { label: string; weekIndex: number }[] = [];
+    let lastMonth = -1;
+    const today = new Date();
+    const startDate = new Date(today);
+    startDate.setDate(today.getDate() - 52 * 7 + 1);
+
+    for (let w = 0; w < 52; w++) {
+      const cur = new Date(startDate);
+      cur.setDate(startDate.getDate() + w * 7);
+      const m = cur.getMonth();
+      if (m !== lastMonth) {
+        if (labels.length === 0 || w - labels[labels.length - 1].weekIndex >= 3) {
+          labels.push({
+            label: cur.toLocaleDateString("en-US", { month: "short" }),
+            weekIndex: w,
+          });
+        }
+        lastMonth = m;
+      }
+    }
+    return labels;
+  }, []);
+
   const [hoveredCell, setHoveredCell] = useState<HeatmapDayCell | null>(null);
 
   // Edit Modal state (Owner Only)
@@ -776,18 +830,15 @@ function ProfileClientContent() {
         <div className={styles.heatmapContainer}>
           <div className={styles.heatmapGrid}>
             <div className={styles.monthsRow}>
-              <span>Oct</span>
-              <span>Nov</span>
-              <span>Dec</span>
-              <span>Jan</span>
-              <span>Feb</span>
-              <span>Mar</span>
-              <span>Apr</span>
-              <span>May</span>
-              <span>Jun</span>
-              <span>Jul</span>
-              <span>Aug</span>
-              <span>Sep</span>
+              {monthLabels.map((m) => (
+                <span
+                  key={`${m.label}-${m.weekIndex}`}
+                  className={styles.monthLabel}
+                  style={{ left: `${m.weekIndex * 16}px` }}
+                >
+                  {m.label}
+                </span>
+              ))}
             </div>
 
             <div className={styles.daysMatrix}>

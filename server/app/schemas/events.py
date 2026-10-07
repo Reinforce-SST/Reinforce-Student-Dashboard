@@ -6,11 +6,14 @@ attendance roll-call, competition awarding, and feedback collection.
 Strictly follows zero user denormalization (pure UID references).
 """
 # Validated Need Some Changes and Discussion along the Comemnted Points
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from typing import Annotated, Any, Dict, List, Optional
 from urllib.parse import urlsplit
-from zoneinfo import ZoneInfo
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None  # type: ignore
 from pydantic import (
     AfterValidator,
     AwareDatetime,
@@ -24,6 +27,7 @@ from pydantic import (
 )
 
 from app.schemas.common import DescriptionStr, NonBlankStr, TitleStr
+from app.schemas.contributions import ContributionCategory
 
 UtcDatetime = Annotated[
     AwareDatetime,
@@ -107,7 +111,11 @@ class MandatorySubgroups(BaseModel):
 
 def current_graduation_batches(today: Optional[date] = None) -> List[int]:
     """Four graduation cohorts for the July–June SST academic year."""
-    local_day = today or datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    try:
+        kolkata = ZoneInfo("Asia/Kolkata") if ZoneInfo else timezone(timedelta(hours=5, minutes=30))
+    except Exception:
+        kolkata = timezone(timedelta(hours=5, minutes=30))
+    local_day = today or datetime.now(kolkata).date()
     first_batch = local_day.year + (1 if local_day.month >= 7 else 0)
     return list(range(first_batch, first_batch + 4))
 
@@ -380,6 +388,7 @@ class RegistrationAttendanceUpdateRequest(BaseModel):
     status: RegistrationStatus
     attendance_note: Optional[str] = None
     award_points: bool = True
+    category: ContributionCategory = ContributionCategory.PARTICIPATION
 
 
 class ManualRegistrationRequest(BaseModel):
@@ -389,6 +398,7 @@ class ManualRegistrationRequest(BaseModel):
     status: RegistrationStatus = RegistrationStatus.CHECKED_IN
     attendance_note: Optional[str] = None
     award_points: bool = True
+    category: ContributionCategory = ContributionCategory.PARTICIPATION
 
 
 class MyRegistrationResponse(BaseModel):
@@ -405,6 +415,7 @@ class RollCallRequest(BaseModel):
     # List of user UIDs to check-in
     attendee_uids: List[NonBlankStr] = Field(min_length=1)
     award_points: bool = True
+    category: ContributionCategory = ContributionCategory.PARTICIPATION
 
 
 class RollCallResponse(BaseModel):

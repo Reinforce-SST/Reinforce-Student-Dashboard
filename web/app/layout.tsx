@@ -63,9 +63,14 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" data-scroll-behavior="smooth" className={`${display.variable} ${sans.variable} ${marker.variable}`}>
+    <html
+      lang="en"
+      data-scroll-behavior="smooth"
+      className={`${display.variable} ${sans.variable} ${marker.variable}`}
+      suppressHydrationWarning
+    >
       {/*
-        suppressHydrationWarning is scoped to <body>'s own attributes and does
+        suppressHydrationWarning is scoped to <html> and <body>'s own attributes and does
         NOT extend to its children, so real hydration bugs inside the app still
         surface.
 

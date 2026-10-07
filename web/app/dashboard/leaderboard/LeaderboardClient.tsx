@@ -64,6 +64,8 @@ export default function LeaderboardClient() {
   const [selectedMember, setSelectedMember] = useState<StudentProfile | null>(null);
   const [members, setMembers] = useState<StudentProfile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
 
   const isSearching = searchQuery !== debouncedSearch || (loading && Boolean(searchQuery.trim()));
 
@@ -88,25 +90,78 @@ export default function LeaderboardClient() {
 
     let active = true;
     setLoading(true);
-    api.browseUsers(token, {
-      search: debouncedSearch.trim() || undefined,
-      track: viewMode === "LEADERBOARD" && selectedTrack !== "total" ? selectedTrack : undefined,
-      tier: selectedTier !== "all" ? selectedTier : undefined,
-      page,
-      page_size: pageSize,
-    })
-      .then((res) => {
+    setError(null);
+    Promise.allSettled([
+      api.browseUsers(token, {
+        search: debouncedSearch.trim() || undefined,
+        track: viewMode === "LEADERBOARD" && selectedTrack !== "total" ? selectedTrack : undefined,
+        tier: selectedTier !== "all" ? selectedTier : undefined,
+        page,
+        page_size: pageSize,
+      }),
+      api.getContributionLeaderboard(token, 100),
+    ])
+      .then(async ([usersResult, contribResult]) => {
         if (!active) return;
-        if (res && res.items) {
-          setMembers(res.items);
-          setTotalCount(res.total ?? res.items.length);
+        if (usersResult.status === "fulfilled" && usersResult.value?.items) {
+          setError(null);
+          let items = usersResult.value.items;
+          if (contribResult.status === "fulfilled" && Array.isArray(contribResult.value)) {
+            const contribMap = new Map<string, number>();
+            contribResult.value.forEach((c) => {
+              if (c.user_id) contribMap.set(c.user_id, c.points);
+            });
+            items = items.map((m) => {
+              const liveTotal = contribMap.get(m.id) ?? (m.email ? contribMap.get(m.email) : undefined);
+              if (liveTotal !== undefined && (!m.points || m.points.total < liveTotal)) {
+                return {
+                  ...m,
+                  points: {
+                    ...(m.points || { research: 0, product: 0, kaggle: 0, misc: 0 }),
+                    total: liveTotal,
+                  },
+                };
+              }
+              return m;
+            });
+          }
+          setMembers(items);
+          setTotalCount(usersResult.value.total ?? items.length);
         } else {
-          setMembers([]);
-          setTotalCount(0);
+          try {
+            const fallback = await api.leaderboard(token, selectedTrack === "total" ? "total" : selectedTrack, 50);
+            if (active && fallback?.entries && fallback.entries.length > 0) {
+              const fallbackItems: StudentProfile[] = fallback.entries.map((e: any) => ({
+                id: e.id,
+                full_name: e.full_name,
+                avatar_url: e.avatar_url,
+                tier: e.tier,
+                is_member: e.is_member,
+                points: e.points,
+                is_verified: Boolean(e.is_verified),
+                skills: Array.isArray(e.skills) ? e.skills : [],
+                social_links: e.social_links || {},
+              }));
+              setError(null);
+              setMembers(fallbackItems);
+              setTotalCount(fallback.total ?? fallbackItems.length);
+              return;
+            }
+          } catch {
+            // ignore fallback error
+          }
+          if (active) {
+            if (usersResult.status === "rejected") {
+              setError("Unable to load leaderboard data. Please check your network connection and try again.");
+            }
+            setMembers([]);
+            setTotalCount(0);
+          }
         }
       })
       .catch(() => {
         if (!active) return;
+        setError("Unable to load leaderboard data. Please check your network connection and try again.");
         setMembers([]);
         setTotalCount(0);
       })
@@ -117,7 +172,7 @@ export default function LeaderboardClient() {
     return () => {
       active = false;
     };
-  }, [token, debouncedSearch, viewMode, selectedTrack, selectedTier, page, pageSize]);
+  }, [token, debouncedSearch, viewMode, selectedTrack, selectedTier, page, pageSize, reloadTick]);
 
   // Compute leaderboard entries sorted by selected track score
   const sortedLeaderboard: LeaderboardEntry[] = [...members]
@@ -322,6 +377,18 @@ export default function LeaderboardClient() {
                   <div className={styles.searchSpinner} style={{ margin: "0 auto 12px" }} />
                   <span>Loading leaderboard rankings…</span>
                 </div>
+              ) : error ? (
+                <div style={{ padding: "48px 24px", textAlign: "center", color: "#e05252", fontSize: "0.85rem" }}>
+                  <p style={{ margin: "0 0 12px" }}>{error}</p>
+                  <button
+                    type="button"
+                    onClick={() => setReloadTick((t) => t + 1)}
+                    className={styles.trackBtn}
+                    style={{ cursor: "pointer", borderColor: "#E5B731", color: "#E5B731" }}
+                  >
+                    Retry loading
+                  </button>
+                </div>
               ) : sortedLeaderboard.length === 0 ? (
                 <div style={{ padding: "48px 24px", textAlign: "center", color: "#8c8c98", fontSize: "0.85rem" }}>
                   No members found on the leaderboard matching your search or filters.
@@ -433,6 +500,18 @@ export default function LeaderboardClient() {
               <div className={styles.tableCard} style={{ gridColumn: "1 / -1", padding: "48px 24px", textAlign: "center", color: "#8c8c98", fontSize: "0.85rem" }}>
                 <div className={styles.searchSpinner} style={{ margin: "0 auto 12px" }} />
                 <span>Searching student member directory…</span>
+              </div>
+            ) : error ? (
+              <div className={styles.tableCard} style={{ gridColumn: "1 / -1", padding: "48px 24px", textAlign: "center", color: "#e05252", fontSize: "0.85rem" }}>
+                <p style={{ margin: "0 0 12px" }}>{error}</p>
+                <button
+                  type="button"
+                  onClick={() => setReloadTick((t) => t + 1)}
+                  className={styles.trackBtn}
+                  style={{ cursor: "pointer", borderColor: "#E5B731", color: "#E5B731" }}
+                >
+                  Retry loading
+                </button>
               </div>
             ) : filteredDirectory.length === 0 ? (
               <div className={styles.tableCard} style={{ gridColumn: "1 / -1", padding: "48px 24px", textAlign: "center", color: "#8c8c98", fontSize: "0.85rem" }}>

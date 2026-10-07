@@ -11,14 +11,20 @@
 .heroBanner { position:relative; aspect-ratio:22/9; width:100%; background:#111113; border:1px solid #34302a; border-radius:15px; overflow:hidden; box-shadow:0 16px 40px -15px #0009; }
 .bannerSlide { position:relative; width:100%; height:100%; display:flex; align-items:stretch; }
 .heroContent { position:relative; z-index:2; flex:1; min-width:0; height:100%; display:flex; flex-direction:column; align-items:flex-start; justify-content:space-between; padding:22px 25px; }
-.heroTopRow { display:flex; align-items:center; gap:10px; }
-.eventBadge { max-width:140px; background:var(--brand,#e5b731); border-radius:5px; padding:5px 8px; color:#13120d; font-size:.6rem; font-weight:850; line-height:1.15; text-transform:uppercase; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden; }
-.eventDate { color:var(--brand,#e5b731); font-size:.61rem; font-weight:800; line-height:1.35; text-transform:uppercase; }
+.heroTopRow { display:flex; align-items:center; width:100%; }
+.eventBadge { display:inline-flex; align-items:center; width:fit-content; max-width:100%; background:var(--brand,#e5b731); border-radius:6px; padding:6px 12px; color:#13120d; font-size:.74rem; font-weight:850; line-height:1.15; letter-spacing:.03em; text-transform:uppercase; white-space:nowrap; box-shadow:0 2px 8px rgba(229,183,49,0.25); }
 .heroTitle { margin:10px 0 6px; font-size:clamp(1.05rem,1.4vw,1.3rem); letter-spacing:-.045em; line-height:1.18; font-weight:800; }
-.heroDescription { margin:0; color:#d0d0d0; font-size:.72rem; line-height:1.45; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.heroDescription { margin:0; color:#d0d0d0; font-size:.72rem; line-height:1.45; max-height:56px; overflow-y:auto; overflow-x:hidden; padding-right:6px; scrollbar-width:thin; scrollbar-color:rgba(229,183,49,0.35) transparent; }
+.heroDescription::-webkit-scrollbar { width:4px; }
+.heroDescription::-webkit-scrollbar-track { background:transparent; }
+.heroDescription::-webkit-scrollbar-thumb { background:rgba(229,183,49,0.3); border-radius:4px; }
+.heroDescription::-webkit-scrollbar-thumb:hover { background:rgba(229,183,49,0.55); }
+.heroDateRow { display:flex; align-items:center; gap:6px; margin-top:8px; }
+.heroDateRow svg { color:var(--brand,#e5b731); }
+.eventDate { color:var(--brand,#e5b731); font-size:.68rem; font-weight:800; line-height:1.3; text-transform:uppercase; letter-spacing:.03em; }
 .heroCtaBtn { display:inline-flex; align-items:center; justify-content:center; max-width:100%; background:var(--brand,#e5b731); border-radius:7px; color:#111; padding:8px 14px; font-size:.72rem; font-weight:800; text-align:center; text-decoration:none; box-shadow:0 6px 16px #e5b73147; overflow-wrap:anywhere; }
 .heroCtaBtn:hover { background:#f3cb55; }
-.heroCoverRight { position:relative; flex:none; height:100%; aspect-ratio:16/9; overflow:hidden; }
+.heroCoverRight { position:relative; flex:none; height:100%; aspect-ratio:16/9; overflow:hidden; -webkit-mask-image:linear-gradient(to right,transparent 0%,rgba(0,0,0,0.4) 6%,#000 20%); mask-image:linear-gradient(to right,transparent 0%,rgba(0,0,0,0.4) 6%,#000 20%); }
 .coverImage { display:block; width:100%; height:100%; object-fit:cover; }
 .heroNavArrows { position:absolute; z-index:4; right:13px; top:13px; display:flex; gap:7px; }
 .heroNavArrows button { width:30px; height:30px; display:grid; place-items:center; border:1px solid #ffffff44; border-radius:50%; background:#0009; color:white; cursor:pointer; }
@@ -137,9 +143,9 @@
   .mobileQuickLinks a > span:last-child { color:var(--brand,#e5b731); }
   .heroBanner { height:190px; border-radius:12px; }
   .heroContent { padding:17px; justify-content:space-between; }
-  .heroTopRow { gap:7px; }
-  .eventBadge { padding:4px 6px; font-size:.52rem; }
-  .eventDate { font-size:.54rem; }
+  .heroTopRow { gap:9px; }
+  .eventBadge { padding:5px 9px; font-size:.62rem; }
+  .eventDate { font-size:.58rem; }
   .heroTitle { margin:9px 0 3px; font-size:1.03rem; }
   .heroDescription { font-size:.67rem; -webkit-line-clamp:2; }
   .heroCtaBtn { margin-top:9px; min-height:40px; padding:8px 12px; }
@@ -162,4 +168,178 @@
   .contributionCard { order:7; }
 }
 @media (max-width:340px) { .mobileQuickLinks small { font-size:.62rem; } .sectionHeader,.widgetHeader { align-items:flex-start; } .sectionHeader .textLink,.widgetHeader .textLink { white-space:normal; text-align:right; } }
-@media (prefers-reduced-motion:reduce) { .heroNavArrows button,.eventItem { transition:none; } }
+@media (prefers-reduced-motion:reduce) { .heroNavArrows button,.eventItem,.shimmer { transition:none; animation:none; } }
+
+/* ==========================================================================
+   Skeleton Shimmer Loaders for Dashboard
+   ========================================================================== */
+@keyframes shimmerAnim {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 0%,
+    rgba(255, 255, 255, 0.09) 50%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmerAnim 1.7s infinite ease-in-out;
+  border-radius: 6px;
+}
+
+.bannerSkeleton {
+  pointer-events: none;
+  user-select: none;
+}
+
+.skeletonBadge {
+  width: 140px;
+  height: 28px;
+  border-radius: 6px;
+}
+
+.skeletonDate {
+  width: 80px;
+  height: 18px;
+  border-radius: 4px;
+}
+
+.skeletonHeroTitle {
+  width: 78%;
+  height: 34px;
+  margin: 14px 0 10px;
+  border-radius: 6px;
+}
+
+.skeletonHeroDesc1 {
+  width: 95%;
+  height: 14px;
+  margin-bottom: 7px;
+  border-radius: 4px;
+}
+
+.skeletonHeroDesc2 {
+  width: 65%;
+  height: 14px;
+  border-radius: 4px;
+}
+
+.skeletonHeroBtn {
+  width: 120px;
+  height: 36px;
+  border-radius: 7px;
+  margin-top: auto;
+}
+
+.skeletonImageCover {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
+
+/* Metric Skeleton */
+.skeletonMetricVal {
+  width: 34px;
+  height: 28px;
+  border-radius: 6px;
+}
+
+/* SPG Skeleton Cards */
+.skeletonTrackTag {
+  width: 80px;
+  height: 20px;
+  border-radius: 5px;
+}
+
+.skeletonStatusTag {
+  width: 50px;
+  height: 16px;
+  border-radius: 5px;
+}
+
+.skeletonSpgTitle {
+  width: 70%;
+  height: 20px;
+  margin: 12px 0 8px;
+  border-radius: 5px;
+}
+
+.skeletonSpgDesc1 {
+  width: 100%;
+  height: 13px;
+  margin-bottom: 6px;
+  border-radius: 4px;
+}
+
+.skeletonSpgDesc2 {
+  width: 55%;
+  height: 13px;
+  margin-bottom: 12px;
+  border-radius: 4px;
+}
+
+.skeletonAvatar {
+  width: 23px;
+  height: 23px;
+  border-radius: 50%;
+  margin-left: -5px;
+  border: 2px solid #1b1b1e;
+}
+
+.skeletonAvatar:first-child {
+  margin-left: 0;
+}
+
+.skeletonReportBtn {
+  width: 85px;
+  height: 25px;
+  border-radius: 5px;
+}
+
+/* Events Widget Skeleton */
+.skeletonEventDateBox {
+  width: 39px;
+  height: 39px;
+  border-radius: 6px;
+  flex: none;
+}
+
+.skeletonEventItemTitle {
+  width: 80%;
+  height: 14px;
+  margin-bottom: 5px;
+  border-radius: 4px;
+}
+
+.skeletonEventItemMeta {
+  width: 50%;
+  height: 11px;
+  border-radius: 4px;
+}
+
+/* Contributions Skeleton */
+.skeletonContributionScore {
+  width: 65px;
+  height: 34px;
+  border-radius: 6px;
+  margin-top: 14px;
+}
+
+.skeletonContributionTitle {
+  width: 65%;
+  height: 14px;
+  border-radius: 4px;
+}
+
+.skeletonContributionPts {
+  width: 34px;
+  height: 14px;
+  border-radius: 4px;
+}

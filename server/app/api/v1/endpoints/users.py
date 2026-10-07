@@ -75,8 +75,100 @@ def _normalize_points(points_raw: Any) -> TrackPoints:
     )
 
 
+def _get_user_live_points(uid: str) -> Optional[TrackPoints]:
+    try:
+        docs = (
+            db.collection("contributions")
+            .where("user_id", "==", uid)
+            .where("status", "==", "approved")
+            .stream()
+        )
+        totals = {"total": 0, "research": 0, "product": 0, "kaggle": 0, "misc": 0}
+        valid_tracks = ("research", "product", "kaggle", "misc")
+        has_contrib = False
+        for doc in docs:
+            d = doc.to_dict() or {}
+            pts = d.get("points")
+            if isinstance(pts, int):
+                has_contrib = True
+                trk = d.get("track") if d.get("track") in valid_tracks else "misc"
+                totals["total"] += pts
+                totals[trk] += pts
+        if has_contrib and totals["total"] > 0:
+            return TrackPoints(**totals)
+    except Exception as exc:
+        logger.warning("Could not fetch user live points: %s", exc)
+    return None
+
+
+import time
+
+_CACHE_TTL_SECONDS = 30.0
+
+_live_points_cache: Dict[str, Any] = {"timestamp": 0.0, "data": {}}
+_users_list_cache: Dict[str, Any] = {"timestamp": 0.0, "data": []}
+
+
+def invalidate_users_cache():
+    _live_points_cache["timestamp"] = 0.0
+    _users_list_cache["timestamp"] = 0.0
+
+
+def _get_live_contributions_points_map() -> Dict[str, Dict[str, int]]:
+    now = time.time()
+    if now - _live_points_cache["timestamp"] < _CACHE_TTL_SECONDS and _live_points_cache["data"]:
+        return _live_points_cache["data"]
+
+    totals: Dict[str, Dict[str, int]] = {}
+    valid_tracks = ("research", "product", "kaggle", "misc")
+    try:
+        docs = (
+            db.collection("contributions")
+            .where("status", "==", "approved")
+            .stream()
+        )
+        for doc in docs:
+            d = doc.to_dict() or {}
+            uid = d.get("user_id")
+            pts = d.get("points")
+            if not isinstance(uid, str) or not isinstance(pts, int):
+                continue
+            trk = d.get("track") if d.get("track") in valid_tracks else "misc"
+            if uid not in totals:
+                totals[uid] = {"total": 0, "research": 0, "product": 0, "kaggle": 0, "misc": 0}
+            totals[uid]["total"] += pts
+            totals[uid][trk] += pts
+        _live_points_cache["timestamp"] = now
+        _live_points_cache["data"] = totals
+    except Exception as exc:
+        logger.warning("Could not fetch live contribution points: %s", exc)
+        return _live_points_cache.get("data") or {}
+    return totals
+
+
+def _get_all_users_raw() -> List[Dict[str, Any]]:
+    now = time.time()
+    if now - _users_list_cache["timestamp"] < _CACHE_TTL_SECONDS and _users_list_cache["data"]:
+        return _users_list_cache["data"]
+
+    items: List[Dict[str, Any]] = []
+    try:
+        docs = db.collection(USERS_COLLECTION).stream()
+        for doc in docs:
+            d = doc.to_dict() or {}
+            d["_id"] = doc.id
+            items.append(d)
+        _users_list_cache["timestamp"] = now
+        _users_list_cache["data"] = items
+    except Exception as exc:
+        logger.warning("Could not fetch users list: %s", exc)
+        return _users_list_cache.get("data") or []
+    return items
+
+
 def _to_user_me(uid: str, data: Dict[str, Any]) -> UserMeResponse:
-    points = _normalize_points(data.get("points"))
+    live = _get_user_live_points(uid)
+    points = live if live is not None else _normalize_points(data.get("points"))
     social_raw = data.get("social_links") or {}
     social_links = SocialLinks(**social_raw) if isinstance(social_raw, dict) else SocialLinks()
 
@@ -119,8 +211,19 @@ def _to_user_me(uid: str, data: Dict[str, Any]) -> UserMeResponse:
     )
 
 
-def _to_user_public(uid: str, data: Dict[str, Any]) -> UserPublicResponse:
-    points = _normalize_points(data.get("points"))
+def _to_user_public(
+    uid: str,
+    data: Dict[str, Any],
+    live_points: Optional[TrackPoints] = None,
+    allow_fetch: bool = False,
+) -> UserPublicResponse:
+    if live_points is not None:
+        points = live_points
+    elif allow_fetch:
+        live = _get_user_live_points(uid)
+        points = live if live is not None else _normalize_points(data.get("points"))
+    else:
+        points = _normalize_points(data.get("points"))
     social_raw = data.get("social_links") or {}
     social_links = SocialLinks(**social_raw) if isinstance(social_raw, dict) else SocialLinks()
 
@@ -262,6 +365,7 @@ def update_me(
         updates["social_links"] = payload.social_links.model_dump()
 
     doc_ref.set(updates, merge=True)
+    invalidate_users_cache()
     updated = doc_ref.get().to_dict() or {}
     return _to_user_me(uid, updated)
 
@@ -327,6 +431,7 @@ def verify_discord(
         except (urllib.error.URLError, ValueError, TimeoutError, OSError):
             bot_response_data = {"status": "bot_unreachable", "detail": "The bot could not confirm your role. Run /auth in Discord again to retry."}
 
+    invalidate_users_cache()
     return {
         "success": True,
         "message": "Discord account successfully linked & verified!",
@@ -343,6 +448,7 @@ def unlink_discord(current_user: dict = Depends(get_current_user)):
     """Unlink Discord ID from the current member profile."""
     uid = current_user["uid"]
     updated_doc = firestore.transactional(unlink_member)(db.transaction(), db, current_user)
+    invalidate_users_cache()
     return {
         "success": True,
         "message": "Discord account successfully unlinked.",
@@ -372,6 +478,7 @@ def upload_avatar(
         "avatar_url": avatar_url,
         "updated_at": now_iso(),
     }, merge=True)
+    invalidate_users_cache()
 
     return {"message": "Avatar updated successfully", "avatar_url": avatar_url}
 
@@ -421,6 +528,7 @@ def update_user_status(
         updates["role_label"] = payload.role_label
 
     doc_ref.set(updates, merge=True)
+    invalidate_users_cache()
     updated = doc_ref.get().to_dict() or {}
     return _to_user_me(user_id, updated)
 
@@ -434,16 +542,16 @@ def admin_directory(
 ) -> AdminMemberListResponse:
     query = search.strip().lower()
     members = []
-    for doc in db.collection(USERS_COLLECTION).stream():
-        data = doc.to_dict() or {}
-        if data.get("id") != doc.id:
+    for data in _get_all_users_raw():
+        doc_id = data.get("_id", "")
+        if data.get("id") != doc_id:
             continue
         if query and query not in (data.get("full_name") or "").lower() and query not in (data.get("email") or "").lower():
             continue
         try:
-            members.append(_to_user_me(doc.id, data))
+            members.append(_to_user_me(doc_id, data))
         except Exception as exc:
-            logger.warning("Skipping invalid member document %s: %s", doc.id, exc)
+            logger.warning("Skipping invalid member document %s: %s", doc_id, exc)
             continue
     members.sort(key=lambda member: ((member.full_name or "").lower(), member.id or ""))
     start = (page - 1) * page_size
@@ -471,14 +579,15 @@ def get_leaderboard(
             detail=f"Invalid track '{track}'. Must be one of: {', '.join(sorted(VALID_TRACKS))}",
         )
 
-    docs = db.collection(USERS_COLLECTION).stream()
+    docs = _get_all_users_raw()
     candidates: List[LeaderboardEntry] = []
+    live_points_map = _get_live_contributions_points_map()
 
-    for doc in docs:
-        data = doc.to_dict() or {}
-        if data.get("firebase_uid") and data["firebase_uid"] != doc.id:
+    for data in docs:
+        doc_id = data.get("_id", "")
+        if data.get("firebase_uid") and data["firebase_uid"] != doc_id:
             continue
-        if doc.id.isdigit() and not data.get("full_name"):
+        if doc_id.isdigit() and not data.get("full_name"):
             continue
 
         doc_is_member = bool(data.get("is_member", False))
@@ -494,11 +603,17 @@ def get_leaderboard(
             misc=int(points_raw.get("misc", 0)),
         )
 
+        live_pts = live_points_map.get(doc_id) or (live_points_map.get(data.get("email")) if data.get("email") else None)
+        if live_pts is not None:
+            points = TrackPoints(**live_pts)
+        elif live_points_map:
+            points = TrackPoints(total=0, kaggle=0, product=0, research=0, misc=0)
+
         track_score = getattr(points, track_clean, 0)
         if track_score > 0 or track_clean == "total":
             candidates.append(
                 LeaderboardEntry(
-                    id=doc.id,
+                    id=doc_id,
                     full_name=data.get("full_name") or "Club Member",
                     avatar_url=data.get("avatar_url"),
                     is_member=doc_is_member,
@@ -534,8 +649,8 @@ def get_user_profile(id_or_email: str) -> UserPublicResponse:
         if data.get("firebase_uid"):
             canonical = db.collection(USERS_COLLECTION).document(data["firebase_uid"]).get()
             if canonical.exists:
-                return _to_user_public(canonical.id, canonical.to_dict() or {})
-        return _to_user_public(doc.id, data)
+                return _to_user_public(canonical.id, canonical.to_dict() or {}, allow_fetch=True)
+        return _to_user_public(doc.id, data, allow_fetch=True)
 
     # 2. Try email query
     query_email = (
@@ -549,8 +664,8 @@ def get_user_profile(id_or_email: str) -> UserPublicResponse:
         if data.get("firebase_uid"):
             canonical = db.collection(USERS_COLLECTION).document(data["firebase_uid"]).get()
             if canonical.exists:
-                return _to_user_public(canonical.id, canonical.to_dict() or {})
-        return _to_user_public(match.id, data)
+                return _to_user_public(canonical.id, canonical.to_dict() or {}, allow_fetch=True)
+        return _to_user_public(match.id, data, allow_fetch=True)
 
     # 3. Try discord_id query if numeric
     if clean_target.isdigit():
@@ -565,8 +680,8 @@ def get_user_profile(id_or_email: str) -> UserPublicResponse:
             if data.get("firebase_uid"):
                 canonical = db.collection(USERS_COLLECTION).document(data["firebase_uid"]).get()
                 if canonical.exists:
-                    return _to_user_public(canonical.id, canonical.to_dict() or {})
-            return _to_user_public(match.id, data)
+                    return _to_user_public(canonical.id, canonical.to_dict() or {}, allow_fetch=True)
+            return _to_user_public(match.id, data, allow_fetch=True)
 
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member profile not found")
 
@@ -582,20 +697,23 @@ def list_users(
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
 ) -> UserListResponse:
     """Search and browse member directory with filters."""
-    docs = db.collection(USERS_COLLECTION).stream()
+    docs = _get_all_users_raw()
     all_users: List[UserPublicResponse] = []
+    live_points_map = _get_live_contributions_points_map()
 
-    for doc in docs:
-        data = doc.to_dict() or {}
-        if data.get("firebase_uid") and data["firebase_uid"] != doc.id:
+    for data in docs:
+        doc_id = data.get("_id", "")
+        if data.get("firebase_uid") and data["firebase_uid"] != doc_id:
             continue
-        if doc.id.isdigit() and not data.get("full_name"):
+        if doc_id.isdigit() and not data.get("full_name"):
             continue
 
         if discord_id and str(data.get("discord_id")) != str(discord_id).strip():
             continue
 
-        public_user = _to_user_public(doc.id, data)
+        live_pts_dict = live_points_map.get(doc_id) or (live_points_map.get(data.get("email")) if data.get("email") else None)
+        live_pts = TrackPoints(**live_pts_dict) if live_pts_dict is not None else (TrackPoints(total=0, kaggle=0, product=0, research=0, misc=0) if live_points_map else None)
+        public_user = _to_user_public(doc_id, data, live_points=live_pts, allow_fetch=False)
 
         if is_member is not None and public_user.is_member != is_member:
             continue

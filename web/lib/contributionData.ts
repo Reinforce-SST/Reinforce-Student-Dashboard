@@ -13,6 +13,7 @@ export type ContributionCategory =
   | "content"
   | "organizing"
   | "service"
+  | "participation"
   | "other";
 
 export type ContributionTrack = "kaggle" | "product" | "research" | "misc";
@@ -146,6 +147,15 @@ export const CONTRIBUTION_CATEGORY_INDEX: Record<ContributionCategory, CategoryM
     icon: "check",
     description: "Infrastructure maintenance, GPU cluster administration, and Discord moderation.",
   },
+  participation: {
+    category: "participation",
+    label: "Participation",
+    color: "#38BDF8",
+    bg: "rgba(56, 189, 248, 0.14)",
+    border: "rgba(56, 189, 248, 0.35)",
+    icon: "events",
+    description: "Attending workshops, participating in club events, and active session involvement.",
+  },
   other: {
     category: "other",
     label: "Other",
@@ -165,6 +175,7 @@ export const ALL_CATEGORIES: ContributionCategory[] = [
   "organizing",
   "mentorship",
   "service",
+  "participation",
   "other",
 ];
 
@@ -176,7 +187,7 @@ export const ALL_CATEGORIES: ContributionCategory[] = [
  * 4. Content (20-40 pts) - Peer-reviewed articles, research write-ups, study guides (Rank 4 - Lavender)
  * 5. Organizing (20-40 pts) - Club summits, hackathon coordination, guest speaker outreach (Rank 5 - Fuchsia)
  * 6. Mentorship (15-30 pts) - 1-on-1 architecture reviews, junior debugging assistance (Rank 6 - Rose)
- * 7. Reserved for the pending participation-category decision.
+ * 7. Participation (5-20 pts) - Event attendance, workshops, and active sessions (Rank 7 - Sky Blue)
  * 8. Service (10-25 pts) - GPU cluster maintenance, infra DevOps, bot administration (Rank 8 - Cyan)
  * 9. Other (5-20 pts) - Ad-hoc verified club tasks & logistics (Rank 9 - Slate)
  */
@@ -192,6 +203,7 @@ export const CATEGORY_HIERARCHY: {
   { category: "content", rank: 4, tier: "Knowledge & Leadership", typicalPoints: "20–40 pts" },
   { category: "organizing", rank: 5, tier: "Knowledge & Leadership", typicalPoints: "20–40 pts" },
   { category: "mentorship", rank: 6, tier: "Knowledge & Leadership", typicalPoints: "15–30 pts" },
+  { category: "participation", rank: 7, tier: "Community & Service", typicalPoints: "5–20 pts" },
   { category: "service", rank: 8, tier: "Community & Service", typicalPoints: "10–25 pts" },
   { category: "other", rank: 9, tier: "Support", typicalPoints: "5–20 pts" },
 ];
@@ -244,6 +256,7 @@ export const CATEGORY_RANK_MAP: Record<ContributionCategory, number> = {
   content: 4,      // Lavender (#A78BFA) - Rank 4 (Research & Writing)
   organizing: 5,   // Fuchsia (#E879F9) - Rank 5 (Leadership)
   mentorship: 6,   // Rose (#F43F5E) - Rank 6 (Guidance)
+  participation: 7, // Sky Blue (#38BDF8) - Rank 7 (Events & Workshops)
   service: 8,      // Cyan (#2DD4BF) - Rank 8 (Service & Maintenance)
   other: 9,        // Slate (#94A3B8) - Rank 9 (Support)
 };
