@@ -642,6 +642,7 @@ export const test = base.extend<{ app: AppFixture }>({
       problems.push(`console: ${text}`);
     });
 
+    await page.clock.setFixedTime(new Date(fixture.NOW_ISO));
     await mockFirebase(page, world);
     await page.route(`${API_BASE}/**`, route => handleApi(route, world));
 

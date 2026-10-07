@@ -4,7 +4,6 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { api, type EventRegistration, type AttendeeProfile, type StudentProfile } from "@/lib/api";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import StudentHoverCard from "./StudentHoverCard";
-import ConfirmModal from "@/components/dashboard/ConfirmModal";
 import { ALL_CATEGORIES, CONTRIBUTION_CATEGORY_INDEX, type ContributionCategory } from "@/lib/contributionData";
 import styles from "./EventDetail.module.css";
 
@@ -47,8 +46,6 @@ export default function EventAttendancePanel({
 
   // Contribution Category (default to participation)
   const [selectedCategory, setSelectedCategory] = useState<ContributionCategory>("participation");
-  const [confirmRollCallOpen, setConfirmRollCallOpen] = useState(false);
-  const [pendingRollCallUids, setPendingRollCallUids] = useState<string[]>([]);
 
   // Manual / Walk-in Add State
   const [showAddSection, setShowAddSection] = useState(false);
@@ -276,7 +273,7 @@ export default function EventAttendancePanel({
   // Bulk Roll Call (Mark all filtered registered as Present)
   const [bulkBusy, setBulkBusy] = useState(false);
 
-  const handleBulkCheckIn = () => {
+  const handleBulkCheckIn = async () => {
     // Only people who hold a place. A waitlisted person did not get one, and the
     // server refuses to check them in, so sending them only inflated the count
     // the admin was shown.
@@ -290,12 +287,16 @@ export default function EventAttendancePanel({
       }
     }
     if (allAttendeeUids.length === 0) return;
-    setPendingRollCallUids(allAttendeeUids);
-    setConfirmRollCallOpen(true);
-  };
+    if (
+      !confirm(
+        `Are you sure you want to mark ${allAttendeeUids.length} attendee(s) as PRESENT? ${
+          awardPoints ? `They will each receive +${attendancePoints} merit points.` : ""
+        }`
+      )
+    ) {
+      return;
+    }
 
-  const executeBulkRollCall = async () => {
-    if (pendingRollCallUids.length === 0) return;
     setBulkBusy(true);
     setError(null);
     setSuccessMsg(null);
@@ -304,13 +305,13 @@ export default function EventAttendancePanel({
       const result = await api.adminRollCall(
         token,
         eventId,
-        pendingRollCallUids,
+        allAttendeeUids,
         awardPoints,
         selectedCategory
       );
 
       // Refresh cached user points projection in background for checked-in attendees
-      pendingRollCallUids.forEach((uid) => {
+      allAttendeeUids.forEach((uid) => {
         api.adminRecalculateUserPoints(token, uid).catch(() => {});
       });
 
@@ -335,8 +336,6 @@ export default function EventAttendancePanel({
       setError(err instanceof Error ? err.message : "Bulk roll-call failed.");
     } finally {
       setBulkBusy(false);
-      setConfirmRollCallOpen(false);
-      setPendingRollCallUids([]);
     }
   };
 
@@ -970,29 +969,6 @@ export default function EventAttendancePanel({
           })}
         </div>
       )}
-
-      <ConfirmModal
-        isOpen={confirmRollCallOpen}
-        title="Confirm Roll-Call Check-in"
-        message={`Are you sure you want to mark ${pendingRollCallUids.length} attendee(s) as PRESENT? ${
-          awardPoints
-            ? `They will each receive +${attendancePoints} merit points under "${
-                CONTRIBUTION_CATEGORY_INDEX[selectedCategory]?.label || selectedCategory
-              }".`
-            : "No merit points will be awarded."
-        }`}
-        confirmLabel="Confirm Check-in"
-        cancelLabel="Cancel"
-        variant="brand"
-        isLoading={bulkBusy}
-        onConfirm={executeBulkRollCall}
-        onCancel={() => {
-          if (!bulkBusy) {
-            setConfirmRollCallOpen(false);
-            setPendingRollCallUids([]);
-          }
-        }}
-      />
     </div>
   );
 }

@@ -66,6 +66,10 @@ export default function AdminClient() {
     if (searchParams.get("tab")) {
       setActiveTab(searchParams.get("tab") as AdminTab);
     }
+    const sub = searchParams.get("subtab");
+    if (sub === "editor" || sub === "award" || sub === "review") {
+      setContributionSubTab(sub);
+    }
   }, [searchParams]);
 
   const handleTabChange = (tab: AdminTab) => {
@@ -75,13 +79,19 @@ export default function AdminClient() {
     setDirectoryMessage("");
     setBannerSubTab("create");
     setEventSubTab("create");
-    setContributionSubTab("editor");
+    setContributionSubTab("review");
     router.push(`/dashboard/admin?tab=${tab}`);
   };
 
   const [bannerSubTab, setBannerSubTab] = useState<"create" | "edit">("create");
   const [eventSubTab, setEventSubTab] = useState<"create" | "edit">("create");
-  const [contributionSubTab, setContributionSubTab] = useState<"editor" | "award" | "review">("editor");
+  const subTabParam = searchParams.get("subtab");
+  const [contributionSubTab, setContributionSubTab] = useState<"editor" | "award" | "review">(() => {
+    if (subTabParam === "editor" || subTabParam === "award" || subTabParam === "review") {
+      return subTabParam;
+    }
+    return "review";
+  });
 
   // --- TAB 1: Dashboard Hero Banner State ---
   const [bannerStartDateTime, setBannerStartDateTime] = useState("");

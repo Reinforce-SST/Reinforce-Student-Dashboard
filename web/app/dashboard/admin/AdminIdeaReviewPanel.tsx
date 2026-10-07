@@ -5,7 +5,6 @@ import Link from "next/link";
 import { api, type IdeaSummary, type IdeaDetail } from "@/lib/api";
 import { useDebounce } from "@/lib/useDebounce";
 import PaginationBar from "@/components/dashboard/PaginationBar";
-import ConfirmModal from "@/components/dashboard/ConfirmModal";
 import styles from "./AdminWorkflows.module.css";
 
 function formatDate(iso?: string | null): string {
@@ -231,17 +230,16 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
     }
   }
 
-  const [pendingReject, setPendingReject] = useState<{ id: string; title: string } | null>(null);
-
   // Direct Reject / Delete
-  function handleReject(id: string, title: string) {
+  async function handleReject(id: string, title: string) {
     if (actionBusyId) return;
-    setPendingReject({ id, title });
-  }
-
-  async function executeReject() {
-    if (!pendingReject || actionBusyId) return;
-    const { id, title } = pendingReject;
+    if (
+      !window.confirm(
+        `Are you sure you want to delete or reject “${title}”? This action cannot be undone.`
+      )
+    ) {
+      return;
+    }
     setActionBusyId(id);
     setError("");
     setNotice("");
@@ -249,7 +247,6 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
       await api.rejectIdea(token, id);
       setNotice(`Idea proposal “${title}” has been deleted / closed.`);
       setRevision((v) => v + 1);
-      setPendingReject(null);
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : "Idea could not be deleted."
@@ -705,18 +702,6 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
         </dialog>
       )}
 
-      {pendingReject && (
-        <ConfirmModal
-          isOpen={Boolean(pendingReject)}
-          title="Delete / Reject Proposal"
-          message={`Are you sure you want to delete or reject “${pendingReject.title}”? This action cannot be undone.`}
-          confirmLabel="Delete Proposal"
-          variant="danger"
-          isBusy={Boolean(actionBusyId)}
-          onConfirm={executeReject}
-          onCancel={() => setPendingReject(null)}
-        />
-      )}
     </div>
   );
 }

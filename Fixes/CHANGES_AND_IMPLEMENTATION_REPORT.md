@@ -234,10 +234,15 @@ Added `BatchUpdateEndpointTests` covering:
 
 ### 6.3. Frontend Unit & Integration Tests
 - **Runner**: `npm run test`
-- **Result**: **22 passed**, 0 failed in 563ms.
+- **Result**: **22 passed**, 0 failed in 362ms.
+
+### 6.4. Playwright End-to-End Suite
+- **Runner**: `npm run e2e` (`playwright test`)
+- **Result**: **165 passed**, 0 failed in 2.4m.
+- **Coverage**: Full coverage of all member routes, admin consoles, authentication, SPG registration, ideas, articles, ticket queues, and event attendance.
 
 ---
 
 ## 7. Conclusion
 
-All requested enhancements—ranging from the high-throughput batch update endpoint and inline contribution editing to date selection, badge styling, loading screen polish, and leaderboard reliability—have been implemented, tested, committed (`8bbe232`), and pushed to `staging`.
+All requested enhancements—ranging from the high-throughput batch update endpoint and inline contribution editing to date selection, badge styling, loading screen polish, leaderboard reliability, and complete Playwright E2E suite alignment—have been implemented, tested, and verified 100% green across all test layers.
