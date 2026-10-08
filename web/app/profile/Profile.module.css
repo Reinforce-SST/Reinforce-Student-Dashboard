@@ -1536,7 +1536,7 @@
   align-items: center;
   gap: 6px;
   background: #19191d;
-  border: 1px solid #31343a;
+  border: 1px solid var(--line-4);
   color: #ffffff;
   padding: 6px 14px;
   border-radius: 8px;

@@ -1912,7 +1912,7 @@
 
 .addManualCard {
   background: #17171d;
-  border: 1px solid #31343a;
+  border: 1px solid var(--line-4);
   border-left: 3px solid var(--brand, #e5b731);
   border-radius: 12px;
   padding: 20px;
@@ -1954,7 +1954,7 @@
 .studentSearchInput {
   width: 100%;
   background: #111116;
-  border: 1.5px solid #31343a;
+  border: 1.5px solid var(--line-4);
   border-radius: 8px;
   padding: 10px 14px;
   font-size: 13.5px;

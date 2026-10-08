@@ -12,6 +12,8 @@ import type { ContributionPage, ContributionRecord, PublicContributionRecord } f
 const BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080/api/v1";
 
+export const MAX_PAGE_SIZE = 100;
+
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -652,7 +654,7 @@ export const api = {
 
   myTickets: async (token: string) => {
     const data = await request<{ total: number; items: TicketSummary[] }>("/tickets/my", token);
-    return data.items.slice(0, 100);
+    return data.items.slice(0, MAX_PAGE_SIZE);
   },
 
   updateProfile: (token: string, body: ProfileUpdate) =>

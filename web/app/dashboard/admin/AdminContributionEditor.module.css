@@ -380,9 +380,9 @@
   display: inline-flex;
   align-items: center;
   padding: 4px 8px;
-  background: #212121;
+  background: var(--surface-3);
   color: #e4e4e7;
-  border: 1px solid #31343a;
+  border: 1px solid var(--line-4);
   border-radius: 6px;
   font-size: 0.75rem;
   font-weight: 600;
@@ -898,8 +898,8 @@
   width: 64px;
   padding: 4px 8px;
   border-radius: 6px;
-  border: 1px solid #31343a;
-  background: #212121;
+  border: 1px solid var(--line-4);
+  background: var(--surface-3);
   color: #fff;
   font: inherit;
   font-size: 0.8rem;

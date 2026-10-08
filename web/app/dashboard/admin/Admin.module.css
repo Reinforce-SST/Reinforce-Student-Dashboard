@@ -115,9 +115,9 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  background: #212121;
+  background: var(--surface-3);
   color: #d1d1d6;
-  border: 1px solid #31343a;
+  border: 1px solid var(--line-4);
   border-radius: 8px;
   padding: 8px 14px;
   font-size: 13px;
@@ -171,13 +171,13 @@
 }
 
 .tabBadge {
-  background: #212121;
+  background: var(--surface-3);
   color: #a1a1a6;
   font-size: 11px;
   font-weight: 700;
   padding: 2px 6px;
   border-radius: 999px;
-  border: 1px solid #31343a;
+  border: 1px solid var(--line-4);
 }
 
 .tabButtonActive .tabBadge {
@@ -316,7 +316,7 @@
 }
 
 .modeSwitchBtnActive {
-  background: #212121;
+  background: var(--surface-3);
   color: #e5b731;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
@@ -516,7 +516,7 @@
   height: 180px;
   border-radius: 10px;
   overflow: hidden;
-  border: 1px solid #31343a;
+  border: 1px solid var(--line-4);
   background: #0f0f11;
 }
 
@@ -558,8 +558,8 @@
 }
 
 .livePreviewCard {
-  background: #212121;
-  border: 1px solid #31343a;
+  background: var(--surface-3);
+  border: 1px solid var(--line-4);
   border-radius: 12px;
   overflow: hidden;
   display: flex;
@@ -663,7 +663,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(to right, #212121 0%, transparent 40%);
+  background: linear-gradient(to right, var(--surface-3) 0%, transparent 40%);
   z-index: 1;
   pointer-events: none;
 }
@@ -697,7 +697,7 @@
 }
 
 .memberList { display: flex; flex-direction: column; gap: 10px; margin: 14px 0; }
-.memberRow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px; border: 1px solid #31343a; border-radius: 10px; background: #121214; }
+.memberRow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--line-4); border-radius: 10px; background: #121214; }
 .memberIdentity { display: flex; flex: 1 1 210px; min-width: 0; flex-direction: column; gap: 3px; color: #fff; font-size: 13px; }
 .memberIdentity span { color: #9e9ea4; font-size: 12px; overflow-wrap: anywhere; }
 .memberToggle { display: inline-flex; align-items: center; gap: 6px; color: #cfcfd4; font-size: 12px; }
@@ -800,9 +800,9 @@
 }
 .directoryPager { display: flex; align-items: center; justify-content: flex-end; gap: 8px; color: #9e9ea4; font-size: 12px; }
 .directoryPager span { margin-right: auto; }
-.candidateList { display: flex; flex-direction: column; max-height: 240px; overflow-y: auto; border: 1px solid #31343a; border-radius: 8px; }
+.candidateList { display: flex; flex-direction: column; max-height: 240px; overflow-y: auto; border: 1px solid var(--line-4); border-radius: 8px; }
 .candidateRow { display: flex; align-items: center; gap: 8px; padding: 8px 10px; color: #eee; font-size: 12px; cursor: pointer; }
-.candidateRow + .candidateRow { border-top: 1px solid #31343a; }
+.candidateRow + .candidateRow { border-top: 1px solid var(--line-4); }
 .candidateRow:hover { background: #242427; }
 .selectedMembers { color: #e5b731; font-size: 12px; }
 .selectedRecipientList { display: flex; flex-wrap: wrap; gap: 6px; max-height: 120px; overflow-y: auto; }
@@ -811,9 +811,9 @@
 .selectedRecipient:focus-visible { outline: 2px solid #e5b731; outline-offset: 2px; }
 
 .secondaryBtn {
-  background: #212121;
+  background: var(--surface-3);
   color: #d1d1d6;
-  border: 1px solid #31343a;
+  border: 1px solid var(--line-4);
   border-radius: 8px;
   padding: 10px 16px;
   font-size: 13px;

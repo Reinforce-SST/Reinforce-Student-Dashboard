@@ -1,4 +1,4 @@
-import { api, type EventSummaryItem } from "./api";
+import { api, MAX_PAGE_SIZE, type EventSummaryItem } from "./api";
 import type { SPGRecord } from "./spgData";
 
 export async function loadAllSpgs(token: string, track?: string): Promise<SPGRecord[]> {
@@ -6,7 +6,7 @@ export async function loadAllSpgs(token: string, track?: string): Promise<SPGRec
   const cursors = new Set<string>();
   let cursor: string | undefined;
   do {
-    const page = await api.listSpgs(token, { track, limit: 100, cursor });
+    const page = await api.listSpgs(token, { track, limit: MAX_PAGE_SIZE, cursor });
     items.push(...page.items);
     if (!page.next_cursor) break;
     if (cursors.has(page.next_cursor)) throw new Error("Project group pagination did not advance.");
@@ -17,10 +17,10 @@ export async function loadAllSpgs(token: string, track?: string): Promise<SPGRec
 }
 
 export async function loadAllUpcomingEvents(token: string): Promise<EventSummaryItem[]> {
-  const first = await api.listEvents(token, { timeline: "upcoming", limit: 100, page: 1 });
+  const first = await api.listEvents(token, { timeline: "upcoming", limit: MAX_PAGE_SIZE, page: 1 });
   const events = [...first.events];
   for (let page = 2; events.length < first.total; page += 1) {
-    const next = await api.listEvents(token, { timeline: "upcoming", limit: 100, page });
+    const next = await api.listEvents(token, { timeline: "upcoming", limit: MAX_PAGE_SIZE, page });
     if (next.events.length === 0) break;
     events.push(...next.events);
   }
