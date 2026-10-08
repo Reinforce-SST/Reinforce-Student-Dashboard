@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { api, type EventRegistration, type AttendeeProfile, type StudentProfile } from "@/lib/api";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import StudentHoverCard from "./StudentHoverCard";
+import { ALL_CATEGORIES, CONTRIBUTION_CATEGORY_INDEX, type ContributionCategory } from "@/lib/contributionData";
 import styles from "./EventDetail.module.css";
 
 type AttendanceStatus =
@@ -42,6 +43,9 @@ export default function EventAttendancePanel({
 
   // Award points toggle
   const [awardPoints, setAwardPoints] = useState(true);
+
+  // Contribution Category (default to participation)
+  const [selectedCategory, setSelectedCategory] = useState<ContributionCategory>("participation");
 
   // Manual / Walk-in Add State
   const [showAddSection, setShowAddSection] = useState(false);
@@ -118,7 +122,12 @@ export default function EventAttendancePanel({
         status: manualStatus,
         attendance_note: manualNote.trim() || undefined,
         award_points: awardPoints,
+        category: selectedCategory,
       });
+
+      if (manualStatus === "checked_in" && awardPoints) {
+        api.adminRecalculateUserPoints(token, selectedStudent.id).catch(() => {});
+      }
 
       // Update local registrations list
       setRegistrations((prev) => {
@@ -181,7 +190,18 @@ export default function EventAttendancePanel({
         status: newStatus,
         attendance_note: finalNote !== undefined ? finalNote : undefined,
         award_points: awardPoints,
+        category: selectedCategory,
       });
+
+      if (newStatus === "checked_in" && awardPoints) {
+        const currentReg = registrations.find((r) => r.id === regId);
+        const targetUids = currentReg?.member_uids?.length
+          ? currentReg.member_uids
+          : currentReg?.user_id
+          ? [currentReg.user_id]
+          : [];
+        targetUids.forEach((uid) => api.adminRecalculateUserPoints(token, uid).catch(() => {}));
+      }
 
       // Update state locally preserving profile data
       setRegistrations((prev) =>
@@ -252,6 +272,7 @@ export default function EventAttendancePanel({
 
   // Bulk Roll Call (Mark all filtered registered as Present)
   const [bulkBusy, setBulkBusy] = useState(false);
+
   const handleBulkCheckIn = async () => {
     // Only people who hold a place. A waitlisted person did not get one, and the
     // server refuses to check them in, so sending them only inflated the count
@@ -281,15 +302,35 @@ export default function EventAttendancePanel({
     setSuccessMsg(null);
 
     try {
-      const result = await api.adminRollCall(token, eventId, allAttendeeUids, awardPoints);
+      const result = await api.adminRollCall(
+        token,
+        eventId,
+        allAttendeeUids,
+        awardPoints,
+        selectedCategory
+      );
+
+      // Refresh cached user points projection in background for checked-in attendees
+      allAttendeeUids.forEach((uid) => {
+        api.adminRecalculateUserPoints(token, uid).catch(() => {});
+      });
+
       await loadRegistrations();
       // Report what the server did, not what was asked for. A place can be
       // cancelled between loading the roster and the roll-call.
       const done = result.awarded_uids.length;
       const refused = result.failed_uids.length;
-      setSuccessMsg(`${done} ${done === 1 ? "person" : "people"} checked in.`);
+      setSuccessMsg(
+        `${done} ${done === 1 ? "person" : "people"} checked in as ${
+          CONTRIBUTION_CATEGORY_INDEX[selectedCategory]?.label || selectedCategory
+        }.`
+      );
       if (refused > 0) {
-        setError(`${refused} ${refused === 1 ? "person" : "people"} could not be checked in — they no longer hold a place. Refresh to see the current roster.`);
+        setError(
+          `${refused} ${
+            refused === 1 ? "person" : "people"
+          } could not be checked in — they no longer hold a place. Refresh to see the current roster.`
+        );
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bulk roll-call failed.");
@@ -627,6 +668,23 @@ export default function EventAttendancePanel({
                 </div>
 
                 <div className={styles.formFieldGroup}>
+                  <label className={styles.formFieldLabel}>Contribution Type</label>
+                  <select
+                    value={selectedCategory}
+                    onChange={(e) => setSelectedCategory(e.target.value as ContributionCategory)}
+                    className={styles.attendanceDropdown}
+                    style={{ width: "100%", height: "38px" }}
+                  >
+                    {ALL_CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {CONTRIBUTION_CATEGORY_INDEX[cat]?.label || cat}
+                        {cat === "participation" ? " (Default)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className={styles.formFieldGroup}>
                   <label className={styles.formFieldLabel}>Note (Optional)</label>
                   <input
                     type="text"
@@ -685,14 +743,42 @@ export default function EventAttendancePanel({
 
       {/* Bulk Roll-Call Options */}
       <div className={styles.bulkActionBarBox}>
-        <label className={styles.awardCheckboxLabel}>
-          <input
-            type="checkbox"
-            checked={awardPoints}
-            onChange={(e) => setAwardPoints(e.target.checked)}
-          />
-          <span>Award merit attendance points (+{attendancePoints} PTS) on check-in</span>
-        </label>
+        <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
+          <label className={styles.awardCheckboxLabel}>
+            <input
+              type="checkbox"
+              checked={awardPoints}
+              onChange={(e) => setAwardPoints(e.target.checked)}
+            />
+            <span>Award merit points (+{attendancePoints} PTS) on check-in</span>
+          </label>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ fontSize: "12px", color: "#8c8c98", fontWeight: 500 }}>Contribution Type:</span>
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value as ContributionCategory)}
+              className={styles.attendanceDropdown}
+              style={{
+                height: "32px",
+                fontSize: "12px",
+                padding: "2px 8px",
+                borderRadius: "6px",
+                background: "#18181b",
+                border: "1px solid #2e2e34",
+                color: "#e4e4e7",
+              }}
+              title="Select contribution type (defaults to Participation)"
+            >
+              {ALL_CATEGORIES.map((cat) => (
+                <option key={cat} value={cat}>
+                  {CONTRIBUTION_CATEGORY_INDEX[cat]?.label || cat}
+                  {cat === "participation" ? " (Default)" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
 
         <button
           type="button"

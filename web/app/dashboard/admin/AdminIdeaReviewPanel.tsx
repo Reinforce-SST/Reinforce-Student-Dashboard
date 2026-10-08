@@ -701,6 +701,7 @@ export default function AdminIdeaReviewPanel({ token }: { token: string }) {
           </div>
         </dialog>
       )}
+
     </div>
   );
 }

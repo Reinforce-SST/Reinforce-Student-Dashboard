@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { api, type EventSummaryItem, type BannerDocument } from "@/lib/api";
 import { getBannerPresentation, isBannerDestination } from "@/lib/dashboardData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
+import ConfirmModal from "@/components/dashboard/ConfirmModal";
 import styles from "./Admin.module.css";
 
 function formatBannerDate(startStr: string): string {
@@ -276,13 +277,16 @@ export default function AdminBannerEditPanel({
     }
   };
 
-  const handleDeleteBanner = async () => {
-    if (!selectedId || !confirm("Are you sure you want to delete this dashboard hero banner?")) return;
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+
+  const confirmDeleteBanner = async () => {
+    if (!selectedId) return;
     setIsSubmitting(true);
     try {
       await api.adminDeleteBanner(token, selectedId);
       onSaved("Dashboard hero banner deleted successfully!");
       setSelectedId("");
+      setShowDeleteModal(false);
       loadBanners();
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : "Failed to delete banner.");
@@ -708,7 +712,7 @@ export default function AdminBannerEditPanel({
               </button>
               <button
                 type="button"
-                onClick={handleDeleteBanner}
+                onClick={() => setShowDeleteModal(true)}
                 disabled={isSubmitting}
                 className={styles.viewActionBtn}
                 style={{ borderColor: "#ef4444", color: "#ef4444" }}
@@ -768,6 +772,19 @@ export default function AdminBannerEditPanel({
           </div>
         </div>
       </div>
+
+      {showDeleteModal && (
+        <ConfirmModal
+          isOpen={showDeleteModal}
+          title="Delete Dashboard Hero Banner"
+          message="Are you sure you want to delete this dashboard hero banner? This action cannot be undone."
+          confirmLabel="Delete Banner"
+          variant="danger"
+          isBusy={isSubmitting}
+          onConfirm={confirmDeleteBanner}
+          onCancel={() => setShowDeleteModal(false)}
+        />
+      )}
     </div>
   );
 }

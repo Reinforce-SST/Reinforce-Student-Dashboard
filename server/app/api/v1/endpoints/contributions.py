@@ -21,8 +21,10 @@ from app.api.security import get_current_user, require_admin
 from app.schemas.contributions import (
     AdminAwardSPG,
     AdminAwardUser,
+    AdminBatchUpdateRequest,
     AdminReviewRecord,
     AdminRevokeRecord,
+    AdminUpdateContribution,
     ContributionCategory,
     ContributionPage,
     ContributionRecord,
@@ -75,6 +77,9 @@ def award_user_points(
         record, _created = service.award_user(
             db, user_id=user_id, award=award, admin_id=_admin_id(admin)
         )
+        service.sync_user_points(db, record.user_id)
+        from app.api.v1.endpoints.users import invalidate_users_cache
+        invalidate_users_cache()
     except service.ContributionError as error:
         raise _handle(error) from None
     return record
@@ -97,9 +102,12 @@ def award_spg_points(
     never creates or edits one.
     """
     try:
-        return service.award_spg(
+        res = service.award_spg(
             db, spg_id=spg_id, award=award, admin_id=_admin_id(admin)
         )
+        from app.api.v1.endpoints.users import invalidate_users_cache
+        invalidate_users_cache()
+        return res
     except service.ContributionError as error:
         raise _handle(error) from None
 
@@ -118,7 +126,7 @@ def review_contribution(
     """Settle a pending contribution recorded by an action. Approving sets the
     points; rejecting keeps the record, with its reason, for audit."""
     try:
-        return service.review_contribution(
+        record = service.review_contribution(
             db,
             record_id=record_id,
             approve=review.action == "approve",
@@ -126,6 +134,10 @@ def review_contribution(
             reason=review.reason,
             admin_id=_admin_id(admin),
         )
+        service.sync_user_points(db, record.user_id)
+        from app.api.v1.endpoints.users import invalidate_users_cache
+        invalidate_users_cache()
+        return record
     except service.ContributionError as error:
         raise _handle(error) from None
 
@@ -144,12 +156,77 @@ def revoke_contribution(
     """Mark a contribution revoked, with a reason. The record is kept for audit
     and stops counting toward the leaderboard; nothing is deleted."""
     try:
-        return service.revoke_contribution(
+        rec = service.revoke_contribution(
             db,
             record_id=record_id,
             status_reason=revocation.status_reason,
             admin_id=_admin_id(admin),
         )
+        service.sync_user_points(db, rec.user_id)
+        from app.api.v1.endpoints.users import invalidate_users_cache
+        invalidate_users_cache()
+        return rec
+    except service.ContributionError as error:
+        raise _handle(error) from None
+
+
+@router.post(
+    "/batch-update",
+    response_model=List[ContributionRecord],
+    summary="Batch update multiple contributions (admin only)",
+)
+def batch_update_contributions(
+    payload: AdminBatchUpdateRequest,
+    admin: dict = Depends(require_admin),
+    db: Any = Depends(get_db),
+) -> List[ContributionRecord]:
+    """Update editable fields of multiple contribution records in one batch."""
+    admin_id = _admin_id(admin)
+    updated_records = []
+    affected_users = set()
+    for item in payload.updates:
+        try:
+            rec = service.update_contribution(
+                db,
+                record_id=item.record_id,
+                update_data=item.update_data,
+                admin_id=admin_id,
+            )
+            updated_records.append(rec)
+            affected_users.add(rec.user_id)
+        except service.ContributionError as error:
+            raise _handle(error) from None
+
+    for uid in affected_users:
+        service.sync_user_points(db, uid)
+
+    from app.api.v1.endpoints.users import invalidate_users_cache
+    invalidate_users_cache()
+    return updated_records
+
+
+@router.patch(
+    "/{record_id}",
+    response_model=ContributionRecord,
+    summary="Update an existing contribution (admin only)",
+)
+def update_contribution(
+    record_id: str,
+    update_data: AdminUpdateContribution,
+    admin: dict = Depends(require_admin),
+    db: Any = Depends(get_db),
+) -> ContributionRecord:
+    """Update editable fields of an existing contribution record."""
+    try:
+        rec = service.update_contribution(
+            db,
+            record_id=record_id,
+            update_data=update_data,
+            admin_id=_admin_id(admin),
+        )
+        from app.api.v1.endpoints.users import invalidate_users_cache
+        invalidate_users_cache()
+        return rec
     except service.ContributionError as error:
         raise _handle(error) from None
 

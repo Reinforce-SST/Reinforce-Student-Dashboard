@@ -223,8 +223,29 @@ export default function EventsManagementClient() {
         <section className={styles.eventsStack} aria-label="Upcoming Events Schedule">
           <LoadingBar loading={loading} />
           {loading ? (
-            <div style={{ textAlign: "center", padding: "60px 20px", color: "#8e8e93" }}>
-              Loading upcoming club events...
+            <div className={styles.skeletonEventsStack} aria-label="Loading upcoming club events">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className={styles.eventCard}>
+                  <div className={styles.eventLeftArea} style={{ flex: 1 }}>
+                    <div className={`${styles.skeletonDateBox} ${styles.shimmer}`} />
+                    <div className={styles.eventDetails} style={{ flex: 1 }}>
+                      <div className={`${styles.skeletonTypeTag} ${styles.shimmer}`} />
+                      <div className={`${styles.skeletonEventTitle} ${styles.shimmer}`} />
+                      <div className={styles.metaRow}>
+                        <div className={`${styles.skeletonMetaItem} ${styles.shimmer}`} />
+                        <div className={`${styles.skeletonMetaItem} ${styles.shimmer}`} />
+                      </div>
+                    </div>
+                  </div>
+                  <div className={styles.eventRightArea}>
+                    <div className={styles.statusCol}>
+                      <div className={`${styles.skeletonStatusHeader} ${styles.shimmer}`} />
+                      <div className={`${styles.skeletonStatusVal} ${styles.shimmer}`} />
+                    </div>
+                    <div className={`${styles.skeletonActionBtn} ${styles.shimmer}`} />
+                  </div>
+                </div>
+              ))}
             </div>
           ) : loadError ? (
             <div className={styles.eventCard} role="alert">{loadError}</div>

@@ -165,7 +165,7 @@ class UserAwardEndpointTests(ContributionAPITestCase):
                 self.assertEqual(response.status_code, 422)
 
     def test_an_unknown_track_or_category_is_rejected(self):
-        for field, value in (("track", "kaggel"), ("category", "participation")):
+        for field, value in (("track", "kaggel"), ("category", "invalid_category")):
             with self.subTest(field=field):
                 self.assertEqual(self.award_user(**{field: value}).status_code, 422)
 
@@ -357,7 +357,7 @@ class HistoryAccessTests(ContributionAPITestCase):
         )
 
     def test_an_unknown_filter_value_is_rejected(self):
-        for params in ({"track": "kaggel"}, {"category": "participation"}):
+        for params in ({"track": "kaggel"}, {"category": "invalid_category"}):
             with self.subTest(params=params):
                 self.assertEqual(
                     self.client.get("/api/v1/contributions", params=params).status_code, 422
@@ -508,4 +508,44 @@ class ReviewEndpointTests(ContributionAPITestCase):
         record_id = self.pending()
         self.assertEqual(self.review(record_id, action="approve", points=5).status_code, 200)
         self.assertEqual(self.review(record_id, action="reject", reason="Changed my mind").status_code, 409)
+
+
+class BatchUpdateEndpointTests(ContributionAPITestCase):
+    """POST /contributions/batch-update updates multiple contributions in one call."""
+
+    def test_batch_update_multiple_records(self):
+        rec1 = self.award_user("uid_one", points=10, title="Initial Title 1").json()["id"]
+        rec2 = self.award_user("uid_two", points=20, title="Initial Title 2").json()["id"]
+
+        payload = {
+            "updates": [
+                {
+                    "record_id": rec1,
+                    "update_data": {"points": 15, "category": "achievement"},
+                },
+                {
+                    "record_id": rec2,
+                    "update_data": {"points": 25, "category": "mentorship"},
+                },
+            ]
+        }
+        res = self.client.post("/api/v1/contributions/batch-update", json=payload)
+        self.assertEqual(res.status_code, 200, res.text)
+        data = res.json()
+        self.assertEqual(len(data), 2)
+        self.assertEqual(data[0]["id"], rec1)
+        self.assertEqual(data[0]["points"], 15)
+        self.assertEqual(data[0]["category"], "achievement")
+        self.assertEqual(data[1]["id"], rec2)
+        self.assertEqual(data[1]["points"], 25)
+        self.assertEqual(data[1]["category"], "mentorship")
+
+    def test_batch_update_requires_admin(self):
+        rec = self.award_user("uid_one", points=10).json()["id"]
+        self.sign_in_as(MEMBER)
+        res = self.client.post(
+            "/api/v1/contributions/batch-update",
+            json={"updates": [{"record_id": rec, "update_data": {"points": 50}}]},
+        )
+        self.assertEqual(res.status_code, 403)
 

@@ -1170,6 +1170,34 @@ def _hydrate_single_registration_profiles(r_dict: Dict[str, Any]) -> Dict[str, A
     return r_dict
 
 
+def _sync_user_points(db_client: Any, user_id: str) -> None:
+    """Rebuild cached users.points projection for user_id after merit awards."""
+    try:
+        user_ref = db_client.collection(USERS_COLLECTION).document(user_id)
+        if not getattr(user_ref.get(), "exists", False):
+            return
+        valid_tracks = ("research", "product", "kaggle", "misc")
+        totals = {"total": 0, "research": 0, "product": 0, "kaggle": 0, "misc": 0}
+        documents = (
+            db_client.collection(CONTRIBUTIONS_COLLECTION)
+            .where("user_id", "==", user_id)
+            .where("status", "==", "approved")
+            .stream()
+        )
+        for document in documents:
+            data = document.to_dict() or {}
+            points = data.get("points")
+            if not isinstance(points, int):
+                continue
+            track = data.get("track") if data.get("track") in valid_tracks else "misc"
+            totals["total"] += points
+            totals[track] += points
+
+        user_ref.update({"points": totals, "updated_at": now_iso()})
+    except Exception:
+        pass
+
+
 @router.patch(
     "/{id}/registrations/{reg_id}/attendance",
     response_model=RegistrationDocument,
@@ -1225,13 +1253,14 @@ def update_registration_attendance(
             target_uids = reg_data.get("member_uids") or (
                 [reg_data.get("user_id")] if reg_data.get("user_id") else []
             )
+            award_category = getattr(payload, "category", ContributionCategory.PARTICIPATION) or ContributionCategory.PARTICIPATION
             for target_uid in target_uids:
                 try:
                     contribution_service.award_user(
                         db,
                         user_id=target_uid,
                         award=AdminAwardUser(
-                            category=ContributionCategory.ACHIEVEMENT,
+                            category=award_category,
                             track=_contribution_track(event.points_reward.track),
                             title=attendance_title,
                             points=pts,
@@ -1240,6 +1269,7 @@ def update_registration_attendance(
                         ),
                         admin_id=admin_uid,
                     )
+                    _sync_user_points(db, target_uid)
                 except ContributionError:
                     pass
 
@@ -1373,12 +1403,13 @@ def add_manual_event_registration(
         if pts:
             attendance_title = f"Event attendance: {event_id}"[:200]
             occurred_at = _parse_utc(event.schedule.start_time)
+            award_category = getattr(payload, "category", ContributionCategory.PARTICIPATION) or ContributionCategory.PARTICIPATION
             try:
                 contribution_service.award_user(
                     db,
                     user_id=target_uid,
                     award=AdminAwardUser(
-                        category=ContributionCategory.ACHIEVEMENT,
+                        category=award_category,
                         track=_contribution_track(event.points_reward.track),
                         title=attendance_title,
                         points=pts,
@@ -1387,6 +1418,7 @@ def add_manual_event_registration(
                     ),
                     admin_id=admin_uid,
                 )
+                _sync_user_points(db, target_uid)
             except ContributionError:
                 pass
 
@@ -1454,6 +1486,7 @@ def submit_attendance_roll_call(
     pts = event.points_reward.attendance_points
     attendance_title = f"Event attendance: {event_id}"[:200]
     occurred_at = _parse_utc(event.schedule.start_time)
+    award_category = getattr(payload, "category", ContributionCategory.PARTICIPATION) or ContributionCategory.PARTICIPATION
 
     for attendee_uid in payload.attendee_uids:
         matched_reg = None
@@ -1481,7 +1514,7 @@ def submit_attendance_roll_call(
                 db,
                 user_id=attendee_uid,
                 award=AdminAwardUser(
-                    category=ContributionCategory.ACHIEVEMENT,
+                    category=award_category,
                     track=_contribution_track(event.points_reward.track),
                     title=attendance_title,
                     points=pts if payload.award_points else 0,
@@ -1490,6 +1523,7 @@ def submit_attendance_roll_call(
                 ),
                 admin_id=admin_uid,
             )
+            _sync_user_points(db, attendee_uid)
         except ContributionError:
             failed_uids.append(attendee_uid)
             awarded_uids.remove(attendee_uid)
@@ -1588,6 +1622,7 @@ def award_event_winners(
                 ),
                 admin_id=admin_uid,
             )
+            _sync_user_points(db, winner.user_uid)
             total_points += winner.points
         except ContributionError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc

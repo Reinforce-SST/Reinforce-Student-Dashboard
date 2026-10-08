@@ -20,6 +20,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from app.schemas.contributions import (
     AdminAwardSPG,
     AdminAwardUser,
+    AdminUpdateContribution,
     ContributionCategory,
     ContributionDetails,
     ContributionRecord,
@@ -156,6 +157,61 @@ def _build_record(
         reviewed_at=now,
         deduplication_key=record_id,
     )
+
+
+def sync_user_points(db: Any, user_id: str) -> Dict[str, int]:
+    """Rebuild cached users.points projection for user_id from approved contributions."""
+    valid_tracks = tuple(track.value for track in ContributionTrack)
+    totals = {track: 0 for track in ("total",) + valid_tracks}
+    try:
+        user_ref = db.collection(USERS_COLLECTION).document(user_id)
+        user_snap = user_ref.get()
+        if not getattr(user_snap, "exists", False):
+            matches = list(
+                db.collection(USERS_COLLECTION)
+                .where("email", "==", user_id.lower().strip())
+                .limit(1)
+                .stream()
+            )
+            if matches:
+                user_ref = db.collection(USERS_COLLECTION).document(matches[0].id)
+                user_snap = matches[0]
+            else:
+                return totals
+
+        user_data = user_snap.to_dict() or {}
+        canonical_uid = user_data.get("firebase_uid") or user_ref.id
+        canonical_ref = db.collection(USERS_COLLECTION).document(canonical_uid)
+
+        email = user_data.get("email") or ""
+        ids_to_query = {user_id, canonical_uid}
+        if email:
+            ids_to_query.add(email.lower().strip())
+
+        seen_records = set()
+        for q_id in ids_to_query:
+            documents = (
+                db.collection(CONTRIBUTIONS_COLLECTION)
+                .where("user_id", "==", q_id)
+                .where("status", "==", ContributionStatus.APPROVED.value)
+                .stream()
+            )
+            for document in documents:
+                if document.id in seen_records:
+                    continue
+                seen_records.add(document.id)
+                data = document.to_dict() or {}
+                points = data.get("points")
+                if not isinstance(points, int):
+                    continue
+                track = data.get("track") if data.get("track") in valid_tracks else ContributionTrack.MISC.value
+                totals["total"] += points
+                totals[track] += points
+
+        canonical_ref.set({"points": totals, "updated_at": utcnow().isoformat()}, merge=True)
+    except Exception as exc:
+        logger.warning("Failed to sync points for user %s: %s", user_id, exc)
+    return totals
 
 
 def award_user(
@@ -476,6 +532,55 @@ def revoke_contribution(
         return revoked
 
     return runner(db, work)
+
+
+def update_contribution(
+    db: Any,
+    *,
+    record_id: str,
+    update_data: AdminUpdateContribution,
+    admin_id: str,
+    runner: Optional[Callable[[Any, Callable[[Any], Any]], Any]] = None,
+    now: Optional[datetime] = None,
+) -> ContributionRecord:
+    """Update editable fields of an existing contribution record and sync recipient's points."""
+    runner = runner or run_in_transaction
+    moment = now or utcnow()
+    collection = db.collection(CONTRIBUTIONS_COLLECTION)
+
+    def work(transaction: Any) -> ContributionRecord:
+        reference = collection.document(record_id)
+        snapshot = reference.get(transaction=transaction)
+        if not getattr(snapshot, "exists", False):
+            raise ContributionError(404, "Contribution not found.")
+
+        current = _load(snapshot)
+        data = current.model_dump()
+
+        if update_data.points is not None:
+            data["points"] = update_data.points
+        if update_data.title is not None:
+            data["title"] = update_data.title
+        if update_data.description is not None:
+            data["description"] = update_data.description
+        if update_data.category is not None:
+            data["category"] = update_data.category
+        if update_data.track is not None:
+            data["track"] = update_data.track
+        if update_data.occurred_at is not None:
+            data["occurred_at"] = update_data.occurred_at
+
+        if current.status is ContributionStatus.APPROVED:
+            data["reviewed_by"] = admin_id
+            data["reviewed_at"] = moment
+
+        updated_record = ContributionRecord.model_validate(data)
+        transaction.set(reference, updated_record.model_dump())
+        return updated_record
+
+    record = runner(db, work)
+    sync_user_points(db, record.user_id)
+    return record
 
 
 def get_contribution(db: Any, record_id: str) -> Optional[ContributionRecord]:
