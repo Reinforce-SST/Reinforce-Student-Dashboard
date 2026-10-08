@@ -26,3 +26,10 @@ export async function loadAllUpcomingEvents(token: string): Promise<EventSummary
   }
   return events;
 }
+
+// No timeline filter here: a live session's start_time is in the past,
+// so the "upcoming" filter above would hide it.
+export async function loadLiveEvents(token: string): Promise<EventSummaryItem[]> {
+  const result = await api.listEvents(token, { status: "ongoing", limit: 50 });
+  return result.events;
+}

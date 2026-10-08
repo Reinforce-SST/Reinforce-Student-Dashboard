@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMember } from "@/lib/useMember";
-import { loadAllUpcomingEvents } from "@/lib/memberData";
+import { loadAllUpcomingEvents, loadLiveEvents } from "@/lib/memberData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import PaginationBar from "@/components/dashboard/PaginationBar";
 import LoadingBar from "@/components/dashboard/LoadingBar";
@@ -28,6 +28,15 @@ export type CalendarEventItem = {
   bannerUrl?: string | null;
 };
 
+export type LiveEventItem = {
+  id: string;
+  slug: string;
+  title: string;
+  type: string;
+  typeLabel: string;
+  location: string;
+};
+
 export default function EventsManagementClient() {
   const router = useRouter();
   const { token } = useMember();
@@ -36,6 +45,7 @@ export default function EventsManagementClient() {
   const [events, setEvents] = useState<CalendarEventItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [liveEvents, setLiveEvents] = useState<LiveEventItem[]>([]);
 
   // Current calendar month view (default to current date)
   const [currentCalendarDate, setCurrentCalendarDate] = useState(() => new Date());
@@ -113,6 +123,35 @@ export default function EventsManagementClient() {
     }
 
     fetchEvents();
+    return () => {
+      active = false;
+    };
+  }, [token]);
+
+  useEffect(() => {
+    let active = true;
+    // Kept separate from the upcoming-events fetch above: a failure here
+    // (or an empty result) should never block or blank out the main list.
+    loadLiveEvents(token)
+      .then((live) => {
+        if (!active) return;
+        setLiveEvents(
+          live.map((ev) => ({
+            id: ev.id,
+            slug: ev.slug || ev.id,
+            title: ev.title,
+            type: ev.event_type.toLowerCase(),
+            typeLabel: ev.event_type.toUpperCase(),
+            location:
+              ev.venue_info?.room ||
+              ev.venue_info?.venue_name ||
+              (ev.format === "online" ? "Online" : "Venue to be announced"),
+          }))
+        );
+      })
+      .catch(() => {
+        if (active) setLiveEvents([]);
+      });
     return () => {
       active = false;
     };
@@ -216,6 +255,29 @@ export default function EventsManagementClient() {
           ))}
         </div>
       </div>
+
+      {/* Live Now: sessions an admin has marked "ongoing" */}
+      {liveEvents.length > 0 && (
+        <section className={styles.liveSection} aria-label="Events happening right now">
+          <h2 className={styles.liveSectionTitle}>
+            <span className={styles.liveDot} aria-hidden="true" />
+            LIVE NOW
+          </h2>
+          <div className={styles.liveCardsRow}>
+            {liveEvents.map((ev) => (
+              <Link key={ev.id} href={`/dashboard/events/${ev.slug}`} className={styles.liveCard}>
+                <span className={`${styles.typeTag} ${getTypeClass(ev.type)}`}>{ev.typeLabel}</span>
+                <h3 className={styles.liveCardTitle}>{ev.title}</h3>
+                <span className={styles.metaItem}>
+                  <MemberIcon name="location" size={13} />
+                  {ev.location}
+                </span>
+                <span className={styles.liveCardAction}>View session &rarr;</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Main 2-Column Content */}
       <div className={styles.mainLayout}>

@@ -52,3 +52,21 @@ test("the planner survives an events outage", async ({ page, app }) => {
   await expect(page.getByRole("heading", { name: "EVENTS CALENDAR" })).toBeVisible();
   expect(app.problems, app.problems.join("\n")).toEqual([]);
 });
+
+test("an ongoing event appears in a Live Now section", async ({ page, app }) => {
+  app.world.events = [...app.world.events, { ...data.ongoingEvent }];
+  await app.enter("/dashboard/events");
+  await expect(page.getByRole("heading", { name: "LIVE NOW" })).toBeVisible();
+  const liveLink = page.getByRole("link", { name: new RegExp(data.ongoingEvent.title) });
+  await expect(liveLink).toBeVisible();
+  await liveLink.click();
+  await expect(page.getByRole("heading", { name: data.ongoingEvent.title })).toBeVisible();
+  expect(app.problems, app.problems.join("\n")).toEqual([]);
+});
+
+test("no Live Now section when nothing is ongoing", async ({ page, app }) => {
+  await app.enter("/dashboard/events");
+  await expect(page.getByRole("heading", { name: "EVENTS CALENDAR" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "LIVE NOW" })).not.toBeVisible();
+  expect(app.problems, app.problems.join("\n")).toEqual([]);
+});
