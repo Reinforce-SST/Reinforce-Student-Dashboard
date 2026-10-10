@@ -219,6 +219,14 @@ function AdminSpgReview({ item, token, onUpdated }: { item: TicketSummary; token
       setDetail(result);
       const submittedTrack = result.fields?.track;
       if (typeof submittedTrack === "string" && ["kaggle", "product", "research", "general"].includes(submittedTrack)) setTrack(submittedTrack);
+      const submittedType = result.fields?.spg_type;
+      if (typeof submittedType === "string" && ["learning", "project", "event", "external_event", "miscellaneous"].includes(submittedType)) {
+        setType(submittedType);
+      } else if (result.fields?.["Group Type"] === "Project SPG") {
+        setType("project");
+      } else if (result.fields?.["Group Type"] === "Learning SPG") {
+        setType("learning");
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Registration details could not be loaded.");
     } finally {
@@ -228,7 +236,7 @@ function AdminSpgReview({ item, token, onUpdated }: { item: TicketSummary; token
 
   async function approve(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!type || !track || (type === "project" && !proposition)) return;
+    if (!type || !track) return;
     setBusy(true);
     setError("");
     try {
@@ -258,6 +266,8 @@ function AdminSpgReview({ item, token, onUpdated }: { item: TicketSummary; token
   const fields = detail?.fields ?? {};
   const submittedTrack = fieldText(fields.track);
   const trackLabel = fieldText(fields.Track) || (submittedTrack ? `${submittedTrack[0].toUpperCase()}${submittedTrack.slice(1)} track` : "Not specified");
+  const submittedType = fieldText(fields.spg_type || fields["Group Type"]);
+  const typeLabel = submittedType === "project" || submittedType === "Project SPG" ? "Project SPG" : submittedType === "learning" || submittedType === "Learning SPG" ? "Learning SPG" : submittedType || "Not specified";
   const leader = memberNames(fields["Team Leader"]) || fieldText(fields.leader_uid) || "Not specified";
   const namedMembers = memberNames(fields["Team Members"]);
   const memberCount = Array.isArray(fields.member_uids) ? fields.member_uids.length : 0;
@@ -265,6 +275,10 @@ function AdminSpgReview({ item, token, onUpdated }: { item: TicketSummary; token
   const duration = fieldText(fields.duration_days || fields["Duration (Days)"]);
   const frequency = fieldText(fields.frequency_days || fields["Report Frequency (Days)"]);
   const goals = fieldText(fields["Summary & Goals"]);
+  const vision = fieldText(fields.Vision || fields.vision);
+  const firstSteps = fieldText(fields["First Steps"] || fields.first_steps);
+  const initialMilestones = fieldText(fields["Initial Milestones"] || fields.initial_milestones);
+  const proposalDocUrl = fieldText(fields["Proposal Document URL"] || fields.proposal_document_url);
   const note = fieldText(detail?.description);
   const hasSubmittedTrack = ["kaggle", "product", "research", "general"].includes(submittedTrack);
 
@@ -286,12 +300,22 @@ function AdminSpgReview({ item, token, onUpdated }: { item: TicketSummary; token
         <div className={styles.reviewSectionHeading}><h4>Request details</h4><Link href={`/dashboard/tickets/${encodeURIComponent(item.id)}`}>View full ticket ↗</Link></div>
         {note && !/^Project group:/i.test(note) && <p className={styles.requestNote}>{note}</p>}
         <div className={styles.requestFacts}>
+          <div><span>Requested type</span><strong>{typeLabel}</strong></div>
           <div><span>Submitted track</span><strong>{trackLabel}</strong></div>
           <div><span>Team leader</span><strong>{leader}</strong></div>
           <div className={styles.wideFact}><span>Other members</span><strong>{members}</strong></div>
           {(duration || frequency) && <div className={styles.wideFact}><span>Plan</span><strong>{[duration && `${duration} days`, frequency && `report every ${frequency} days`].filter(Boolean).join(" · ")}</strong></div>}
         </div>
         {goals && <div className={styles.goals}><span>Summary &amp; goals</span><p>{goals}</p></div>}
+        {vision && <div className={styles.goals}><span>Vision &amp; deliverables</span><p>{vision}</p></div>}
+        {firstSteps && <div className={styles.goals}><span>First steps (weeks 1–2)</span><p>{firstSteps}</p></div>}
+        {initialMilestones && <div className={styles.goals}><span>Initial milestones</span><p style={{ whiteSpace: "pre-wrap" }}>{initialMilestones}</p></div>}
+        {proposalDocUrl && (
+          <div className={styles.goals}>
+            <span>Proposal document link</span>
+            <p><a href={proposalDocUrl} target="_blank" rel="noreferrer" style={{ color: "var(--brand, #E5B731)", textDecoration: "underline" }}>{proposalDocUrl} ↗</a></p>
+          </div>
+        )}
         {item.spg_id && <Link href={`/dashboard/spg/${encodeURIComponent(item.spg_id)}`} className={styles.createdGroupLink}>Open created SPG →</Link>}
         {!item.spg_id && item.status !== "closed" && item.status !== "resolved" && <section className={styles.decisionSection} aria-label="Registration decision">
           <h4>{showReject ? "Return this request" : "Create the group"}</h4>
@@ -301,8 +325,8 @@ function AdminSpgReview({ item, token, onUpdated }: { item: TicketSummary; token
               <label>Group type<select required value={type} onChange={(event) => { setType(event.target.value); setProposition(null); }}><option value="">Choose group type</option><option value="learning">Learning</option><option value="project">Project</option><option value="event">Club event</option><option value="external_event">External event or competition</option><option value="miscellaneous">Other group</option></select></label>
               {!hasSubmittedTrack && <label>Track<select required value={track} onChange={(event) => setTrack(event.target.value)}><option value="">Choose track</option><option value="kaggle">Kaggle</option><option value="product">Product</option><option value="research">Research</option><option value="general">General</option></select></label>}
               <label>Visibility<select value={type === "event" ? "public" : visibility} disabled={type === "event"} onChange={(event) => setVisibility(event.target.value)}><option value="private">Private</option><option value="public">Public</option></select></label>
-              {type === "project" && <label className={styles.fileField}>Proposition PDF <span>Required for project groups · max 10 MB</span><input type="file" accept="application/pdf,.pdf" required onChange={(event) => setProposition(event.target.files?.[0] || null)} /></label>}
-              <button className={styles.approveButton} type="submit" disabled={busy || !type || !track || (type === "project" && !proposition)}>{busy ? "Creating group…" : "Approve and create SPG"}</button>
+              {type === "project" && <label className={styles.fileField}>Proposition PDF <span>Optional if proposal details/URL provided · max 10 MB</span><input type="file" accept="application/pdf,.pdf" onChange={(event) => setProposition(event.target.files?.[0] || null)} /></label>}
+              <button className={styles.approveButton} type="submit" disabled={busy || !type || !track}>{busy ? "Creating group…" : "Approve and create SPG"}</button>
             </form>
             <button type="button" className={styles.rejectToggle} onClick={() => { setProposition(null); setShowReject(true); }}>Reject request instead</button>
           </> : <div className={styles.rejectForm}>

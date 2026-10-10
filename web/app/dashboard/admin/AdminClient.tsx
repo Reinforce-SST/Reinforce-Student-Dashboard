@@ -4,7 +4,6 @@ import React, { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useMember } from "@/lib/useMember";
-import { useAdminMode } from "@/lib/useAdminMode";
 import { api, type StudentProfile, type EventSummaryItem } from "@/lib/api";
 import { getEventGraduationBatches } from "@/lib/eventsData";
 import { getBannerPresentation, isBannerDestination } from "@/lib/dashboardData";
@@ -25,7 +24,6 @@ import styles from "./Admin.module.css";
 type AdminTab =
   | "banners"
   | "events"
-  | "spg"
   | "tickets"
   | "contributions"
   | "members"
@@ -53,13 +51,13 @@ function formatDateTimeInput(isoStr?: string | null): string {
   }
 }
 
-export default function AdminClient() {
+export default function AdminClient({ initialTab }: { initialTab?: AdminTab } = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { profile, token } = useMember();
-  const { setAdminMode } = useAdminMode();
 
-  const tabParam = (searchParams.get("tab") as AdminTab) || "banners";
+  const rawTab = initialTab || searchParams.get("tab");
+  const tabParam = (rawTab === "spg" ? "banners" : (rawTab as AdminTab)) || "banners";
   const [activeTab, setActiveTab] = useState<AdminTab>(tabParam);
   const [bannerSubTab, setBannerSubTab] = useState<"create" | "edit">("create");
   const [eventSubTab, setEventSubTab] = useState<"create" | "edit">("create");
@@ -72,25 +70,23 @@ export default function AdminClient() {
   });
 
   useEffect(() => {
-    if (searchParams.get("tab")) {
-      setActiveTab(searchParams.get("tab") as AdminTab);
+    if (initialTab) {
+      setActiveTab(initialTab);
+      return;
+    }
+    const tab = searchParams.get("tab");
+    if (tab === "spg") {
+      router.replace("/dashboard/admin/manage-spgs");
+      return;
+    }
+    if (tab) {
+      setActiveTab(tab as AdminTab);
     }
     const sub = searchParams.get("subtab");
     if (sub === "editor" || sub === "award" || sub === "review") {
       setContributionSubTab(sub);
     }
-  }, [searchParams]);
-
-  const handleTabChange = (tab: AdminTab) => {
-    setActiveTab(tab);
-    setSubmitSuccess(null);
-    setSubmitError(null);
-    setDirectoryMessage("");
-    setBannerSubTab("create");
-    setEventSubTab("create");
-    setContributionSubTab("review");
-    router.push(`/dashboard/admin?tab=${tab}`);
-  };
+  }, [searchParams, router, initialTab]);
 
   // --- TAB 1: Dashboard Hero Banner State ---
   const [bannerStartDateTime, setBannerStartDateTime] = useState("");
@@ -653,37 +649,6 @@ export default function AdminClient() {
 
   return (
     <div className={styles.adminContainer}>
-      {/* Top Banner Header */}
-      <div className={styles.adminHeader}>
-        <div>
-          <div className={styles.adminTitleRow}>
-            <span className={styles.adminBadge}>Admin Mode</span>
-            <span className={styles.liveIndicator}>
-              <span className={styles.liveDot} />
-              Club administration
-            </span>
-          </div>
-          <h1 className={styles.adminTitle}>Club Command Center</h1>
-          <p className={styles.adminSubtitle}>
-            Configure dashboard banners, create club events, review SPG proposals, audit student merits, and manage club operations.
-          </p>
-        </div>
-
-        <div className={styles.headerActions}>
-          <button
-            onClick={() => {
-              setAdminMode(false);
-              router.push("/dashboard");
-            }}
-            className={styles.switchStudentBtn}
-            title="Switch back to student view"
-          >
-            <MemberIcon name="user" size={16} />
-            Switch to Student View
-          </button>
-        </div>
-      </div>
-
       {submitSuccess && (
         <div className={styles.alertSuccess}>
           <MemberIcon name="check-circle" size={18} />
@@ -697,82 +662,6 @@ export default function AdminClient() {
           {submitError}
         </div>
       )}
-
-      {/* Admin Tabs Navigation */}
-      <nav className={styles.tabsNav} aria-label="Admin Navigation Tabs">
-        <button
-          type="button"
-          className={`${styles.tabButton} ${activeTab === "banners" ? styles.tabButtonActive : ""}`}
-          onClick={() => handleTabChange("banners")}
-        >
-          <MemberIcon name="image" size={15} />
-          Banners
-        </button>
-        <button
-          type="button"
-          className={`${styles.tabButton} ${activeTab === "events" ? styles.tabButtonActive : ""}`}
-          onClick={() => handleTabChange("events")}
-        >
-          <MemberIcon name="calendar" size={15} />
-          Events
-        </button>
-        <button
-          type="button"
-          className={`${styles.tabButton} ${activeTab === "spg" ? styles.tabButtonActive : ""}`}
-          onClick={() => handleTabChange("spg")}
-        >
-          <MemberIcon name="spg" size={15} />
-          SPG Requests
-        </button>
-        <button
-          type="button"
-          className={`${styles.tabButton} ${activeTab === "tickets" ? styles.tabButtonActive : ""}`}
-          onClick={() => handleTabChange("tickets")}
-        >
-          <MemberIcon name="tickets" size={15} />
-          Tickets
-        </button>
-        <button
-          type="button"
-          className={`${styles.tabButton} ${activeTab === "contributions" ? styles.tabButtonActive : ""}`}
-          onClick={() => handleTabChange("contributions")}
-        >
-          <MemberIcon name="award" size={15} />
-          Merit Auditing
-        </button>
-        <button
-          type="button"
-          className={`${styles.tabButton} ${activeTab === "members" ? styles.tabButtonActive : ""}`}
-          onClick={() => handleTabChange("members")}
-        >
-          <MemberIcon name="users" size={15} />
-          Members
-        </button>
-        <button
-          type="button"
-          className={`${styles.tabButton} ${activeTab === "ideas" ? styles.tabButtonActive : ""}`}
-          onClick={() => handleTabChange("ideas")}
-        >
-          <MemberIcon name="ideas" size={15} />
-          Idea Jar Review
-        </button>
-        <button
-          type="button"
-          className={`${styles.tabButton} ${activeTab === "articles" ? styles.tabButtonActive : ""}`}
-          onClick={() => handleTabChange("articles")}
-        >
-          <MemberIcon name="articles" size={15} />
-          Articles
-        </button>
-        <button
-          type="button"
-          className={`${styles.tabButton} ${activeTab === "resources" ? styles.tabButtonActive : ""}`}
-          onClick={() => handleTabChange("resources")}
-        >
-          <MemberIcon name="book" size={15} />
-          Learning Resources
-        </button>
-      </nav>
 
       {/* ========================================================================= */}
       {/* TAB 1: DASHBOARD HERO BANNERS */}
@@ -1539,8 +1428,6 @@ export default function AdminClient() {
       )}
     </div>
   )}
-
-      {activeTab === "spg" && <AdminTicketsPanel token={token} spgOnly />}
 
       {activeTab === "tickets" && <AdminTicketsPanel token={token} adminId={profile.id} />}
 

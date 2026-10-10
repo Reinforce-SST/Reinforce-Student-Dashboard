@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import { api, ApiError, type IdeaDetail, type IdeaSummary } from "@/lib/api";
 import { useMember } from "@/lib/useMember";
@@ -17,6 +17,7 @@ const TRACK_OPTIONS = [
   { id: "kaggle", label: "Kaggle" },
   { id: "misc", label: "General" },
 ] as const;
+
 
 function formatIdeaDate(dateStr?: string | null): string {
   if (!dateStr) return "";
@@ -220,6 +221,36 @@ export default function IdeaJarClient() {
       setDrawState(cause instanceof ApiError && cause.status === 404 ? "empty" : "error");
     }
   }
+
+  // Partition live ideas into:
+  // - Featured (Golden Jar)
+  // - Green (Beginner), Blue (Intermediate), Purple (Advanced).
+  const { featuredIdeas, beginnerIdeas, intermediateIdeas, advancedIdeas } = useMemo(() => {
+    // Filter by search query if user typed something
+    const searchFilter = (item: IdeaSummary) => {
+      if (!debouncedSearch) return true;
+      const q = debouncedSearch.toLowerCase();
+      return (
+        item.title.toLowerCase().includes(q) ||
+        (item.description && item.description.toLowerCase().includes(q))
+      );
+    };
+
+    // Filter by track if user selected a track
+    const trackFilter = (item: IdeaSummary) => {
+      if (selectedTrack === "all") return true;
+      return item.track?.toLowerCase() === selectedTrack.toLowerCase();
+    };
+
+    const filtered = ideas.filter((i) => searchFilter(i) && trackFilter(i));
+
+    return {
+      featuredIdeas: filtered.filter((i) => Boolean(i.is_featured)),
+      beginnerIdeas: filtered.filter((i) => i.difficulty?.toLowerCase() === "beginner" && !i.is_featured),
+      intermediateIdeas: filtered.filter((i) => i.difficulty?.toLowerCase() === "intermediate" && !i.is_featured),
+      advancedIdeas: filtered.filter((i) => i.difficulty?.toLowerCase() === "advanced" && !i.is_featured),
+    };
+  }, [ideas, debouncedSearch, selectedTrack]);
 
   return (
     <div className={styles.pageContainer}>
@@ -426,8 +457,8 @@ export default function IdeaJarClient() {
         </div>
       )}
 
-      {/* Empty State */}
-      {!loading && !error && ideas.length === 0 && (
+      {/* Empty State when no ideas match anywhere */}
+      {!loading && !error && featuredIdeas.length === 0 && beginnerIdeas.length === 0 && intermediateIdeas.length === 0 && advancedIdeas.length === 0 && (
         <div className={styles.emptyState}>
           <div className={styles.emptyIcon}>
             <MemberIcon name="ideas" size={24} />
@@ -447,64 +478,305 @@ export default function IdeaJarClient() {
         </div>
       )}
 
-      {/* Main Ideas Grid */}
-      {ideas.length > 0 && (
-        <div className={styles.ideasGrid} aria-label="Ideas List">
-          {ideas.map((idea) => {
-            const isVoted = votedIds.has(idea.id);
-            const formattedDate = formatIdeaDate(idea.created_at);
-            const trackBadgeClass = getTrackBadgeClass(idea.track);
-
-            return (
-              <article key={idea.id} className={styles.ideaCard}>
-                <div className={styles.cardTopMeta}>
-                  <div className={styles.badgeGroup}>
-                    <span className={`${styles.trackTag} ${trackBadgeClass}`}>
-                      {idea.track} Track
-                    </span>
-                    {idea.difficulty && (
-                      <span className={styles.difficultyTag}>
-                        {idea.difficulty}
-                      </span>
-                    )}
-                  </div>
-                  {formattedDate && <span className={styles.dateTag}>{formattedDate}</span>}
+      {/* 0. Golden Jar: Featured Proposals (Visible only when featured ideas exist) */}
+      {featuredIdeas.length > 0 && (
+        <section className={styles.featuredJarRow} aria-label="Featured Proposals Golden Jar">
+          <div className={styles.jarGold}>
+            <div className={styles.jarLid}>
+              <div className={styles.jarHeaderLeft}>
+                <div className={styles.jarIconWrap}>
+                  <MemberIcon name="sparkles" size={16} />
                 </div>
-
-                <Link
-                  href={`/dashboard/ideas/${encodeURIComponent(idea.id)}`}
-                  className={styles.ideaTitleLink}
-                >
-                  <h2 className={styles.ideaTitle}>{idea.title}</h2>
-                </Link>
-
-                <p className={styles.ideaDescription}>{idea.description}</p>
-
-                <div className={styles.cardFooter}>
-                  <button
-                    type="button"
-                    onClick={() => void handleVote(idea.id)}
-                    className={`${styles.voteBtn} ${isVoted ? styles.voteBtnActive : ""}`}
-                    aria-label={`Upvote ${idea.title}. Current score: ${idea.stats?.upvote_count ?? 0}`}
-                    disabled={votingId === idea.id}
-                  >
-                    <span className={styles.voteIcon}>▲</span>
-                    <span>{idea.stats?.upvote_count ?? 0}</span>
-                  </button>
-
-                  <Link
-                    href={`/dashboard/ideas/${encodeURIComponent(idea.id)}`}
-                    className={styles.exploreLink}
-                  >
-                    <span>Read Proposal</span>
-                    <MemberIcon name="chevron-right" size={14} />
-                  </Link>
+                <div>
+                  <h2 className={styles.jarTitle}>Golden Jar — Spotlight Initiatives</h2>
+                  <div className={styles.jarSublabel}>Priority Challenges & Lead Endorsements</div>
                 </div>
-              </article>
-            );
-          })}
-        </div>
+              </div>
+              <span className={styles.jarCountBadge}>{featuredIdeas.length} Featured</span>
+            </div>
+
+            <div className={styles.jarGoldCardsHorizontal}>
+              {featuredIdeas.map((idea) => {
+                const isVoted = votedIds.has(idea.id);
+                const formattedDate = formatIdeaDate(idea.created_at);
+                const trackBadgeClass = getTrackBadgeClass(idea.track);
+
+                return (
+                  <article key={idea.id} className={styles.jarGoldCard}>
+                    <div className={styles.cardTopMeta}>
+                      <div className={styles.badgeGroup}>
+                        <span className={`${styles.trackTag} ${trackBadgeClass}`}>
+                          {idea.track} Track
+                        </span>
+                        <span className={styles.difficultyTag} style={{ borderColor: "#eab308", color: "#facc15" }}>
+                          ★ Featured
+                        </span>
+                      </div>
+                      {formattedDate && <span className={styles.dateTag}>{formattedDate}</span>}
+                    </div>
+
+                    <Link
+                      href={`/dashboard/ideas/${encodeURIComponent(idea.id)}`}
+                      className={styles.ideaTitleLink}
+                    >
+                      <h3 className={styles.ideaTitle}>{idea.title}</h3>
+                    </Link>
+
+                    <p className={styles.ideaDescription}>{idea.description}</p>
+
+                    <div className={styles.cardFooter}>
+                      <button
+                        type="button"
+                        onClick={() => void handleVote(idea.id)}
+                        className={`${styles.voteBtn} ${isVoted ? styles.voteBtnActive : ""}`}
+                        aria-label={`Upvote ${idea.title}. Current score: ${idea.stats?.upvote_count ?? 0}`}
+                        disabled={votingId === idea.id}
+                      >
+                        <span className={styles.voteIcon}>▲</span>
+                        <span>{idea.stats?.upvote_count ?? 0}</span>
+                      </button>
+
+                      <Link
+                        href={`/dashboard/ideas/${encodeURIComponent(idea.id)}`}
+                        className={styles.viewIdeaBtn}
+                        aria-label={`View idea ${idea.title}`}
+                      >
+                        <span>View</span>
+                        <MemberIcon name="chevron-right" size={13} />
+                      </Link>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        </section>
       )}
+
+      {/* 3 Themed Jars: Green (Beginner), Blue (Intermediate), Purple (Advanced) */}
+      <section className={styles.jarsColumnsLayout} aria-label="Difficulty Jars Columns">
+        {/* 1. Green Jar: Beginners */}
+        <div className={`${styles.jarColumn} ${styles.jarGreen}`}>
+          <div className={styles.jarLid}>
+            <div className={styles.jarHeaderLeft}>
+              <div className={styles.jarIconWrap}>
+                <MemberIcon name="ideas" size={16} />
+              </div>
+              <div>
+                <h2 className={styles.jarTitle}>Beginner Jar</h2>
+                <div className={styles.jarSublabel}>Fundamental & Guided</div>
+              </div>
+            </div>
+            <span className={styles.jarCountBadge}>{beginnerIdeas.length}</span>
+          </div>
+
+          <div className={styles.jarListWrapper}>
+            {beginnerIdeas.length === 0 ? (
+              <div className={styles.jarEmptyState}>
+                <span>No beginner proposals match current filters</span>
+              </div>
+            ) : (
+              beginnerIdeas.map((idea) => {
+                const isVoted = votedIds.has(idea.id);
+                const formattedDate = formatIdeaDate(idea.created_at);
+                const trackBadgeClass = getTrackBadgeClass(idea.track);
+
+                return (
+                  <article key={idea.id} className={styles.jarIdeaCard}>
+                    <div className={styles.cardTopMeta}>
+                      <div className={styles.badgeGroup}>
+                        <span className={`${styles.trackTag} ${trackBadgeClass}`}>
+                          {idea.track} Track
+                        </span>
+                      </div>
+                      {formattedDate && <span className={styles.dateTag}>{formattedDate}</span>}
+                    </div>
+
+                    <Link
+                      href={`/dashboard/ideas/${encodeURIComponent(idea.id)}`}
+                      className={styles.ideaTitleLink}
+                    >
+                      <h3 className={styles.ideaTitle}>{idea.title}</h3>
+                    </Link>
+
+                    <p className={styles.ideaDescription}>{idea.description}</p>
+
+                    <div className={styles.cardFooter}>
+                      <button
+                        type="button"
+                        onClick={() => void handleVote(idea.id)}
+                        className={`${styles.voteBtn} ${isVoted ? styles.voteBtnActive : ""}`}
+                        aria-label={`Upvote ${idea.title}. Current score: ${idea.stats?.upvote_count ?? 0}`}
+                        disabled={votingId === idea.id}
+                      >
+                        <span className={styles.voteIcon}>▲</span>
+                        <span>{idea.stats?.upvote_count ?? 0}</span>
+                      </button>
+
+                      <Link
+                        href={`/dashboard/ideas/${encodeURIComponent(idea.id)}`}
+                        className={styles.viewIdeaBtn}
+                        aria-label={`View idea ${idea.title}`}
+                      >
+                        <span>View</span>
+                        <MemberIcon name="chevron-right" size={13} />
+                      </Link>
+                    </div>
+                  </article>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* 2. Blue Jar: Intermediate */}
+        <div className={`${styles.jarColumn} ${styles.jarBlue}`}>
+          <div className={styles.jarLid}>
+            <div className={styles.jarHeaderLeft}>
+              <div className={styles.jarIconWrap}>
+                <MemberIcon name="sparkles" size={16} />
+              </div>
+              <div>
+                <h2 className={styles.jarTitle}>Intermediate Jar</h2>
+                <div className={styles.jarSublabel}>Practical & Applied</div>
+              </div>
+            </div>
+            <span className={styles.jarCountBadge}>{intermediateIdeas.length}</span>
+          </div>
+
+          <div className={styles.jarListWrapper}>
+            {intermediateIdeas.length === 0 ? (
+              <div className={styles.jarEmptyState}>
+                <span>No intermediate proposals match current filters</span>
+              </div>
+            ) : (
+              intermediateIdeas.map((idea) => {
+                const isVoted = votedIds.has(idea.id);
+                const formattedDate = formatIdeaDate(idea.created_at);
+                const trackBadgeClass = getTrackBadgeClass(idea.track);
+
+                return (
+                  <article key={idea.id} className={styles.jarIdeaCard}>
+                    <div className={styles.cardTopMeta}>
+                      <div className={styles.badgeGroup}>
+                        <span className={`${styles.trackTag} ${trackBadgeClass}`}>
+                          {idea.track} Track
+                        </span>
+                      </div>
+                      {formattedDate && <span className={styles.dateTag}>{formattedDate}</span>}
+                    </div>
+
+                    <Link
+                      href={`/dashboard/ideas/${encodeURIComponent(idea.id)}`}
+                      className={styles.ideaTitleLink}
+                    >
+                      <h3 className={styles.ideaTitle}>{idea.title}</h3>
+                    </Link>
+
+                    <p className={styles.ideaDescription}>{idea.description}</p>
+
+                    <div className={styles.cardFooter}>
+                      <button
+                        type="button"
+                        onClick={() => void handleVote(idea.id)}
+                        className={`${styles.voteBtn} ${isVoted ? styles.voteBtnActive : ""}`}
+                        aria-label={`Upvote ${idea.title}. Current score: ${idea.stats?.upvote_count ?? 0}`}
+                        disabled={votingId === idea.id}
+                      >
+                        <span className={styles.voteIcon}>▲</span>
+                        <span>{idea.stats?.upvote_count ?? 0}</span>
+                      </button>
+
+                      <Link
+                        href={`/dashboard/ideas/${encodeURIComponent(idea.id)}`}
+                        className={styles.viewIdeaBtn}
+                        aria-label={`View idea ${idea.title}`}
+                      >
+                        <span>View</span>
+                        <MemberIcon name="chevron-right" size={13} />
+                      </Link>
+                    </div>
+                  </article>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* 3. Purple Jar: Advanced */}
+        <div className={`${styles.jarColumn} ${styles.jarPurple}`}>
+          <div className={styles.jarLid}>
+            <div className={styles.jarHeaderLeft}>
+              <div className={styles.jarIconWrap}>
+                <MemberIcon name="flame" size={16} />
+              </div>
+              <div>
+                <h2 className={styles.jarTitle}>Advanced Jar</h2>
+                <div className={styles.jarSublabel}>Cutting-Edge & Research</div>
+              </div>
+            </div>
+            <span className={styles.jarCountBadge}>{advancedIdeas.length}</span>
+          </div>
+
+          <div className={styles.jarListWrapper}>
+            {advancedIdeas.length === 0 ? (
+              <div className={styles.jarEmptyState}>
+                <span>No advanced proposals match current filters</span>
+              </div>
+            ) : (
+              advancedIdeas.map((idea) => {
+                const isVoted = votedIds.has(idea.id);
+                const formattedDate = formatIdeaDate(idea.created_at);
+                const trackBadgeClass = getTrackBadgeClass(idea.track);
+
+                return (
+                  <article key={idea.id} className={styles.jarIdeaCard}>
+                    <div className={styles.cardTopMeta}>
+                      <div className={styles.badgeGroup}>
+                        <span className={`${styles.trackTag} ${trackBadgeClass}`}>
+                          {idea.track} Track
+                        </span>
+                      </div>
+                      {formattedDate && <span className={styles.dateTag}>{formattedDate}</span>}
+                    </div>
+
+                    <Link
+                      href={`/dashboard/ideas/${encodeURIComponent(idea.id)}`}
+                      className={styles.ideaTitleLink}
+                    >
+                      <h3 className={styles.ideaTitle}>{idea.title}</h3>
+                    </Link>
+
+                    <p className={styles.ideaDescription}>{idea.description}</p>
+
+                    <div className={styles.cardFooter}>
+                      <button
+                        type="button"
+                        onClick={() => void handleVote(idea.id)}
+                        className={`${styles.voteBtn} ${isVoted ? styles.voteBtnActive : ""}`}
+                        aria-label={`Upvote ${idea.title}. Current score: ${idea.stats?.upvote_count ?? 0}`}
+                        disabled={votingId === idea.id}
+                      >
+                        <span className={styles.voteIcon}>▲</span>
+                        <span>{idea.stats?.upvote_count ?? 0}</span>
+                      </button>
+
+                      <Link
+                        href={`/dashboard/ideas/${encodeURIComponent(idea.id)}`}
+                        className={styles.viewIdeaBtn}
+                        aria-label={`View idea ${idea.title}`}
+                      >
+                        <span>View</span>
+                        <MemberIcon name="chevron-right" size={13} />
+                      </Link>
+                    </div>
+                  </article>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </section>
 
       {/* Pagination Bar */}
       {!loading && total > 0 && (

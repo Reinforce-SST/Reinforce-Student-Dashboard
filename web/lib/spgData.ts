@@ -25,6 +25,7 @@ export interface SPGRecord {
   event_id?: string;
   is_event_derived?: boolean;
   idea_id?: string;
+  is_idea_derived?: boolean;
   proposition_document_url?: string;
   source_ticket_id?: string;
   created_by?: string;
@@ -32,6 +33,8 @@ export interface SPGRecord {
   updated_at?: string;
   completed_at?: string;
   report_count: number;
+  milestone_ids?: string[];
+  milestone_count?: number;
 }
 
 export type SPGReportType = "progress" | "final";
@@ -67,4 +70,41 @@ export interface SPGFormReportSubmission {
   milestones: string[];
   blockers?: string;
   next_steps?: string;
+}
+
+export interface SPGSubmilestone {
+  id: string;
+  title: string;
+  is_completed: boolean;
+  completed_at?: string | null;
+}
+
+export interface SPGMilestone {
+  id: string;
+  spg_id: string;
+  title: string;
+  description?: string | null;
+  is_completed: boolean;
+  completed_at?: string | null;
+  order: number;
+  submilestones: SPGSubmilestone[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SPGMilestoneCreate {
+  title: string;
+  description?: string;
+  order?: number;
+}
+
+export interface SPGMilestoneUpdate {
+  title?: string;
+  description?: string;
+  is_completed?: boolean;
+  order?: number;
+}
+
+export interface SPGSubmilestoneCreate {
+  title: string;
 }

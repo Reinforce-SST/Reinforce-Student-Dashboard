@@ -73,6 +73,7 @@ class IdeaCreate(BaseModel):
     prerequisites: Optional[List[str]] = Field(default_factory=list, max_length=20)
     rough_roadmap: Optional[List[str]] = Field(default_factory=list, max_length=20)
     learning_outcomes: Optional[List[str]] = Field(default_factory=list, max_length=20)
+    spg_creation_type: Optional[str] = Field(default="project", description="Target SPG type when formed from this idea: learning, project, event, etc.")
     creator_uid: Optional[str] = None
 
 
@@ -87,6 +88,7 @@ class IdeaUpdate(BaseModel):
     prerequisites: Optional[List[str]] = Field(default=None, max_length=20)
     rough_roadmap: Optional[List[str]] = Field(default=None, max_length=20)
     learning_outcomes: Optional[List[str]] = Field(default=None, max_length=20)
+    spg_creation_type: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +107,7 @@ class IdeaDocument(BaseModel):
     prerequisites: Optional[List[str]] = Field(default_factory=list)
     rough_roadmap: Optional[List[str]] = Field(default_factory=list)
     learning_outcomes: Optional[List[str]] = Field(default_factory=list)
+    spg_creation_type: Optional[str] = "project"
     is_verified: bool = False
     created_by_uid: str
     approved_by_uid: Optional[str] = None
@@ -121,6 +124,7 @@ class IdeaSummary(BaseModel):
     description: str
     track: IdeaTrack = IdeaTrack.MISC
     difficulty: Optional[IdeaDifficulty] = None
+    spg_creation_type: Optional[str] = "project"
     is_verified: bool = False
     created_by_uid: str
     approved_by_uid: Optional[str] = None

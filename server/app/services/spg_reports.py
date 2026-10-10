@@ -229,18 +229,26 @@ def list_reports(
     query = _reports_of(db, spg_id)
     if report_type is not None:
         query = query.where("report_type", "==", report_type.value)
-    query = query.order_by("sequence_number")
 
+    # Stream matching reports and sort in memory by sequence_number
+    # so Firestore does not require a composite index on (spg_id, sequence_number).
+    snapshots = list(query.stream())
+    items = [_load(snapshot) for snapshot in snapshots]
+    items.sort(key=lambda item: item.sequence_number)
+
+    start_idx = 0
     if cursor is not None:
         anchor = db.collection(REPORTS_COLLECTION).document(cursor).get()
         if not getattr(anchor, "exists", False):
             raise SPGReportError(400, "Unknown pagination cursor.")
-        query = query.start_after(anchor)
+        cursor_indices = [i for i, it in enumerate(items) if it.id == cursor]
+        if not cursor_indices:
+            raise SPGReportError(400, "Unknown pagination cursor.")
+        start_idx = cursor_indices[0] + 1
 
-    rows = list(query.limit(size + 1).stream())
-    items = [_load(snapshot) for snapshot in rows[:size]]
-    next_cursor = items[-1].id if len(rows) > size and items else None
-    return items, next_cursor
+    paged = items[start_idx : start_idx + size]
+    next_cursor = paged[-1].id if len(items) > (start_idx + size) and paged else None
+    return paged, next_cursor
 
 
 def count_reports(db: Any, spg_id: str) -> int:

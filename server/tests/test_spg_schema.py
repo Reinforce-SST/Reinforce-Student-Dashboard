@@ -258,7 +258,8 @@ class SPGCreateTests(unittest.TestCase):
 
 class SPGUpdateTests(unittest.TestCase):
     def test_only_metadata_is_editable(self):
-        SPGUpdate.model_validate({"name": "Renamed", "track": "product", "visibility": "public"})
+        update = SPGUpdate.model_validate({"name": "Renamed", "track": "product", "visibility": "public", "type": "project"})
+        self.assertEqual(update.type, SPGType.PROJECT)
 
     def test_team_and_lifecycle_fields_are_rejected(self):
         # Membership, lead and status have dedicated operations so a general
@@ -267,7 +268,6 @@ class SPGUpdateTests(unittest.TestCase):
             "member_ids": ["uid_one"],
             "lead_id": "uid_two",
             "status": "completed",
-            "type": "event",
             "created_by": "uid_admin",
         }.items():
             with self.subTest(field=field):

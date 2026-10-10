@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp, type FirebaseOptions } from "firebase/app";
-import { getAuth, GoogleAuthProvider, type Auth } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence, type Auth } from "firebase/auth";
 
 /**
  * Firebase client. Values are NEXT_PUBLIC_* because the browser needs them —
@@ -20,14 +20,21 @@ export const isFirebaseConfigured = Boolean(config.apiKey && config.projectId);
 
 export const SST_DOMAIN = "sst.scaler.com";
 
+let _authInstance: Auth | null = null;
+
 export function getFirebaseAuth(): Auth {
   if (!isFirebaseConfigured) {
     throw new Error(
       "Firebase is not configured. Copy .env.example to .env.local and fill in NEXT_PUBLIC_FIREBASE_*.",
     );
   }
+  if (_authInstance) return _authInstance;
   const app = getApps().length ? getApp() : initializeApp(config);
-  return getAuth(app);
+  _authInstance = getAuth(app);
+  if (typeof window !== "undefined") {
+    void setPersistence(_authInstance, browserLocalPersistence).catch(() => {});
+  }
+  return _authInstance;
 }
 
 export function googleProvider(): GoogleAuthProvider {

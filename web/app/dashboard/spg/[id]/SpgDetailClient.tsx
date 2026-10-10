@@ -9,15 +9,35 @@ import {
   type SPGRecord,
   type SPGReportRecord,
   type SPGFormReportSubmission,
+  type SPGMilestone,
+  type SPGType,
 } from "@/lib/spgData";
 import styles from "./SpgDetail.module.css";
 
 export default function SpgDetailClient({ spgId }: { spgId: string }) {
-  const { token } = useMember();
+  const { token, profile } = useMember();
   const [spg, setSpg] = useState<SPGRecord | null>(null);
   const [reports, setReports] = useState<SPGReportRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+
+  // Persistent Milestones State
+  const [milestonesList, setMilestonesList] = useState<SPGMilestone[]>([]);
+  const [milestonesLoading, setMilestonesLoading] = useState(false);
+  const [isAddMilestoneOpen, setIsAddMilestoneOpen] = useState(false);
+  const [newMilestoneTitle, setNewMilestoneTitle] = useState("");
+  const [newMilestoneDescription, setNewMilestoneDescription] = useState("");
+  const [addingMilestone, setAddingMilestone] = useState(false);
+  const [addingSubmilestoneFor, setAddingSubmilestoneFor] = useState<string | null>(null);
+  const [newSubmilestoneTitle, setNewSubmilestoneTitle] = useState("");
+  const [submittingSubmilestone, setSubmittingSubmilestone] = useState(false);
+  const [updatingMilestoneId, setUpdatingMilestoneId] = useState<string | null>(null);
+
+  // Admin Type Promotion State
+  const [isEditingType, setIsEditingType] = useState(false);
+  const [selectedNewType, setSelectedNewType] = useState<SPGType>("learning");
+  const [updatingType, setUpdatingType] = useState(false);
+  const [typeUpdateError, setTypeUpdateError] = useState("");
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -66,9 +86,20 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
         setReports([]);
         setLoadError("Project group reports could not be loaded. Try again.");
       }
+
+      try {
+        setMilestonesLoading(true);
+        const msRes = await api.listMilestones(token, spgId);
+        setMilestonesList(msRes);
+      } catch {
+        setMilestonesList([]);
+      } finally {
+        setMilestonesLoading(false);
+      }
     } catch {
       setSpg(null);
       setReports([]);
+      setMilestonesList([]);
       setLoadError("Project group could not be loaded. Try again.");
     } finally {
       setLoading(false);
@@ -78,6 +109,158 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
   useEffect(() => {
     void Promise.resolve().then(fetchSpgData);
   }, [fetchSpgData]);
+
+  // Team Membership & Submission Permissions (Admins cannot submit if not in team)
+  const isTeamMember = Boolean(
+    spg && profile?.id && (spg.lead_id === profile.id || spg.member_ids?.includes(profile.id))
+  );
+  const canSubmitReports = Boolean(
+    isTeamMember && spg && (spg.status === "active" || spg.status === "paused")
+  );
+  const canEditMilestones = Boolean(
+    isTeamMember && spg && (spg.status === "active" || spg.status === "paused")
+  );
+
+  const handleToggleMilestone = async (milestoneId: string, currentCompleted: boolean) => {
+    if (!token || !canEditMilestones) return;
+    const nextCompleted = !currentCompleted;
+    setMilestonesList((prev) =>
+      prev.map((m) => (m.id === milestoneId ? { ...m, is_completed: nextCompleted } : m))
+    );
+    try {
+      const updated = await api.updateMilestone(token, spgId, milestoneId, { is_completed: nextCompleted });
+      setMilestonesList((prev) => prev.map((m) => (m.id === milestoneId ? updated : m)));
+    } catch {
+      setMilestonesList((prev) =>
+        prev.map((m) => (m.id === milestoneId ? { ...m, is_completed: currentCompleted } : m))
+      );
+    }
+  };
+
+  const handleDeleteMilestone = async (milestoneId: string) => {
+    if (!token || !canEditMilestones) return;
+    if (!window.confirm("Are you sure you want to delete this milestone?")) return;
+    setUpdatingMilestoneId(milestoneId);
+    try {
+      await api.deleteMilestone(token, spgId, milestoneId);
+      setMilestonesList((prev) => prev.filter((m) => m.id !== milestoneId));
+      if (spg) {
+        setSpg({
+          ...spg,
+          milestone_count: Math.max(0, (spg.milestone_count ?? 1) - 1),
+          milestone_ids: (spg.milestone_ids ?? []).filter((id) => id !== milestoneId),
+        });
+      }
+    } catch {
+      alert("Failed to delete milestone. Please try again.");
+    } finally {
+      setUpdatingMilestoneId(null);
+    }
+  };
+
+  const handleCreateMilestone = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || !canEditMilestones || !newMilestoneTitle.trim()) return;
+    setAddingMilestone(true);
+    try {
+      const created = await api.createMilestone(token, spgId, {
+        title: newMilestoneTitle.trim(),
+        description: newMilestoneDescription.trim() || undefined,
+      });
+      setMilestonesList((prev) => [...prev, created]);
+      if (spg) {
+        setSpg({
+          ...spg,
+          milestone_count: (spg.milestone_count ?? 0) + 1,
+          milestone_ids: [...(spg.milestone_ids ?? []), created.id],
+        });
+      }
+      setNewMilestoneTitle("");
+      setNewMilestoneDescription("");
+      setIsAddMilestoneOpen(false);
+    } catch {
+      alert("Failed to create milestone. Please try again.");
+    } finally {
+      setAddingMilestone(false);
+    }
+  };
+
+  const handleAddSubmilestone = async (milestoneId: string) => {
+    if (!token || !canEditMilestones || !newSubmilestoneTitle.trim()) return;
+    setSubmittingSubmilestone(true);
+    try {
+      const updated = await api.addSubmilestone(token, spgId, milestoneId, {
+        title: newSubmilestoneTitle.trim(),
+      });
+      setMilestonesList((prev) => prev.map((m) => (m.id === milestoneId ? updated : m)));
+      setNewSubmilestoneTitle("");
+      setAddingSubmilestoneFor(null);
+    } catch {
+      alert("Failed to add submilestone. Please try again.");
+    } finally {
+      setSubmittingSubmilestone(false);
+    }
+  };
+
+  const handleToggleSubmilestone = async (milestoneId: string, subId: string, currentCompleted: boolean) => {
+    if (!token || !canEditMilestones) return;
+    const nextCompleted = !currentCompleted;
+    setMilestonesList((prev) =>
+      prev.map((m) => {
+        if (m.id !== milestoneId) return m;
+        return {
+          ...m,
+          submilestones: m.submilestones.map((s) =>
+            s.id === subId ? { ...s, is_completed: nextCompleted } : s
+          ),
+        };
+      })
+    );
+    try {
+      const updated = await api.toggleSubmilestone(token, spgId, milestoneId, subId, nextCompleted);
+      setMilestonesList((prev) => prev.map((m) => (m.id === milestoneId ? updated : m)));
+    } catch {
+      setMilestonesList((prev) =>
+        prev.map((m) => {
+          if (m.id !== milestoneId) return m;
+          return {
+            ...m,
+            submilestones: m.submilestones.map((s) =>
+              s.id === subId ? { ...s, is_completed: currentCompleted } : s
+            ),
+          };
+        })
+      );
+    }
+  };
+
+  const handleDeleteSubmilestone = async (milestoneId: string, subId: string) => {
+    if (!token || !canEditMilestones) return;
+    try {
+      const updated = await api.deleteSubmilestone(token, spgId, milestoneId, subId);
+      setMilestonesList((prev) => prev.map((m) => (m.id === milestoneId ? updated : m)));
+    } catch {
+      alert("Failed to delete submilestone. Please try again.");
+    }
+  };
+
+  const handleUpdateType = async () => {
+    if (!token || !spg || !selectedNewType || selectedNewType === spg.type) {
+      setIsEditingType(false);
+      return;
+    }
+    setUpdatingType(true);
+    setTypeUpdateError("");
+    try {
+      const updated = await api.updateSpg(token, spgId, { type: selectedNewType });
+      setSpg((prev) => (prev ? { ...prev, type: (updated.type as SPGType) || selectedNewType } : null));
+      setIsEditingType(false);
+    } catch (err) {
+      setTypeUpdateError(err instanceof Error ? err.message : "Failed to update SPG type.");
+    } finally {
+      setUpdatingType(false);
+    }
+  };
 
   // Milestone input helpers
   const handleMilestoneChange = (index: number, val: string) => {
@@ -101,6 +284,10 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
     e.preventDefault();
     if (!spg || !token) {
       setStatusMessage({ type: "error", text: "Project group is unavailable. Please retry loading it." });
+      return;
+    }
+    if (!canSubmitReports) {
+      setStatusMessage({ type: "error", text: "Only members of this project group can submit progress reports." });
       return;
     }
     if (!heading.trim() || !shortDescription.trim()) {
@@ -204,18 +391,89 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
 
-  if (loading || !spg) {
+  if (loading) {
+    return (
+      <div className={styles.pageContainer} aria-label="Loading project group skeleton" aria-busy="true">
+        {/* Top Bar Skeleton */}
+        <div className={styles.backRow}>
+          <div className={`${styles.skeletonBackBtn} ${styles.shimmer}`} />
+          <div className={styles.statusChipsRow}>
+            <div className={`${styles.skeletonChip} ${styles.shimmer}`} />
+            <div className={`${styles.skeletonChip} ${styles.shimmer}`} />
+            <div className={`${styles.skeletonChip} ${styles.shimmer}`} />
+            <div className={`${styles.skeletonChip} ${styles.shimmer}`} />
+          </div>
+        </div>
+
+        {/* Hero Banner Skeleton */}
+        <div className={styles.skeletonHero}>
+          <div className={`${styles.skeletonHeroTitle} ${styles.shimmer}`} />
+          <div className={`${styles.skeletonHeroLine1} ${styles.shimmer}`} />
+          <div className={`${styles.skeletonHeroLine2} ${styles.shimmer}`} />
+          <div className={`${styles.skeletonHeroBtn} ${styles.shimmer}`} />
+        </div>
+
+        {/* Main Grid Skeleton */}
+        <div className={styles.mainGrid}>
+          <div className={styles.mainContentColumn}>
+            {/* Milestones Card Skeleton */}
+            <div className={styles.skeletonCardBox}>
+              <div className={`${styles.skeletonCardTitle} ${styles.shimmer}`} />
+              {[1, 2, 3].map((i) => (
+                <div key={i} className={styles.skeletonMilestoneRow}>
+                  <div className={`${styles.skeletonCheckbox} ${styles.shimmer}`} />
+                  <div className={`${styles.skeletonMilestoneText} ${styles.shimmer}`} />
+                </div>
+              ))}
+            </div>
+
+            {/* Reports Card Skeleton */}
+            <div className={styles.skeletonCardBox}>
+              <div className={`${styles.skeletonCardTitle} ${styles.shimmer}`} />
+              {[1, 2].map((i) => (
+                <div key={i} className={styles.skeletonReportItem}>
+                  <div className={styles.skeletonReportHeader}>
+                    <div className={`${styles.skeletonReportHeading} ${styles.shimmer}`} />
+                    <div className={`${styles.skeletonChip} ${styles.shimmer}`} />
+                  </div>
+                  <div className={`${styles.skeletonReportDesc} ${styles.shimmer}`} />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Sidebar Roster Skeleton */}
+          <aside className={styles.sidebarColumn}>
+            <div className={styles.skeletonCardBox}>
+              <div className={`${styles.skeletonCardTitle} ${styles.shimmer}`} />
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className={styles.skeletonRosterRow}>
+                  <div className={`${styles.skeletonRosterAvatar} ${styles.shimmer}`} />
+                  <div className={styles.skeletonRosterNameGroup}>
+                    <div className={`${styles.skeletonRosterName} ${styles.shimmer}`} />
+                    <div className={`${styles.skeletonRosterRole} ${styles.shimmer}`} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </aside>
+        </div>
+      </div>
+    );
+  }
+
+  if (!spg) {
     return (
       <div className={styles.pageContainer}>
-        <Link href="/dashboard/spg">← Back to Project Clusters (SPG)</Link>
-        {loading ? (
-          <p>Loading project group…</p>
-        ) : (
-          <div role="alert">
-            <p>{loadError || "Project group not found."}</p>
-            <button type="button" onClick={fetchSpgData}>Retry</button>
-          </div>
-        )}
+        <Link href="/dashboard/spg" className={styles.backBtn}>
+          ← Back to Project Clusters (SPG)
+        </Link>
+        <div role="alert" style={{ marginTop: "20px" }}>
+          <p>{loadError || "Project group not found."}</p>
+          <button type="button" onClick={fetchSpgData} className={styles.reportCtaBtn} style={{ marginTop: "10px" }}>
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
@@ -230,6 +488,23 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
         </Link>
 
         <div className={styles.statusChipsRow}>
+          {profile?.is_admin && (
+            <Link
+              href={`/dashboard/admin/spgs/${encodeURIComponent(spg.id)}`}
+              className={styles.formatChip}
+              style={{
+                background: "rgba(229, 183, 49, 0.15)",
+                color: "#E5B731",
+                border: "1px solid rgba(229, 183, 49, 0.35)",
+                textDecoration: "none",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              <span>⚙ Admin Inspector</span>
+            </Link>
+          )}
           <span className={styles.formatChip}>{spg.type.toUpperCase()}</span>
           <span className={getTrackChipClass(spg.track)}>{spg.track.toUpperCase()} TRACK</span>
           <span className={getStatusChipClass(spg.status)}>{spg.status.toUpperCase()}</span>
@@ -256,14 +531,16 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
         </p>
 
         <div className={styles.heroActionRow}>
-          <button
-            type="button"
-            className={styles.reportCtaBtn}
-            onClick={() => setIsModalOpen(true)}
-          >
-            <MemberIcon name="plus" size={16} />
-            Submit Progress Report
-          </button>
+          {canSubmitReports && (
+            <button
+              type="button"
+              className={styles.reportCtaBtn}
+              onClick={() => setIsModalOpen(true)}
+            >
+              <MemberIcon name="plus" size={16} />
+              Submit Progress Report
+            </button>
+          )}
 
           {spg.proposition_document_url && (
             <a
@@ -288,14 +565,266 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
 
       {/* 2-Column Main Layout Grid */}
       <div className={styles.mainGrid}>
-        {/* Left Main Column: Proposition & Reports History */}
+        {/* Left Main Column: Proposition, Milestones & Reports History */}
         <div className={styles.contentColumn}>
+          {/* Milestones & Roadmap Section */}
+          <section id="milestones" className={`${styles.sectionCard} ${styles.milestonesSection}`} aria-label="Project Milestones">
+            <div className={styles.sectionHeaderRow}>
+              <h2 className={styles.sectionTitle}>
+                <MemberIcon name="check-circle" size={18} />
+                Project Milestones & Roadmap
+              </h2>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "0.78rem", color: "#8c8c98", fontWeight: "750" }}>
+                  {milestonesList.length} {milestonesList.length === 1 ? "Milestone" : "Milestones"}
+                </span>
+                {canEditMilestones && !isAddMilestoneOpen && (
+                  <button
+                    type="button"
+                    className={styles.addMilestoneBtn}
+                    onClick={() => setIsAddMilestoneOpen(true)}
+                  >
+                    <MemberIcon name="plus" size={14} /> Add Milestone
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Progress Bar */}
+            {milestonesList.length > 0 && (() => {
+              const completedCount = milestonesList.filter((m) => m.is_completed).length;
+              const pct = Math.round((completedCount / milestonesList.length) * 100);
+              return (
+                <div className={styles.milestonesProgressBarWrap}>
+                  <div className={styles.milestonesProgressMeta}>
+                    <span>Progress: {completedCount} of {milestonesList.length} completed</span>
+                    <span className={styles.milestonesProgressPercent}>{pct}%</span>
+                  </div>
+                  <div className={styles.milestonesProgressBar}>
+                    <div
+                      className={styles.milestonesProgressBarFill}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Add Milestone Inline Form */}
+            {isAddMilestoneOpen && (
+              <form onSubmit={handleCreateMilestone} className={styles.milestoneCard} style={{ borderColor: "var(--brand, #E5B731)" }}>
+                <h3 style={{ fontSize: "0.85rem", fontWeight: "800", color: "#ffffff", margin: 0 }}>New Milestone</h3>
+                <input
+                  type="text"
+                  placeholder="Milestone title (e.g. Complete Baseline Model Training)"
+                  value={newMilestoneTitle}
+                  onChange={(e) => setNewMilestoneTitle(e.target.value)}
+                  className={styles.inlineSubInput}
+                  style={{ padding: "8px 10px", fontSize: "0.82rem" }}
+                  required
+                  autoFocus
+                />
+                <textarea
+                  placeholder="Optional description / details..."
+                  value={newMilestoneDescription}
+                  onChange={(e) => setNewMilestoneDescription(e.target.value)}
+                  className={styles.inlineSubInput}
+                  rows={2}
+                  style={{ padding: "8px 10px", fontSize: "0.8rem", resize: "vertical" }}
+                />
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+                  <button
+                    type="button"
+                    className={styles.inlineSubCancelBtn}
+                    onClick={() => {
+                      setIsAddMilestoneOpen(false);
+                      setNewMilestoneTitle("");
+                      setNewMilestoneDescription("");
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className={styles.inlineSubSaveBtn}
+                    disabled={addingMilestone || !newMilestoneTitle.trim()}
+                  >
+                    {addingMilestone ? "Saving..." : "Create Milestone"}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Milestones List */}
+            {milestonesLoading ? (
+              <p style={{ color: "#71717a", fontSize: "0.8rem" }}>Loading milestones…</p>
+            ) : milestonesList.length === 0 ? (
+              <div className={styles.emptyMilestonesBox}>
+                <MemberIcon name="sparkles" size={28} />
+                <p className={styles.emptyMilestonesText}>No milestones defined for this project group yet.</p>
+                {canEditMilestones && !isAddMilestoneOpen && (
+                  <button
+                    type="button"
+                    className={styles.reportCtaBtn}
+                    onClick={() => setIsAddMilestoneOpen(true)}
+                    style={{ marginTop: "6px" }}
+                  >
+                    <MemberIcon name="plus" size={14} /> Add First Milestone
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className={styles.milestonesList}>
+                {milestonesList.map((m) => (
+                  <div
+                    key={m.id}
+                    className={`${styles.milestoneCard} ${m.is_completed ? styles.milestoneCardCompleted : ""}`}
+                  >
+                    <div className={styles.milestoneTop}>
+                      <div className={styles.milestoneLeft}>
+                        <input
+                          type="checkbox"
+                          checked={m.is_completed}
+                          onChange={() => handleToggleMilestone(m.id, m.is_completed)}
+                          disabled={!canEditMilestones}
+                          className={styles.milestoneCheckbox}
+                          aria-label={`Toggle completion for ${m.title}`}
+                        />
+                        <div className={styles.milestoneInfo}>
+                          <h3
+                            className={`${styles.milestoneTitle} ${
+                              m.is_completed ? styles.milestoneTitleCompleted : ""
+                            }`}
+                          >
+                            {m.title}
+                          </h3>
+                          {m.description && (
+                            <p className={styles.milestoneDesc}>{m.description}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {canEditMilestones && (
+                        <div className={styles.milestoneActions}>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteMilestone(m.id)}
+                            disabled={updatingMilestoneId === m.id}
+                            className={styles.milestoneIconBtn}
+                            title="Delete Milestone"
+                            aria-label={`Delete milestone ${m.title}`}
+                          >
+                            <MemberIcon name="trash" size={14} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Submilestones Sub-list */}
+                    <div className={styles.submilestonesContainer}>
+                      {m.submilestones && m.submilestones.length > 0 && (
+                        <div className={styles.submilestonesList}>
+                          {m.submilestones.map((sub) => (
+                            <div key={sub.id} className={styles.submilestoneItem}>
+                              <div className={styles.submilestoneLeft}>
+                                <input
+                                  type="checkbox"
+                                  checked={sub.is_completed}
+                                  onChange={() => handleToggleSubmilestone(m.id, sub.id, sub.is_completed)}
+                                  disabled={!canEditMilestones}
+                                  className={styles.submilestoneCheckbox}
+                                  aria-label={`Toggle submilestone ${sub.title}`}
+                                />
+                                <span
+                                  className={`${styles.submilestoneTitle} ${
+                                    sub.is_completed ? styles.submilestoneTitleCompleted : ""
+                                  }`}
+                                >
+                                  {sub.title}
+                                </span>
+                              </div>
+                              {canEditMilestones && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteSubmilestone(m.id, sub.id)}
+                                  className={styles.submilestoneDeleteBtn}
+                                  title="Delete submilestone"
+                                  aria-label={`Delete submilestone ${sub.title}`}
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Add Submilestone inline row */}
+                      {canEditMilestones && (
+                        addingSubmilestoneFor === m.id ? (
+                          <div className={styles.inlineSubInputRow}>
+                            <input
+                              type="text"
+                              placeholder="Submilestone title..."
+                              value={newSubmilestoneTitle}
+                              onChange={(e) => setNewSubmilestoneTitle(e.target.value)}
+                              className={styles.inlineSubInput}
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  void handleAddSubmilestone(m.id);
+                                } else if (e.key === "Escape") {
+                                  setAddingSubmilestoneFor(null);
+                                  setNewSubmilestoneTitle("");
+                                }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className={styles.inlineSubSaveBtn}
+                              disabled={submittingSubmilestone || !newSubmilestoneTitle.trim()}
+                              onClick={() => void handleAddSubmilestone(m.id)}
+                            >
+                              Add
+                            </button>
+                            <button
+                              type="button"
+                              className={styles.inlineSubCancelBtn}
+                              onClick={() => {
+                                setAddingSubmilestoneFor(null);
+                                setNewSubmilestoneTitle("");
+                              }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            className={styles.addSubmilestoneTriggerBtn}
+                            onClick={() => {
+                              setAddingSubmilestoneFor(m.id);
+                              setNewSubmilestoneTitle("");
+                            }}
+                          >
+                            <MemberIcon name="plus" size={12} /> Add sub-item
+                          </button>
+                        )
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
           {/* Progress Reports Feed */}
           <section id="reports" className={`${styles.sectionCard} ${styles.reportsSection}`} aria-label="Progress Reports History">
             <div className={styles.sectionHeaderRow}>
               <h2 className={styles.sectionTitle}>
                 <MemberIcon name="articles" size={18} />
-                Progress Reports & Milestones Feed
+                Progress Reports Feed
               </h2>
               <span style={{ fontSize: "0.78rem", color: "#8c8c98", fontWeight: "750" }}>
                 {reports.length} {reports.length === 1 ? "Report" : "Reports"} Published
@@ -308,14 +837,16 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
                 <p className={styles.emptyReportsText}>
                   No progress reports have been filed for this SPG yet.
                 </p>
-                <button
-                  type="button"
-                  className={styles.reportCtaBtn}
-                  onClick={() => setIsModalOpen(true)}
-                  style={{ marginTop: "8px" }}
-                >
-                  File First Progress Report
-                </button>
+                {canSubmitReports && (
+                  <button
+                    type="button"
+                    className={styles.reportCtaBtn}
+                    onClick={() => setIsModalOpen(true)}
+                    style={{ marginTop: "8px" }}
+                  >
+                    File First Progress Report
+                  </button>
+                )}
               </div>
             ) : (
               <div className={styles.reportsList}>
@@ -542,8 +1073,64 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
 
               <div className={styles.specRow}>
                 <span className={styles.specLabel}>Category Type</span>
-                <span className={styles.specVal}>{spg.type.toUpperCase()}</span>
+                {isEditingType ? (
+                  <div className={styles.adminTypeEditForm}>
+                    <select
+                      className={styles.adminTypeSelect}
+                      value={selectedNewType}
+                      onChange={(e) => setSelectedNewType(e.target.value as SPGType)}
+                      disabled={updatingType}
+                    >
+                      <option value="learning">Learning</option>
+                      <option value="project">Project</option>
+                      <option value="event">Club Event</option>
+                      <option value="external_event">External Event</option>
+                      <option value="miscellaneous">Other</option>
+                    </select>
+                    <button
+                      type="button"
+                      className={styles.adminTypeSaveBtn}
+                      disabled={updatingType}
+                      onClick={() => void handleUpdateType()}
+                    >
+                      {updatingType ? "Saving…" : "Save"}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.adminTypeCancelBtn}
+                      disabled={updatingType}
+                      onClick={() => {
+                        setIsEditingType(false);
+                        setTypeUpdateError("");
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <div className={styles.adminTypeWrap}>
+                    <span className={styles.specVal}>{spg.type.toUpperCase()}</span>
+                    {profile?.is_admin && (
+                      <button
+                        type="button"
+                        className={styles.adminTypeEditTrigger}
+                        onClick={() => {
+                          setSelectedNewType(spg.type);
+                          setIsEditingType(true);
+                        }}
+                        title="Promote or change SPG type (Admin)"
+                      >
+                        Change Type
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
+              {typeUpdateError && (
+                <div style={{ color: "#ef4444", fontSize: "0.72rem", textAlign: "right" }}>
+                  {typeUpdateError}
+                </div>
+              )}
 
               <div className={styles.specRow}>
                 <span className={styles.specLabel}>Visibility</span>
@@ -553,6 +1140,13 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
               <div className={styles.specRow}>
                 <span className={styles.specLabel}>Total Reports</span>
                 <span className={styles.specVal}>{spg.report_count} Filed</span>
+              </div>
+
+              <div className={styles.specRow}>
+                <span className={styles.specLabel}>Milestones</span>
+                <span className={styles.specVal}>
+                  {milestonesList.length} ({milestonesList.filter((m) => m.is_completed).length} Done)
+                </span>
               </div>
 
               {spg.created_at && (

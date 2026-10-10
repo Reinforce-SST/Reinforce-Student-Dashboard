@@ -30,25 +30,25 @@ const studentResourceLinks: NavLink[] = [
 ];
 
 const adminCoreLinks: NavLink[] = [
-  { href: "/dashboard/admin?tab=banners", label: "Dashboard Banners", icon: "image" },
-  { href: "/dashboard/admin?tab=events", label: "Club Events", icon: "calendar" },
-  { href: "/dashboard/admin?tab=spg", label: "SPG Requests", icon: "spg" },
-  { href: "/dashboard/admin?tab=tickets", label: "Ticket Console", icon: "tickets" },
-  { href: "/dashboard/admin?tab=contributions", label: "Merit Auditing", icon: "award" },
+  { href: "/dashboard/admin/banners", label: "Dashboard Banners", icon: "image" },
+  { href: "/dashboard/admin/events", label: "Club Events", icon: "calendar" },
+  { href: "/dashboard/admin/manage-spgs", label: "SPG Management", icon: "spg" },
+  { href: "/dashboard/admin/tickets", label: "Ticket Console", icon: "tickets" },
+  { href: "/dashboard/admin/contributions", label: "Merit Auditing", icon: "award" },
 ];
 
 const adminDirectoryLinks: NavLink[] = [
-  { href: "/dashboard/admin?tab=members", label: "Member Directory", icon: "users" },
-  { href: "/dashboard/admin?tab=articles", label: "Article Publisher", icon: "articles" },
-  { href: "/dashboard/admin?tab=ideas", label: "Idea Jar Review", icon: "ideas" },
-  { href: "/dashboard/admin?tab=resources", label: "Learning Resources", icon: "book" },
+  { href: "/dashboard/admin/members", label: "Member Directory", icon: "users" },
+  { href: "/dashboard/admin/articles", label: "Article Publisher", icon: "articles" },
+  { href: "/dashboard/admin/ideas", label: "Idea Jar Review", icon: "ideas" },
+  { href: "/dashboard/admin/resources", label: "Learning Resources", icon: "book" },
 ];
 
 export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { profile } = useMember();
+  const { profile: _profile } = useMember();
   const { isAdmin, isAdminMode, setAdminMode } = useAdminMode();
 
   return (
@@ -100,8 +100,12 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             <span className={styles.groupHeader}>OPERATIONS &amp; SETUP</span>
             <nav aria-label="Admin Core Navigation" className={styles.navList}>
               {adminCoreLinks.map(({ href, label, icon }) => {
-                const active = pathname === "/dashboard/admin" &&
-                  (searchParams.get("tab") || "banners") === href.split("tab=")[1];
+                const tabKey = href.split("/").pop();
+                const active =
+                  pathname === href ||
+                  pathname.startsWith(href + "/") ||
+                  (href === "/dashboard/admin/banners" && pathname === "/dashboard/admin" && (!searchParams.get("tab") || searchParams.get("tab") === "banners")) ||
+                  (pathname === "/dashboard/admin" && searchParams.get("tab") === tabKey);
 
                 return (
                   <Link
@@ -123,7 +127,12 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             <span className={styles.groupHeader}>COMMUNITY &amp; CONTENT</span>
             <nav aria-label="Admin Community Navigation" className={styles.navList}>
               {adminDirectoryLinks.map(({ href, label, icon }) => {
-                const active = pathname === "/dashboard/admin" && searchParams.get("tab") === href.split("tab=")[1];
+                const tabKey = href.split("/").pop();
+                const active =
+                  pathname === href ||
+                  pathname.startsWith(href + "/") ||
+                  (pathname === "/dashboard/admin" && searchParams.get("tab") === tabKey);
+
                 return (
                   <Link
                     key={href}

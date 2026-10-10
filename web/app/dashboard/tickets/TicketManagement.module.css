@@ -1603,3 +1603,74 @@
 
 .basedOnIdea { margin: 0; padding: 10px 14px; border: 1px solid rgba(229, 183, 49, 0.35); border-radius: 10px; background: rgba(229, 183, 49, 0.07); color: #d6d6da; font-size: 0.82rem; overflow-wrap: anywhere; }
 .basedOnIdea a { color: var(--brand, #e5b731); font-weight: 700; }
+
+.typeSelectorRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+@media (max-width: 600px) {
+  .typeSelectorRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+.typeSelectCard {
+  background: #111114;
+  border: 1px solid #282832;
+  border-radius: 8px;
+  padding: 12px 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.typeSelectCard:hover {
+  border-color: #3e3e4e;
+  background: #17171c;
+}
+
+.typeSelectCardActive {
+  background: rgba(229, 183, 49, 0.08);
+  border-color: var(--brand, #E5B731);
+}
+
+.typeSelectCardTitle {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.typeSelectCardDesc {
+  font-size: 0.72rem;
+  color: #8c8c98;
+  line-height: 1.35;
+}
+
+.proposalBox {
+  background: rgba(229, 183, 49, 0.03);
+  border: 1px solid rgba(229, 183, 49, 0.2);
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 6px;
+}
+
+.proposalBoxHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(229, 183, 49, 0.15);
+  padding-bottom: 8px;
+}
+
