@@ -151,6 +151,8 @@ class SPGRecord(SPGBase):
     completed_at: Optional[UtcDatetime] = None
     proposition_document_url: Optional[NonBlankStr] = None
     source_ticket_id: Optional[NonBlankStr] = None
+    milestone_ids: List[NonBlankStr] = Field(default_factory=list)
+    milestone_count: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def _members_are_unique_and_include_the_lead(self):
@@ -220,6 +222,7 @@ class SPGUpdate(BaseModel):
 
     name: Optional[TitleStr] = None
     description: Optional[DescriptionStr] = None
+    type: Optional[SPGType] = None
     track: Optional[SPGTrack] = None
     visibility: Optional[SPGVisibility] = None
     is_recruiting: Optional[bool] = None
@@ -277,3 +280,57 @@ class SPGPage(BaseModel):
 
     items: List[SPGResponse] = Field(default_factory=list)
     next_cursor: Optional[NonBlankStr] = None
+
+
+class SPGSubmilestone(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: NonBlankStr
+    title: TitleStr
+    is_completed: bool = False
+    completed_at: Optional[UtcDatetime] = None
+
+
+class SPGSubmilestoneCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: TitleStr
+
+
+class SPGSubmilestoneUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: Optional[TitleStr] = None
+    is_completed: Optional[bool] = None
+
+
+class SPGMilestone(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: NonBlankStr
+    spg_id: NonBlankStr
+    title: TitleStr
+    description: Optional[DescriptionStr] = None
+    is_completed: bool = False
+    completed_at: Optional[UtcDatetime] = None
+    order: int = Field(default=0, ge=0)
+    submilestones: List[SPGSubmilestone] = Field(default_factory=list)
+    created_at: Optional[UtcDatetime] = None
+    updated_at: Optional[UtcDatetime] = None
+
+
+class SPGMilestoneCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: TitleStr
+    description: Optional[DescriptionStr] = None
+    order: Optional[int] = Field(default=0, ge=0)
+
+
+class SPGMilestoneUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: Optional[TitleStr] = None
+    description: Optional[DescriptionStr] = None
+    is_completed: Optional[bool] = None
+    order: Optional[int] = Field(default=None, ge=0)

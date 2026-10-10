@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMember } from "@/lib/useMember";
-import { loadAllUpcomingEvents } from "@/lib/memberData";
+import { loadAllEvents } from "@/lib/memberData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import PaginationBar from "@/components/dashboard/PaginationBar";
 import LoadingBar from "@/components/dashboard/LoadingBar";
@@ -22,8 +22,9 @@ export type CalendarEventItem = {
   time: string;
   location: string;
   statusText: string;
-  statusType: "registered" | "slots" | "available" | "limited" | "full";
+  statusType: "registered" | "slots" | "available" | "limited" | "full" | "ended";
   registrationOpen: boolean;
+  isEnded: boolean;
   startDate: Date;
   bannerUrl?: string | null;
 };
@@ -52,55 +53,76 @@ export default function EventsManagementClient() {
     let active = true;
     async function fetchEvents() {
       try {
-        const upcomingEvents = await loadAllUpcomingEvents(token);
+        const allFetched = await loadAllEvents(token);
         if (!active) return;
         setLoadError("");
 
-        if (upcomingEvents.length > 0) {
-          const mapped: CalendarEventItem[] = upcomingEvents.filter((ev) =>
-            !ev.event_type?.toLowerCase().includes("banner") &&
-            ["published", "registration_closed", "ongoing"].includes(ev.status) &&
-            new Date(ev.schedule.start_time).getTime() >= Date.now()).map((ev) => {
-            const start = new Date(ev.schedule.start_time);
+        if (allFetched.length > 0) {
+          const now = Date.now();
+          const mapped: CalendarEventItem[] = allFetched
+            .filter((ev) =>
+              !ev.event_type?.toLowerCase().includes("banner") &&
+              ["published", "registration_closed", "ongoing", "completed"].includes(ev.status)
+            )
+            .map((ev) => {
+              const start = new Date(ev.schedule.start_time);
+              const isEnded = ev.status === "completed" || start.getTime() < now;
 
-            const monthStr = start.toLocaleString("en-US", { month: "short" }).toUpperCase();
-            const dayNum = start.getDate();
-            const yearNum = start.getFullYear();
-            const timeStr = start.toLocaleString("en-US", {
-              hour: "numeric",
-              minute: "2-digit",
-              hour12: true,
+              const monthStr = start.toLocaleString("en-US", { month: "short" }).toUpperCase();
+              const dayNum = start.getDate();
+              const yearNum = start.getFullYear();
+              const timeStr = start.toLocaleString("en-US", {
+                hour: "numeric",
+                minute: "2-digit",
+                hour12: true,
+              });
+
+              const rawType = ev.event_type.toLowerCase();
+              const registrationOpen = !isEnded &&
+                (ev.status === "published" || ev.status === "ongoing") &&
+                (!ev.schedule.registration_deadline || new Date(ev.schedule.registration_deadline).getTime() >= now);
+              const loc =
+                ev.venue_info?.room ||
+                ev.venue_info?.venue_name ||
+                (ev.format === "online" ? "Online" : "Venue to be announced");
+
+              const statusText = isEnded
+                ? "ENDED"
+                : registrationOpen
+                ? "OPEN"
+                : "REGISTRATION CLOSED";
+
+              return {
+                id: ev.id,
+                slug: ev.slug || ev.id,
+                month: monthStr,
+                day: dayNum,
+                year: yearNum,
+                title: ev.title,
+                type: rawType,
+                typeLabel: ev.event_type.toUpperCase(),
+                time: timeStr,
+                location: loc,
+                statusText,
+                statusType: isEnded ? "ended" : "available",
+                registrationOpen,
+                isEnded,
+                startDate: start,
+                bannerUrl: ev.banner_url,
+              };
             });
 
-            const rawType = ev.event_type.toLowerCase();
-            const registrationOpen = (ev.status === "published" || ev.status === "ongoing") &&
-              (!ev.schedule.registration_deadline || new Date(ev.schedule.registration_deadline).getTime() >= Date.now());
-            const loc =
-              ev.venue_info?.room ||
-              ev.venue_info?.venue_name ||
-              (ev.format === "online" ? "Online" : "Venue to be announced");
-
-            return {
-              id: ev.id,
-              slug: ev.slug || ev.id,
-              month: monthStr,
-              day: dayNum,
-              year: yearNum,
-              title: ev.title,
-              type: rawType,
-              typeLabel: ev.event_type.toUpperCase(),
-              time: timeStr,
-              location: loc,
-              statusText: registrationOpen ? "OPEN" : "REGISTRATION CLOSED",
-              statusType: "available",
-              registrationOpen,
-              startDate: start,
-              bannerUrl: ev.banner_url,
-            };
+          // Sort upcoming events first (ascending by start date), followed by ended events (descending by start date)
+          mapped.sort((a, b) => {
+            if (a.isEnded !== b.isEnded) {
+              return a.isEnded ? 1 : -1;
+            }
+            if (!a.isEnded) {
+              return a.startDate.getTime() - b.startDate.getTime();
+            }
+            return b.startDate.getTime() - a.startDate.getTime();
           });
 
-          // Sort upcoming first
-          mapped.sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
           setEvents(mapped);
         } else {
           setEvents([]);
@@ -276,23 +298,29 @@ export default function EventsManagementClient() {
               )}
             </div>
           ) : (
-            paginatedEvents.map((ev) => {
-              return (
-                <article key={ev.id} className={styles.eventCard}>
+            (() => {
+              const upcomingList = paginatedEvents.filter((e) => !e.isEnded);
+              const endedList = paginatedEvents.filter((e) => e.isEnded);
+
+              const renderEventCard = (ev: CalendarEventItem) => (
+                <article
+                  key={ev.id}
+                  className={`${styles.eventCard} ${ev.isEnded ? styles.eventCardEnded : ""}`}
+                >
                   <Link
                     href={`/dashboard/events/${ev.slug}`}
                     className={styles.eventLeftArea}
                     style={{ textDecoration: "none", flex: 1 }}
                   >
                     {/* Date Badge on Left */}
-                    <div className={styles.dateBox}>
+                    <div className={`${styles.dateBox} ${ev.isEnded ? styles.dateBoxEnded : ""}`}>
                       <span className={styles.dateMonth}>{ev.month}</span>
                       <span className={styles.dateDay}>{ev.day}</span>
                     </div>
 
                     {/* Event Details */}
                     <div className={styles.eventDetails}>
-                      <span className={`${styles.typeTag} ${getTypeClass(ev.type)}`}>
+                      <span className={`${styles.typeTag} ${ev.isEnded ? styles.typeTagEnded : getTypeClass(ev.type)}`}>
                         {ev.typeLabel}
                       </span>
                       <h2 className={styles.eventTitle}>{ev.title}</h2>
@@ -316,18 +344,54 @@ export default function EventsManagementClient() {
                       <span className={styles.statusHeader}>STATUS</span>
                       <span
                         className={`${styles.statusValue} ${
-                          styles.statusAvailable
+                          ev.isEnded
+                            ? styles.statusEnded
+                            : styles.statusAvailable
                         }`}
                       >
-                        {ev.statusText}
+                        {ev.isEnded ? "• ENDED" : ev.statusText}
                       </span>
                     </div>
 
-                    <button type="button" onClick={(e) => handleToggleRsvp(ev.slug, e)} className={`${styles.actionBtn} ${styles.btnRsvp}`} aria-label={`Open ${ev.title}`}>{ev.registrationOpen ? "RSVP NOW" : "VIEW EVENT"}</button>
+                    <button
+                      type="button"
+                      onClick={(e) => handleToggleRsvp(ev.slug, e)}
+                      className={`${styles.actionBtn} ${
+                        ev.isEnded
+                          ? styles.btnEnded
+                          : styles.btnRsvp
+                      }`}
+                      aria-label={`Open ${ev.title}`}
+                    >
+                      {ev.isEnded ? "VIEW RECAP" : ev.registrationOpen ? "RSVP NOW" : "VIEW EVENT"}
+                    </button>
                   </div>
                 </article>
               );
-            })
+
+              return (
+                <>
+                  {/* Upcoming Events List */}
+                  {upcomingList.map(renderEventCard)}
+
+                  {/* Past / Ended Events Separator */}
+                  {endedList.length > 0 && (
+                    <div className={styles.eventsSectionDivider}>
+                      <div className={styles.dividerLine} />
+                      <div className={styles.dividerBadge}>
+                        <MemberIcon name="clock" size={13} />
+                        <span>Past / Completed Events</span>
+                        <span className={styles.dividerCount}>{endedList.length}</span>
+                      </div>
+                      <div className={styles.dividerLine} />
+                    </div>
+                  )}
+
+                  {/* Ended Events List */}
+                  {endedList.map(renderEventCard)}
+                </>
+              );
+            })()
           )}
 
           {!loading && filteredEvents.length > 0 && (
@@ -420,13 +484,22 @@ export default function EventsManagementClient() {
 
             <div className={styles.statsRowsList}>
               <div className={styles.statRow}>
-                <span className={styles.statRowLabel}>Visible upcoming</span>
-                <span className={`${styles.statRowValue} ${styles.valGold}`}>{events.length}</span>
+                <span className={styles.statRowLabel}>Upcoming Events</span>
+                <span className={`${styles.statRowValue} ${styles.valGold}`}>
+                  {events.filter((e) => !e.isEnded).length}
+                </span>
+              </div>
+
+              <div className={styles.statRow}>
+                <span className={styles.statRowLabel}>Past / Completed</span>
+                <span className={`${styles.statRowValue} ${styles.valGreen}`}>
+                  {events.filter((e) => e.isEnded).length}
+                </span>
               </div>
 
               <div className={styles.statRow}>
                 <span className={styles.statRowLabel}>Workshops</span>
-                <span className={`${styles.statRowValue} ${styles.valGreen}`}>
+                <span className={`${styles.statRowValue} ${styles.valBlue}`}>
                   {events.filter((e) => e.type.includes("workshop")).length}
                 </span>
               </div>

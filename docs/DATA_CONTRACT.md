@@ -402,7 +402,9 @@ the same ticket twice cannot create two groups:
   "updated_at":               "ISO-8601 | null",
   "completed_at":             "ISO-8601 | null",  // unused until completion exists
   "proposition_document_url": "string | null",    // required for type=project at creation
-  "source_ticket_id":         "string | null"     // the spg_registration ticket
+  "source_ticket_id":         "string | null",    // the spg_registration ticket
+  "milestone_ids":            ["<milestone_id>"], // IDs of milestones stored in subcollection
+  "milestone_count":          0                   // cached count of milestones
 }
 ```
 
@@ -424,6 +426,37 @@ documents that predate the rule.
 
 **Readers:** this API, and the contribution SPG award, which reads `member_ids`
 to write one contribution per member.
+
+---
+
+## `spgs/{spg_id}/milestones/{milestone_id}`
+
+Milestones and submilestones subcollection under an SPG. **Written only by this API.**
+Detailed milestone records live in this subcollection and load on-demand when inspecting
+the SPG detail view, keeping the main `/dashboard/spg` listing lightweight.
+
+```jsonc
+{
+  "id":            "ms_...",           // equals the subcollection document ID
+  "spg_id":        "spg_...",          // parent SPG ID
+  "title":         "string",           // milestone title
+  "description":   "string | null",    // optional description
+  "is_completed":  false,              // milestone completion boolean
+  "completed_at":  "ISO-8601 | null",  // timestamp when marked completed
+  "order":         1,                  // display ordering sequence
+  "submilestones": [
+    {
+      "id":           "sub_...",       // submilestone unique ID
+      "title":        "string",        // submilestone title
+      "is_completed": false,           // completion status
+      "completed_at": "ISO-8601 | null"
+    }
+  ],
+  "created_at":    "ISO-8601",
+  "updated_at":    "ISO-8601"
+}
+```
+
 
 ---
 

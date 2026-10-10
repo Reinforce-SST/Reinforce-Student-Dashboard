@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import SpgManagementClient from "./SpgManagementClient";
 
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <SpgManagementClient />;
+  return (
+    <Suspense fallback={<div style={{ padding: "40px 20px", color: "#8c8c98", textAlign: "center" }}>Loading SPG directory…</div>}>
+      <SpgManagementClient />
+    </Suspense>
+  );
 }

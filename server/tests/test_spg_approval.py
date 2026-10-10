@@ -144,6 +144,23 @@ class SPGApprovalTests(unittest.TestCase):
         self.assertEqual(self.db.documents("spgs"), {})
         self.assertEqual(self.db.documents("tickets")["tkt_1"]["status"], "open")
 
+    def test_project_with_proposal_fields_approved_without_admin_upload(self):
+        self.db.documents("tickets")["tkt_proposal"] = {
+            "id": "tkt_proposal", "category": "spg_registration", "title": "SPG: Project Proposal",
+            "status": "open", "priority": "medium", "created_by_uid": "lead",
+            "fields": {
+                "Project Name": "Project Orion", "track": "kaggle", "leader_uid": "lead", "member_uids": ["member"],
+                "Vision": "Build end-to-end kaggle pipeline",
+                "First Steps": "Dataset exploratory data analysis",
+                "Initial Milestones": "M1 Baseline, M2 Ensemble",
+            },
+        }
+        res = self.client.post("/api/v1/tickets/tkt_proposal/approve-spg", data={"spg_type": "project", "track": "kaggle", "visibility": "private"})
+        self.assertEqual(res.status_code, 200, res.text)
+        spg = self.db.documents("spgs")[res.json()["spg_id"]]
+        self.assertEqual(spg["type"], "project")
+        self.assertEqual(spg["proposition_document_url"], "/dashboard/tickets/tkt_proposal")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -39,10 +39,16 @@ from app.schemas.spg_reports import (
 )
 from app.schemas.spgs import (
     SPGLeadUpdate,
+    SPGMilestone,
+    SPGMilestoneCreate,
+    SPGMilestoneUpdate,
     SPGPage,
     SPGRecruitingUpdateRequest,
     SPGResponse,
     SPGStatus,
+    SPGSubmilestone,
+    SPGSubmilestoneCreate,
+    SPGSubmilestoneUpdate,
     SPGTeamUpdateRequest,
     SPGTrack,
     SPGType,
@@ -97,6 +103,16 @@ def _member_or_403(spg, user: dict) -> None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only a member of this SPG can do that.",
+        )
+
+
+def _can_edit_milestones(spg, user: dict) -> None:
+    if not _is_admin(user):
+        _member_or_403(spg, user)
+    if spg.status not in service.MUTABLE_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"A {spg.status.value} SPG does not accept milestone modifications.",
         )
 
 
@@ -405,6 +421,15 @@ def submit_pdf_report(
         raise HTTPException(status_code=422, detail=error.errors()) from None
     except reports_service.SPGReportError as error:
         raise _handle(error) from None
+    except Exception as error:
+        # If Cloud Storage is unavailable or billing disabled, fail gracefully rather than unhandled 500
+        msg = str(error)
+        if "billing account" in msg.lower() or "403" in msg or "accountdisabled" in msg.lower():
+            raise HTTPException(
+                status_code=503,
+                detail="Cloud Storage is temporarily unavailable due to disabled project billing. Please submit your progress report using the Form format instead.",
+            ) from None
+        raise
 
 
 @router.post(
@@ -460,3 +485,172 @@ def list_reports(
     except reports_service.SPGReportError as error:
         raise _handle(error) from None
     return SPGReportPage(items=items, next_cursor=next_cursor)
+
+
+# ---------------------------------------------------------------------------
+# Milestones and Submilestones
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{spg_id}/milestones",
+    response_model=List[SPGMilestone],
+    summary="List SPG milestones and submilestones",
+)
+def list_milestones(
+    spg_id: str,
+    user: dict = Depends(get_current_user),
+    db: Any = Depends(get_db),
+) -> List[SPGMilestone]:
+    """Retrieve all milestones and nested submilestones for an SPG."""
+    spg = _readable_or_404(db, spg_id, user)
+    try:
+        return service.list_milestones(db, spg_id=spg.id)
+    except service.SPGError as error:
+        raise _handle(error) from None
+
+
+@router.post(
+    "/{spg_id}/milestones",
+    response_model=SPGMilestone,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create an SPG milestone",
+)
+def create_milestone(
+    spg_id: str,
+    payload: SPGMilestoneCreate,
+    user: dict = Depends(get_current_user),
+    db: Any = Depends(get_db),
+) -> SPGMilestone:
+    """Create a new milestone under this SPG."""
+    spg = _readable_or_404(db, spg_id, user)
+    _can_edit_milestones(spg, user)
+    try:
+        return service.create_milestone(db, spg_id=spg.id, payload=payload)
+    except service.SPGError as error:
+        raise _handle(error) from None
+
+
+@router.patch(
+    "/{spg_id}/milestones/{milestone_id}",
+    response_model=SPGMilestone,
+    summary="Update an SPG milestone",
+)
+def update_milestone(
+    spg_id: str,
+    milestone_id: str,
+    payload: SPGMilestoneUpdate,
+    user: dict = Depends(get_current_user),
+    db: Any = Depends(get_db),
+) -> SPGMilestone:
+    """Update title, description, order, or completion status of an SPG milestone."""
+    spg = _readable_or_404(db, spg_id, user)
+    _can_edit_milestones(spg, user)
+    try:
+        return service.update_milestone(db, spg_id=spg.id, milestone_id=milestone_id, payload=payload)
+    except service.SPGError as error:
+        raise _handle(error) from None
+
+
+@router.delete(
+    "/{spg_id}/milestones/{milestone_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete an SPG milestone",
+)
+def delete_milestone(
+    spg_id: str,
+    milestone_id: str,
+    user: dict = Depends(get_current_user),
+    db: Any = Depends(get_db),
+) -> None:
+    """Delete a milestone and remove reference from the SPG."""
+    spg = _readable_or_404(db, spg_id, user)
+    _can_edit_milestones(spg, user)
+    try:
+        service.delete_milestone(db, spg_id=spg.id, milestone_id=milestone_id)
+    except service.SPGError as error:
+        raise _handle(error) from None
+
+
+@router.post(
+    "/{spg_id}/milestones/{milestone_id}/submilestones",
+    response_model=SPGMilestone,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add a submilestone to a milestone",
+)
+def add_submilestone(
+    spg_id: str,
+    milestone_id: str,
+    payload: SPGSubmilestoneCreate,
+    user: dict = Depends(get_current_user),
+    db: Any = Depends(get_db),
+) -> SPGMilestone:
+    """Add a nested submilestone item to an existing milestone."""
+    spg = _readable_or_404(db, spg_id, user)
+    _can_edit_milestones(spg, user)
+    try:
+        return service.add_submilestone(db, spg_id=spg.id, milestone_id=milestone_id, payload=payload)
+    except service.SPGError as error:
+        raise _handle(error) from None
+
+
+@router.patch(
+    "/{spg_id}/milestones/{milestone_id}/submilestones/{sub_id}",
+    response_model=SPGMilestone,
+    summary="Update or toggle a submilestone",
+)
+def update_submilestone(
+    spg_id: str,
+    milestone_id: str,
+    sub_id: str,
+    payload: SPGSubmilestoneUpdate,
+    user: dict = Depends(get_current_user),
+    db: Any = Depends(get_db),
+) -> SPGMilestone:
+    """Update title or toggle completion status of a submilestone item."""
+    spg = _readable_or_404(db, spg_id, user)
+    _can_edit_milestones(spg, user)
+    try:
+        if payload.is_completed is not None:
+            return service.toggle_submilestone(
+                db, spg_id=spg.id, milestone_id=milestone_id, sub_id=sub_id, is_completed=payload.is_completed
+            )
+        milestone = service.get_milestone(db, spg.id, milestone_id)
+        if not milestone:
+            raise HTTPException(status_code=404, detail="Milestone not found.")
+        new_subs = []
+        found = False
+        for s in milestone.submilestones:
+            if s.id == sub_id:
+                found = True
+                new_subs.append(s.model_copy(update={"title": payload.title or s.title}))
+            else:
+                new_subs.append(s)
+        if not found:
+            raise HTTPException(status_code=404, detail="Submilestone not found.")
+        updated = milestone.model_copy(update={"submilestones": new_subs, "updated_at": service.utcnow()})
+        service._milestones_ref(db, spg.id).document(milestone_id).set(updated.model_dump())
+        return updated
+    except service.SPGError as error:
+        raise _handle(error) from None
+
+
+@router.delete(
+    "/{spg_id}/milestones/{milestone_id}/submilestones/{sub_id}",
+    response_model=SPGMilestone,
+    summary="Delete a submilestone from a milestone",
+)
+def delete_submilestone(
+    spg_id: str,
+    milestone_id: str,
+    sub_id: str,
+    user: dict = Depends(get_current_user),
+    db: Any = Depends(get_db),
+) -> SPGMilestone:
+    """Delete a submilestone item from a milestone."""
+    spg = _readable_or_404(db, spg_id, user)
+    _can_edit_milestones(spg, user)
+    try:
+        return service.delete_submilestone(db, spg_id=spg.id, milestone_id=milestone_id, sub_id=sub_id)
+    except service.SPGError as error:
+        raise _handle(error) from None
+

@@ -17,7 +17,18 @@ const titles: Record<string, string> = {
   "/dashboard/ideas": "Idea Jar",
   "/dashboard/resources": "Learning Resources",
   "/dashboard/leaderboard": "Club Leaderboard",
-  "/dashboard/admin": "Admin Command Center",
+  "/dashboard/admin": "Admin Console",
+  "/dashboard/admin/banners": "Dashboard Banners",
+  "/dashboard/admin/events": "Club Events",
+  "/dashboard/admin/manage-spgs": "SPG Operations",
+  "/dashboard/admin/spgs": "SPG Operations",
+  "/dashboard/admin/tickets": "Ticket Console",
+  "/dashboard/admin/contributions": "Merit Auditing",
+  "/dashboard/admin/merits": "Merit Auditing",
+  "/dashboard/admin/members": "Member Directory",
+  "/dashboard/admin/articles": "Article Publisher",
+  "/dashboard/admin/ideas": "Idea Jar Review",
+  "/dashboard/admin/resources": "Learning Resources",
   "/dashboard/search": "Search",
   "/dashboard/profile": "Member Profile",
   "/profile": "Member Profile",
@@ -52,7 +63,13 @@ export default function Header({
   const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
 
   const section = pathname === "/profile" ? "profile" : pathname.split("/")[2] || "";
-  const pageTitle = titles[pathname] || titles[`/dashboard/${section}`] || "Dashboard Overview";
+  const dynamicAdminTitle =
+    pathname.startsWith("/dashboard/admin/spgs/") || pathname.startsWith("/dashboard/admin/manage-spgs/")
+      ? "Admin SPG Inspector"
+      : pathname.startsWith("/dashboard/spg/")
+      ? "Project Hub"
+      : null;
+  const pageTitle = dynamicAdminTitle || titles[pathname] || titles[`/dashboard/${section}`] || "Dashboard Overview";
   const mobileTitle = mobileTitles[section] || "Dashboard";
 
   const initials = profile?.full_name

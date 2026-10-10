@@ -21,8 +21,8 @@ def _verify_credential(cred: HTTPAuthorizationCredentials) -> dict:
 
     ensure_app()
     try:
-        # Verifies the token and decodes the user payload
-        decoded_token = auth.verify_id_token(cred.credentials)
+        # Verifies the token and decodes the user payload (allowing 60s clock skew)
+        decoded_token = auth.verify_id_token(cred.credentials, clock_skew_seconds=60)
 
         # Restrict login to SST / Scaler emails
         email = (decoded_token.get("email") or "").lower().strip()

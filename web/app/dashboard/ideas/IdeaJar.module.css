@@ -525,6 +525,28 @@
   transform: translateX(2px);
 }
 
+.viewIdeaBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #f4f4f5;
+  font-size: 0.76rem;
+  font-weight: 750;
+  padding: 6px 12px;
+  border-radius: 8px;
+  text-decoration: none;
+  transition: all 0.18s ease;
+}
+
+.viewIdeaBtn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
 /* --------------------------------------------------------------------------
    Skeleton Shimmer Loaders
    -------------------------------------------------------------------------- */
@@ -782,3 +804,315 @@
     flex-wrap: wrap;
   }
 }
+
+/* ==========================================================================
+   3 Themed Jars Columns Layout
+   Green = Beginner | Blue = Intermediate | Purple = Advanced
+   Transparent frosted dark background with vibrant border glow
+   ========================================================================== */
+
+.jarsColumnsLayout {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  align-items: stretch;
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .jarsColumnsLayout {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    width: 100%;
+  }
+
+  .jarColumn {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+.jarColumn {
+  border-radius: 18px;
+  padding: 20px 18px 24px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.jarColumn:hover {
+  transform: translateY(-2px);
+}
+
+/* 0. Golden Jar: Featured Ideas (Horizontal banner above the 3 jars) */
+.featuredJarRow {
+  width: 100%;
+  margin-bottom: 24px;
+}
+
+.jarGold {
+  background: rgba(36, 28, 12, 0.55);
+  border: 1.5px solid #eab308;
+  box-shadow: 0 0 32px -4px rgba(234, 179, 8, 0.28), inset 0 0 28px -10px rgba(234, 179, 8, 0.18);
+  border-radius: 18px;
+  padding: 20px 22px 24px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.jarGold:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 38px -2px rgba(234, 179, 8, 0.35), inset 0 0 30px -8px rgba(234, 179, 8, 0.22);
+}
+
+.jarGold .jarLid {
+  background: rgba(234, 179, 8, 0.16);
+  border-bottom: 2px solid #eab308;
+  color: #facc15;
+}
+
+.jarGold .jarCountBadge {
+  background: rgba(234, 179, 8, 0.25);
+  color: #fef08a;
+  border: 1px solid rgba(234, 179, 8, 0.5);
+}
+
+.jarGoldCardsHorizontal {
+  display: flex;
+  flex-direction: row;
+  gap: 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 6px;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: #eab308 transparent;
+}
+
+.jarGoldCard {
+  flex: 0 0 360px;
+  max-width: 440px;
+  background: rgba(24, 20, 10, 0.75);
+  border: 1px solid rgba(234, 179, 8, 0.25);
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.2s ease;
+  scroll-snap-align: start;
+}
+
+.jarGoldCard:hover {
+  background: rgba(34, 28, 14, 0.9);
+  border-color: rgba(234, 179, 8, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(234, 179, 8, 0.15);
+}
+
+@media (max-width: 640px) {
+  .jarGoldCard {
+    flex: 0 0 85vw;
+  }
+}
+
+/* 1. Green Jar: Beginners */
+.jarGreen {
+  background: rgba(16, 32, 22, 0.45);
+  border: 1.5px solid #22c55e;
+  box-shadow: 0 0 24px -6px rgba(34, 197, 94, 0.2), inset 0 0 24px -12px rgba(34, 197, 94, 0.15);
+}
+
+.jarGreen .jarLid {
+  background: rgba(34, 197, 94, 0.15);
+  border-bottom: 2px solid #22c55e;
+  color: #4ade80;
+}
+
+.jarGreen .jarCountBadge {
+  background: rgba(34, 197, 94, 0.22);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.4);
+}
+
+/* 2. Blue Jar: Intermediate */
+.jarBlue {
+  background: rgba(14, 24, 38, 0.45);
+  border: 1.5px solid #38bdf8;
+  box-shadow: 0 0 24px -6px rgba(56, 189, 248, 0.2), inset 0 0 24px -12px rgba(56, 189, 248, 0.15);
+}
+
+.jarBlue .jarLid {
+  background: rgba(56, 189, 248, 0.15);
+  border-bottom: 2px solid #38bdf8;
+  color: #38bdf8;
+}
+
+.jarBlue .jarCountBadge {
+  background: rgba(56, 189, 248, 0.22);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+}
+
+/* 3. Purple Jar: Advanced */
+.jarPurple {
+  background: rgba(28, 16, 42, 0.45);
+  border: 1.5px solid #a855f7;
+  box-shadow: 0 0 24px -6px rgba(168, 85, 247, 0.22), inset 0 0 24px -12px rgba(168, 85, 247, 0.18);
+}
+
+.jarPurple .jarLid {
+  background: rgba(168, 85, 247, 0.15);
+  border-bottom: 2px solid #a855f7;
+  color: #c084fc;
+}
+
+.jarPurple .jarCountBadge {
+  background: rgba(168, 85, 247, 0.22);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.4);
+}
+
+/* Jar Header & Lid */
+.jarLid {
+  margin: -20px -18px 0 -18px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.jarHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.jarIconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.jarTitle {
+  font-size: 0.95rem;
+  font-weight: 850;
+  letter-spacing: -0.01em;
+  margin: 0;
+  color: #ffffff;
+}
+
+.jarSublabel {
+  font-size: 0.68rem;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.85;
+}
+
+.jarCountBadge {
+  font-size: 0.7rem;
+  font-weight: 850;
+  padding: 3px 9px;
+  border-radius: 12px;
+  font-family: var(--font-mono, monospace);
+}
+
+.jarListWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+}
+
+@media (max-width: 900px) {
+  .jarListWrapper {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    padding-bottom: 8px;
+    gap: 14px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: #31343a transparent;
+  }
+
+  .jarListWrapper::-webkit-scrollbar {
+    height: 5px;
+  }
+
+  .jarListWrapper::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 999px;
+  }
+
+  .jarListWrapper::-webkit-scrollbar-thumb {
+    background: #31343a;
+    border-radius: 999px;
+  }
+
+  .jarIdeaCard {
+    flex: 0 0 82vw;
+    max-width: 330px;
+    min-width: 260px;
+    scroll-snap-align: start;
+  }
+}
+
+/* Card inside a Jar */
+.jarIdeaCard {
+  background: rgba(18, 18, 22, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.jarIdeaCard:hover {
+  background: rgba(26, 26, 32, 0.85);
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+}
+
+.jarPlaceholderNotice {
+  font-size: 0.62rem;
+  color: #71717a;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 750;
+}
+
+.jarEmptyState {
+  padding: 36px 16px;
+  text-align: center;
+  color: #71717a;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+}
+

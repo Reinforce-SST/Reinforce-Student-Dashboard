@@ -618,3 +618,88 @@
   }
 }
 
+/* ==========================================================================
+   Past / Ended Events Section Divider & Card Overrides
+   ========================================================================== */
+
+.eventsSectionDivider {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 28px 0 16px 0;
+  width: 100%;
+}
+
+.dividerLine {
+  flex: 1;
+  height: 1px;
+  background: #23232a;
+}
+
+.dividerBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #727280;
+  background: #151518;
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid #24242d;
+}
+
+.dividerCount {
+  font-size: 0.65rem;
+  background: #22222a;
+  color: #a0a0b0;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-family: var(--font-mono, monospace);
+}
+
+.eventCardEnded {
+  opacity: 0.72;
+  background: #111114;
+  border-color: #1e1e24;
+}
+
+.eventCardEnded:hover {
+  opacity: 0.95;
+  border-color: #2e2e38;
+}
+
+.dateBoxEnded {
+  background: #16161a;
+  border-color: #222228;
+}
+
+.dateBoxEnded .dateDay {
+  color: #8c8c98;
+}
+
+.typeTagEnded {
+  background: #1c1c22 !important;
+  color: #8c8c98 !important;
+  border: 1px solid #282830 !important;
+}
+
+.statusEnded {
+  color: #71717a;
+}
+
+.btnEnded {
+  background: #151518;
+  color: #8c8c98;
+  border-color: #24242d;
+}
+
+.btnEnded:hover {
+  background: #1f1f26;
+  color: #ffffff;
+  border-color: #383844;
+}
+
+

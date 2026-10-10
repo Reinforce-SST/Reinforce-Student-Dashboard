@@ -79,7 +79,7 @@ export default async function ProjectsPage() {
           lede="Every repository the club owns is public, and every contribution carries the name of the member who made it. This page reads the club's GitHub organisation directly, so it is never out of date."
         />
 
-        <section className={`section-paper on-light ${styles.wrap}`}>
+        <section className={`${styles.wrap}`}>
           <div className="page">
             {repos === null ? (
               <p className={styles.fallback}>

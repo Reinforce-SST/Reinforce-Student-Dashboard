@@ -13,6 +13,7 @@ by an admin through the contribution workflow, separately and afterwards.
 """
 
 import hashlib
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -20,8 +21,14 @@ from pydantic import ValidationError
 
 from app.schemas.spgs import (
     SPGCreate,
+    SPGMilestone,
+    SPGMilestoneCreate,
+    SPGMilestoneUpdate,
     SPGRecord,
     SPGStatus,
+    SPGSubmilestone,
+    SPGSubmilestoneCreate,
+    SPGSubmilestoneUpdate,
     SPGTrack,
     SPGType,
     SPGUpdate,
@@ -312,6 +319,8 @@ def update_spg(db: Any, *, spg_id: str, update: SPGUpdate, now: Optional[datetim
     changes = update.model_dump(exclude_none=True)
     if not changes:
         return spg
+    if changes.get("type") == SPGType.EVENT and "visibility" not in changes:
+        changes["visibility"] = SPGVisibility.PUBLIC
     try:
         edited = spg.model_copy(update=changes)
         SPGRecord.model_validate(edited.model_dump())
@@ -429,3 +438,216 @@ def update_recruiting(
     roles = [r.strip() for r in (recruiting_roles or []) if r and r.strip()]
     updated = spg.model_copy(update={"is_recruiting": is_recruiting, "recruiting_roles": roles})
     return _save(db, updated, now or utcnow())
+
+
+# ---------------------------------------------------------------------------
+# Milestones and Submilestones (stored under spgs/{spg_id}/milestones)
+# ---------------------------------------------------------------------------
+
+def _milestones_ref(db: Any, spg_id: str):
+    return db.collection(SPGS_COLLECTION).document(spg_id).collection("milestones")
+
+
+def _load_milestone(snapshot: Any, spg_id: str) -> SPGMilestone:
+    data = dict(snapshot.to_dict() or {})
+    data.setdefault("id", snapshot.id)
+    data.setdefault("spg_id", spg_id)
+    return SPGMilestone.model_validate(data)
+
+
+def list_milestones(db: Any, spg_id: str) -> List[SPGMilestone]:
+    """Return all milestones for this SPG, ordered by order and creation time."""
+    require_spg(db, spg_id)
+    snapshots = list(_milestones_ref(db, spg_id).stream())
+    milestones: List[SPGMilestone] = []
+    for snap in snapshots:
+        try:
+            milestones.append(_load_milestone(snap, spg_id))
+        except ValidationError:
+            continue
+    milestones.sort(key=lambda m: (m.order, m.created_at or datetime.min.replace(tzinfo=timezone.utc)))
+    return milestones
+
+
+def get_milestone(db: Any, spg_id: str, milestone_id: str) -> Optional[SPGMilestone]:
+    """Return a single milestone, or None if it does not exist."""
+    require_spg(db, spg_id)
+    snap = _milestones_ref(db, spg_id).document(milestone_id).get()
+    if not getattr(snap, "exists", False):
+        return None
+    try:
+        return _load_milestone(snap, spg_id)
+    except ValidationError:
+        raise SPGError(409, "The stored milestone does not match the milestone schema.") from None
+
+
+def create_milestone(
+    db: Any,
+    *,
+    spg_id: str,
+    payload: SPGMilestoneCreate,
+    now: Optional[datetime] = None,
+) -> SPGMilestone:
+    """Create a new milestone under this SPG's subcollection and record reference on the parent."""
+    spg = require_spg(db, spg_id)
+    _assert_mutable(spg)
+    moment = now or utcnow()
+    ms_id = f"ms_{uuid.uuid4().hex[:12]}"
+    order = payload.order if payload.order and payload.order > 0 else (len(spg.milestone_ids) + 1)
+    milestone = SPGMilestone(
+        id=ms_id,
+        spg_id=spg_id,
+        title=payload.title,
+        description=payload.description,
+        is_completed=False,
+        completed_at=None,
+        order=order,
+        submilestones=[],
+        created_at=moment,
+        updated_at=moment,
+    )
+    _milestones_ref(db, spg_id).document(ms_id).set(milestone.model_dump())
+
+    # Update parent SPG milestone reference IDs and count
+    new_ids = list(spg.milestone_ids) + [ms_id]
+    updated_spg = spg.model_copy(update={"milestone_ids": new_ids, "milestone_count": len(new_ids)})
+    _save(db, updated_spg, moment)
+
+    return milestone
+
+
+def update_milestone(
+    db: Any,
+    *,
+    spg_id: str,
+    milestone_id: str,
+    payload: SPGMilestoneUpdate,
+    now: Optional[datetime] = None,
+) -> SPGMilestone:
+    """Update milestone title, description, order, or completion status."""
+    spg = require_spg(db, spg_id)
+    _assert_mutable(spg)
+    milestone = get_milestone(db, spg_id, milestone_id)
+    if milestone is None:
+        raise SPGError(404, "Milestone not found.")
+
+    moment = now or utcnow()
+    changes = payload.model_dump(exclude_unset=True)
+    if "is_completed" in changes:
+        if changes["is_completed"] and not milestone.is_completed:
+            changes["completed_at"] = moment
+        elif not changes["is_completed"]:
+            changes["completed_at"] = None
+
+    changes["updated_at"] = moment
+    updated = milestone.model_copy(update=changes)
+    _milestones_ref(db, spg_id).document(milestone_id).set(updated.model_dump())
+    return updated
+
+
+def delete_milestone(
+    db: Any,
+    *,
+    spg_id: str,
+    milestone_id: str,
+    now: Optional[datetime] = None,
+) -> None:
+    """Delete a milestone and remove its ID from the parent SPG."""
+    spg = require_spg(db, spg_id)
+    _assert_mutable(spg)
+    milestone = get_milestone(db, spg_id, milestone_id)
+    if milestone is None:
+        raise SPGError(404, "Milestone not found.")
+
+    moment = now or utcnow()
+    _milestones_ref(db, spg_id).document(milestone_id).delete()
+
+    new_ids = [m for m in spg.milestone_ids if m != milestone_id]
+    updated_spg = spg.model_copy(update={"milestone_ids": new_ids, "milestone_count": len(new_ids)})
+    _save(db, updated_spg, moment)
+
+
+def add_submilestone(
+    db: Any,
+    *,
+    spg_id: str,
+    milestone_id: str,
+    payload: SPGSubmilestoneCreate,
+    now: Optional[datetime] = None,
+) -> SPGMilestone:
+    """Add a submilestone item to a milestone."""
+    spg = require_spg(db, spg_id)
+    _assert_mutable(spg)
+    milestone = get_milestone(db, spg_id, milestone_id)
+    if milestone is None:
+        raise SPGError(404, "Milestone not found.")
+
+    moment = now or utcnow()
+    sub_id = f"sub_{uuid.uuid4().hex[:8]}"
+    new_sub = SPGSubmilestone(id=sub_id, title=payload.title, is_completed=False, completed_at=None)
+    updated_subs = list(milestone.submilestones) + [new_sub]
+
+    updated = milestone.model_copy(update={"submilestones": updated_subs, "updated_at": moment})
+    _milestones_ref(db, spg_id).document(milestone_id).set(updated.model_dump())
+    return updated
+
+
+def toggle_submilestone(
+    db: Any,
+    *,
+    spg_id: str,
+    milestone_id: str,
+    sub_id: str,
+    is_completed: bool,
+    now: Optional[datetime] = None,
+) -> SPGMilestone:
+    """Toggle completion status of a submilestone item."""
+    spg = require_spg(db, spg_id)
+    _assert_mutable(spg)
+    milestone = get_milestone(db, spg_id, milestone_id)
+    if milestone is None:
+        raise SPGError(404, "Milestone not found.")
+
+    moment = now or utcnow()
+    found = False
+    updated_subs: List[SPGSubmilestone] = []
+    for sub in milestone.submilestones:
+        if sub.id == sub_id:
+            found = True
+            completed_at = moment if is_completed else None
+            updated_subs.append(sub.model_copy(update={"is_completed": is_completed, "completed_at": completed_at}))
+        else:
+            updated_subs.append(sub)
+
+    if not found:
+        raise SPGError(404, "Submilestone not found.")
+
+    updated = milestone.model_copy(update={"submilestones": updated_subs, "updated_at": moment})
+    _milestones_ref(db, spg_id).document(milestone_id).set(updated.model_dump())
+    return updated
+
+
+def delete_submilestone(
+    db: Any,
+    *,
+    spg_id: str,
+    milestone_id: str,
+    sub_id: str,
+    now: Optional[datetime] = None,
+) -> SPGMilestone:
+    """Delete a submilestone item from a milestone."""
+    spg = require_spg(db, spg_id)
+    _assert_mutable(spg)
+    milestone = get_milestone(db, spg_id, milestone_id)
+    if milestone is None:
+        raise SPGError(404, "Milestone not found.")
+
+    moment = now or utcnow()
+    updated_subs = [s for s in milestone.submilestones if s.id != sub_id]
+    if len(updated_subs) == len(milestone.submilestones):
+        raise SPGError(404, "Submilestone not found.")
+
+    updated = milestone.model_copy(update={"submilestones": updated_subs, "updated_at": moment})
+    _milestones_ref(db, spg_id).document(milestone_id).set(updated.model_dump())
+    return updated
+

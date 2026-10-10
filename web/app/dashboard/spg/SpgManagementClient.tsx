@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import LoadingBar from "@/components/dashboard/LoadingBar";
 import PaginationBar from "@/components/dashboard/PaginationBar";
@@ -13,8 +14,39 @@ import { api } from "@/lib/api";
 import styles from "./SpgManagement.module.css";
 
 export default function SpgManagementClient() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { token, profile } = useMember();
-  const [scopeTab, setScopeTab] = useState<"MY_SPGS" | "PUBLIC_SPGS">("MY_SPGS");
+
+  const tabParam = searchParams.get("tab")?.toLowerCase();
+  const initialScope =
+    tabParam === "public" || tabParam === "public_spgs"
+      ? "PUBLIC_SPGS"
+      : tabParam === "ideas" || tabParam === "idea_jar" || tabParam === "idea_jar_spgs"
+      ? "IDEA_JAR_SPGS"
+      : "MY_SPGS";
+
+  const [scopeTab, setScopeTab] = useState<"MY_SPGS" | "PUBLIC_SPGS" | "IDEA_JAR_SPGS">(initialScope);
+
+  useEffect(() => {
+    const t = searchParams.get("tab")?.toLowerCase();
+    if (t === "public" || t === "public_spgs") setScopeTab("PUBLIC_SPGS");
+    else if (t === "ideas" || t === "idea_jar" || t === "idea_jar_spgs") setScopeTab("IDEA_JAR_SPGS");
+    else if (t === "my" || t === "my_spgs") setScopeTab("MY_SPGS");
+  }, [searchParams]);
+
+  const handleScopeChange = (newScope: "MY_SPGS" | "PUBLIC_SPGS" | "IDEA_JAR_SPGS") => {
+    setScopeTab(newScope);
+    const params = new URLSearchParams(searchParams.toString());
+    const val = newScope === "PUBLIC_SPGS" ? "public" : newScope === "IDEA_JAR_SPGS" ? "ideas" : "my";
+    if (val === "my") {
+      params.delete("tab");
+    } else {
+      params.set("tab", val);
+    }
+    const qs = params.toString();
+    router.push(qs ? `?${qs}` : window.location.pathname, { scroll: false });
+  };
   const [activeStatus, setActiveStatus] = useState<"ALL" | "ACTIVE" | "COMPLETED" | "ARCHIVED">("ALL");
   const [selectedTrack, setSelectedTrack] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -85,11 +117,20 @@ export default function SpgManagementClient() {
   // Counts for scope tabs
   const mySpgsAll = spgs.filter(isUserMember);
   const publicSpgsAll = spgs.filter((s) => s.visibility === "public");
+  // SPGs derived from or linked to Idea Jar submissions
+  const ideaJarSpgsAll = spgs.filter((s) => Boolean(s.idea_id || s.name.toLowerCase().includes("[spg]") || s.description?.toLowerCase().includes("idea jar")));
 
   const filteredClusters = spgs.filter((cluster) => {
     // 1. Scope filter
     if (scopeTab === "MY_SPGS") {
       if (!isUserMember(cluster)) return false;
+    } else if (scopeTab === "IDEA_JAR_SPGS") {
+      const isIdeaDerived = Boolean(
+        cluster.idea_id ||
+        cluster.name.toLowerCase().includes("[spg]") ||
+        cluster.description?.toLowerCase().includes("idea jar")
+      );
+      if (!isIdeaDerived) return false;
     } else {
       if (cluster.visibility !== "public") return false;
     }
@@ -185,17 +226,19 @@ export default function SpgManagementClient() {
           <p className={styles.pageSubtitle}>
             {scopeTab === "MY_SPGS"
               ? "Your active Student Project Groups, leadership responsibilities, and reports."
+              : scopeTab === "IDEA_JAR_SPGS"
+              ? "Student Project Groups actively executing initiatives sparked by the Idea Jar brainstorm."
               : "Discover public Student Project Groups across Research, Product, and Kaggle domains."}
           </p>
         </div>
 
-        {/* Scope Tabs (My SPGs vs All Public SPGs) */}
+        {/* Scope Tabs (My SPGs vs All Public SPGs vs Idea Jar SPGs) */}
         <div className={styles.scopeTabs} role="tablist" aria-label="SPG View Scope">
           <button
             type="button"
             role="tab"
             aria-selected={scopeTab === "MY_SPGS"}
-            onClick={() => setScopeTab("MY_SPGS")}
+            onClick={() => handleScopeChange("MY_SPGS")}
             className={`${styles.scopeTabBtn} ${scopeTab === "MY_SPGS" ? styles.scopeTabActive : ""}`}
           >
             <MemberIcon name="users" size={15} />
@@ -207,12 +250,24 @@ export default function SpgManagementClient() {
             type="button"
             role="tab"
             aria-selected={scopeTab === "PUBLIC_SPGS"}
-            onClick={() => setScopeTab("PUBLIC_SPGS")}
+            onClick={() => handleScopeChange("PUBLIC_SPGS")}
             className={`${styles.scopeTabBtn} ${scopeTab === "PUBLIC_SPGS" ? styles.scopeTabActive : ""}`}
           >
             <MemberIcon name="articles" size={15} />
             <span>ALL PUBLIC SPGS</span>
             <span className={styles.scopeCountBadge}>{publicSpgsAll.length}</span>
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={scopeTab === "IDEA_JAR_SPGS"}
+            onClick={() => handleScopeChange("IDEA_JAR_SPGS")}
+            className={`${styles.scopeTabBtn} ${scopeTab === "IDEA_JAR_SPGS" ? styles.scopeTabActive : ""}`}
+          >
+            <MemberIcon name="sparkles" size={15} />
+            <span>IDEA JAR SPGS</span>
+            <span className={styles.scopeCountBadge}>{ideaJarSpgsAll.length}</span>
           </button>
         </div>
       </div>
@@ -273,7 +328,17 @@ export default function SpgManagementClient() {
 
       {/* Top 4 Schema-Driven Metrics Cards */}
       <section className={styles.metricsGrid} aria-label="SPG Ecosystem Overview Metrics">
-        {scopeTab === "MY_SPGS" ? (
+        {loading ? (
+          <>
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className={styles.skeletonMetricCard}>
+                <div className={`${styles.skeletonMetricLabel} ${styles.shimmer}`} />
+                <div className={`${styles.skeletonMetricVal} ${styles.shimmer}`} />
+                <div className={`${styles.skeletonMetricSub} ${styles.shimmer}`} />
+              </div>
+            ))}
+          </>
+        ) : scopeTab === "MY_SPGS" ? (
           <>
             {/* Metric 1: My Active SPGs */}
             <div className={styles.metricCard}>
@@ -349,7 +414,39 @@ export default function SpgManagementClient() {
       {/* 3-Column Projects Grid */}
       <section className={styles.projectsGrid} aria-label="Active Project Clusters">
         {loading ? (
-          <div className={styles.emptyStateCard}>Loading project groups…</div>
+          <>
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className={styles.skeletonCard} aria-hidden="true">
+                <div className={styles.skeletonTopRow}>
+                  <div className={`${styles.skeletonPill} ${styles.shimmer}`} />
+                  <div className={`${styles.skeletonCode} ${styles.shimmer}`} />
+                </div>
+                <div className={styles.skeletonBody}>
+                  <div className={`${styles.skeletonTitle} ${styles.shimmer}`} />
+                  <div className={`${styles.skeletonLineFull} ${styles.shimmer}`} />
+                  <div className={`${styles.skeletonLinePartial} ${styles.shimmer}`} />
+                </div>
+                <div className={styles.skeletonReportBox}>
+                  <div className={styles.skeletonReportRow}>
+                    <div className={`${styles.skeletonReportLabel} ${styles.shimmer}`} />
+                    <div className={`${styles.skeletonReportVal} ${styles.shimmer}`} />
+                  </div>
+                  <div className={styles.skeletonReportRow}>
+                    <div className={`${styles.skeletonReportLabel} ${styles.shimmer}`} />
+                    <div className={`${styles.skeletonReportVal} ${styles.shimmer}`} />
+                  </div>
+                </div>
+                <div className={styles.skeletonFooter}>
+                  <div className={styles.skeletonAvatars}>
+                    <div className={`${styles.skeletonAvatarCircle} ${styles.shimmer}`} />
+                    <div className={`${styles.skeletonAvatarCircle} ${styles.shimmer}`} />
+                    <div className={`${styles.skeletonAvatarCircle} ${styles.shimmer}`} />
+                  </div>
+                  <div className={`${styles.skeletonBtn} ${styles.shimmer}`} />
+                </div>
+              </div>
+            ))}
+          </>
         ) : filteredClusters.length === 0 ? (
           <div className={styles.emptyStateCard}>
             <div className={styles.emptyStateIcon}>

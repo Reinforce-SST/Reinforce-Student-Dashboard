@@ -7,7 +7,7 @@ import MemberIcon, { type IconName } from "@/components/dashboard/MemberIcon";
 import PaginationBar from "@/components/dashboard/PaginationBar";
 import LoadingBar from "@/components/dashboard/LoadingBar";
 import { useMember } from "@/lib/useMember";
-import { api, type ApiTicketDetail, type IdeaDetail, type TicketSummary, type StudentProfile } from "@/lib/api";
+import { api, ticketFields, type ApiTicketDetail, type IdeaDetail, type TicketSummary, type StudentProfile } from "@/lib/api";
 import { loadAllSpgs } from "@/lib/memberData";
 import type { SPGRecord } from "@/lib/spgData";
 import { useDebounce } from "@/lib/useDebounce";
@@ -238,6 +238,11 @@ export default function TicketManagementClient() {
   const [memberSpgsError, setMemberSpgsError] = useState("");
 
   const [spgTrack, setSpgTrack] = useState<"research" | "product" | "kaggle" | "general">("research");
+  const [spgType, setSpgType] = useState<"learning" | "project">("learning");
+  const [spgVision, setSpgVision] = useState("");
+  const [spgFirstSteps, setSpgFirstSteps] = useState("");
+  const [spgMilestonesText, setSpgMilestonesText] = useState("");
+  const [spgProposalDocUrl, setSpgProposalDocUrl] = useState("");
   const [spgLeader, setSpgLeader] = useState<StudentProfile | null>(null);
   const [isChangingLeader, setIsChangingLeader] = useState(false);
   const [leaderSearch, setLeaderSearch] = useState("");
@@ -542,9 +547,12 @@ export default function TicketManagementClient() {
       const memberUids = Object.keys(selectedTeamMembers).filter((id) => id !== leaderUid);
       const trackLabel = spgTrack === "research" ? "Research Track" : spgTrack === "product" ? "Product Track" : spgTrack === "kaggle" ? "Kaggle Track" : "General Track";
       const leaderName = spgLeader?.full_name || profile.full_name || "Member";
+      const isProjectSpg = spgType === "project";
 
       fieldsObj = {
         "Project Name": formTitle.trim() || "Untitled Project",
+        "Group Type": isProjectSpg ? "Project SPG" : "Learning SPG",
+        "spg_type": spgType,
         "Track": trackLabel,
         "track": spgTrack,
         "Team Leader UID": leaderUid,
@@ -560,6 +568,15 @@ export default function TicketManagementClient() {
         "Report Frequency (Days)": Number(spgFrequencyDays),
         "frequency_days": Number(spgFrequencyDays),
         "Summary & Goals": spgGoals.trim(),
+        ...(isProjectSpg ? {
+          "Vision": spgVision.trim(),
+          "First Steps": spgFirstSteps.trim(),
+          "Initial Milestones": spgMilestonesText.trim(),
+          ...(spgProposalDocUrl.trim() ? {
+            "Proposal Document URL": spgProposalDocUrl.trim(),
+            "proposal_document_url": spgProposalDocUrl.trim(),
+          } : {}),
+        } : {}),
         "Project Name & Track": `${formTitle.trim() || "Untitled Project"} (${trackLabel})`,
         // The server validates this and adds the idea's title as "Based on Idea".
         ...(basedOnIdea ? { idea_id: basedOnIdea.id } : {}),
@@ -649,6 +666,20 @@ export default function TicketManagementClient() {
         setSubmitError("An SPG may have at most 6 team members.");
         return;
       }
+      if (spgType === "project") {
+        if (!spgVision.trim()) {
+          setSubmitError("Please provide the project vision and problem statement for your Project SPG.");
+          return;
+        }
+        if (!spgFirstSteps.trim()) {
+          setSubmitError("Please outline the first steps for weeks 1–2 of your Project SPG.");
+          return;
+        }
+        if (!spgMilestonesText.trim()) {
+          setSubmitError("Please outline the initial milestones for your Project SPG.");
+          return;
+        }
+      }
     }
 
     setIsSubmitting(true);
@@ -665,6 +696,11 @@ export default function TicketManagementClient() {
       setSpgDurationDays("");
       setSpgFrequencyDays("");
       setSpgGoals("");
+      setSpgType("learning");
+      setSpgVision("");
+      setSpgFirstSteps("");
+      setSpgMilestonesText("");
+      setSpgProposalDocUrl("");
       setSelectedTeamMembers({});
       setSpgLeader(profile);
       setIsChangingLeader(false);
@@ -1012,28 +1048,31 @@ export default function TicketManagementClient() {
                 <p className={styles.detailDesc}>{selectedTicket.description}</p>
               </div>
 
-              {selectedTicket.fields && Object.keys(selectedTicket.fields).length > 0 && (
-                <div className={styles.detailSection}>
-                  <span className={styles.sectionLabel}>
-                    Ticket Details & Specifications
-                  </span>
-                  <div className={styles.fieldsTable}>
-                    {Object.entries(selectedTicket.fields)
-                      .filter(([key, val]) => {
-                        if (!val) return false;
-                        if (key === "Incident Summary" && val === selectedTicket.title) return false;
-                        if (key === "Report Details" && val === selectedTicket.description) return false;
-                        return true;
-                      })
-                      .map(([key, value]) => (
-                        <div key={key} className={styles.fieldRow}>
-                          <span className={styles.fieldKey}>{key}:</span>
-                          <span className={styles.fieldVal}>{String(value)}</span>
+              {selectedTicket.fields && Object.keys(selectedTicket.fields).length > 0 && (() => {
+                const formatted = ticketFields(selectedTicket.category, selectedTicket.fields)
+                  .filter((field) => {
+                    if (!field.value) return false;
+                    if (field.label === "Incident Summary" && field.value === selectedTicket.title) return false;
+                    if (field.label === "Report Details" && field.value === selectedTicket.description) return false;
+                    return true;
+                  });
+                if (formatted.length === 0) return null;
+                return (
+                  <div className={styles.detailSection}>
+                    <span className={styles.sectionLabel}>
+                      Ticket Details & Specifications
+                    </span>
+                    <div className={styles.fieldsTable}>
+                      {formatted.map((field) => (
+                        <div key={field.label} className={styles.fieldRow}>
+                          <span className={styles.fieldKey}>{field.label}:</span>
+                          <span className={styles.fieldVal}>{field.value}</span>
                         </div>
                       ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {selectedTicket.thread_url && <div className={styles.discordBridgeBanner}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -1193,6 +1232,42 @@ export default function TicketManagementClient() {
               {/* Category-Specific Form Fields */}
               {selectedCategory === "spg_registration" && (
                 <>
+                  {/* Group Type Selector */}
+                  <div className={styles.formGroup}>
+                    <label className={styles.inputLabel}>
+                      Group Type <span style={{ color: "#e5b731" }}>*</span>
+                    </label>
+                    <div className={styles.typeSelectorRow}>
+                      <button
+                        type="button"
+                        className={`${styles.typeSelectCard} ${spgType === "learning" ? styles.typeSelectCardActive : ""}`}
+                        onClick={() => setSpgType("learning")}
+                      >
+                        <div className={styles.typeSelectCardTitle}>
+                          <span>Learning SPG</span>
+                          {spgType === "learning" && <span style={{ color: "#e5b731" }}>✓</span>}
+                        </div>
+                        <span className={styles.typeSelectCardDesc}>
+                          Study groups, paper reading, upskilling, and collaborative study.
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className={`${styles.typeSelectCard} ${spgType === "project" ? styles.typeSelectCardActive : ""}`}
+                        onClick={() => setSpgType("project")}
+                      >
+                        <div className={styles.typeSelectCardTitle}>
+                          <span>Project SPG</span>
+                          {spgType === "project" && <span style={{ color: "#e5b731" }}>✓</span>}
+                        </div>
+                        <span className={styles.typeSelectCardDesc}>
+                          Building a production system, research artifact, or real-world product.
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
                   <div className={styles.formGroup}>
                     <label className={styles.inputLabel} htmlFor="modal-spg-track">
                       Track
@@ -1572,11 +1647,99 @@ export default function TicketManagementClient() {
                       id="modal-spg-goals"
                       type="text"
                       className={styles.textInput}
-                      placeholder="Key milestones, target output, or repository link"
+                      placeholder="Key focus areas, target output, or repository link"
                       value={spgGoals}
                       onChange={(e) => setSpgGoals(e.target.value)}
                     />
                   </div>
+
+                  {/* Project SPG Specific Proposal Fields */}
+                  {spgType === "project" && (
+                    <div className={styles.proposalBox}>
+                      <div className={styles.proposalBoxHeader}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <MemberIcon name="articles" size={15} />
+                          <span style={{ fontSize: "0.82rem", fontWeight: 800, color: "#ffffff" }}>
+                            Project Proposal &amp; Milestone Plan
+                          </span>
+                        </div>
+                        <span style={{ fontSize: "0.7rem", color: "#e5b731", fontWeight: 700 }}>
+                          Required for Project SPGs
+                        </span>
+                      </div>
+
+                      <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                        <label className={styles.inputLabel} htmlFor="modal-spg-vision">
+                          Vision &amp; Deliverables <span style={{ color: "#e5b731" }}>*</span>
+                        </label>
+                        <textarea
+                          id="modal-spg-vision"
+                          className={styles.textareaInput}
+                          rows={3}
+                          placeholder="What is the objective, problem statement, and final deliverable?"
+                          value={spgVision}
+                          onChange={(e) => setSpgVision(e.target.value)}
+                          required
+                        />
+                        <span className={styles.fieldHelper}>
+                          Explain what you are building and why it matters.
+                        </span>
+                      </div>
+
+                      <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                        <label className={styles.inputLabel} htmlFor="modal-spg-first-steps">
+                          First Steps (Weeks 1–2) <span style={{ color: "#e5b731" }}>*</span>
+                        </label>
+                        <textarea
+                          id="modal-spg-first-steps"
+                          className={styles.textareaInput}
+                          rows={2}
+                          placeholder="Immediate sprint items, repo scaffolding, dataset acquisition, etc."
+                          value={spgFirstSteps}
+                          onChange={(e) => setSpgFirstSteps(e.target.value)}
+                          required
+                        />
+                        <span className={styles.fieldHelper}>
+                          Concrete tasks for the first two weeks.
+                        </span>
+                      </div>
+
+                      <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                        <label className={styles.inputLabel} htmlFor="modal-spg-milestones">
+                          Initial Milestones <span style={{ color: "#e5b731" }}>*</span>
+                        </label>
+                        <textarea
+                          id="modal-spg-milestones"
+                          className={styles.textareaInput}
+                          rows={3}
+                          placeholder="Outline key milestone checkpoints (e.g. M1: Architecture & Data Pipeline, M2: Baseline, M3: Release)"
+                          value={spgMilestonesText}
+                          onChange={(e) => setSpgMilestonesText(e.target.value)}
+                          required
+                        />
+                        <span className={styles.fieldHelper}>
+                          Target checkpoints across the project timeline.
+                        </span>
+                      </div>
+
+                      <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                        <label className={styles.inputLabel} htmlFor="modal-spg-proposal-doc">
+                          Proposal Document / Spec Link (Optional)
+                        </label>
+                        <input
+                          id="modal-spg-proposal-doc"
+                          type="url"
+                          className={styles.textInput}
+                          placeholder="https://docs.google.com/... or GitHub spec URL"
+                          value={spgProposalDocUrl}
+                          onChange={(e) => setSpgProposalDocUrl(e.target.value)}
+                        />
+                        <span className={styles.fieldHelper}>
+                          Optional Google Doc, Notion spec, or GitHub design doc link.
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
 

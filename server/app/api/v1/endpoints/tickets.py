@@ -452,6 +452,16 @@ def _validate_spg_registration_fields(fields: Dict[str, Any], creator_uid: str) 
     fields_copy["frequency_days"] = frequency_days
     fields_copy["Report Frequency (Days)"] = frequency_days
 
+    # Group Type (Learning vs Project)
+    raw_type = fields_copy.get("spg_type") or fields_copy.get("Group Type") or fields_copy.get("type")
+    if raw_type and str(raw_type).strip().lower() in ("project", "learning", "project spg", "learning spg"):
+        clean_type = "project" if "project" in str(raw_type).strip().lower() else "learning"
+        fields_copy["spg_type"] = clean_type
+        fields_copy["Group Type"] = "Project SPG" if clean_type == "project" else "Learning SPG"
+    else:
+        fields_copy.setdefault("spg_type", "learning")
+        fields_copy.setdefault("Group Type", "Learning SPG")
+
     # 5. Optional idea the group is started from. The display title is always
     # set here, from the idea itself, so a member cannot attach one idea and
     # show another's name.
@@ -878,15 +888,40 @@ def approve_spg_ticket(
     destination = None
     proposition_url = None
     if spg_type is SPGType.PROJECT:
-        if proposition is None:
-            raise HTTPException(status_code=400, detail="A project SPG needs a proposition PDF.")
-        try:
-            payload = uploads.read_pdf(proposition.file, proposition.content_type)
-        except uploads.UploadRejected as error:
-            raise HTTPException(status_code=400, detail=error.detail) from None
-        upload_id = hashlib.sha256(f"{ticket_id}:{uuid.uuid4().hex}".encode("utf-8")).hexdigest()[:32]
-        destination = uploads.proposition_path(upload_id)
-        proposition_url = uploads.store_pdf(payload, destination)
+        if proposition is not None:
+            try:
+                payload = uploads.read_pdf(proposition.file, proposition.content_type)
+            except uploads.UploadRejected as error:
+                raise HTTPException(status_code=400, detail=error.detail) from None
+            upload_id = hashlib.sha256(f"{ticket_id}:{uuid.uuid4().hex}".encode("utf-8")).hexdigest()[:32]
+            destination = uploads.proposition_path(upload_id)
+            proposition_url = uploads.store_pdf(payload, destination)
+        else:
+            # Check if student submitted a proposal document URL or link in fields
+            student_proposal_url = (
+                fields.get("proposal_url")
+                or fields.get("Proposal Document URL")
+                or fields.get("Proposition Document")
+                or fields.get("proposal_doc_url")
+                or fields.get("proposal_document_url")
+            )
+            has_proposal_text = bool(
+                fields.get("Vision")
+                or fields.get("vision")
+                or fields.get("First Steps")
+                or fields.get("first_steps")
+                or fields.get("Initial Milestones")
+                or fields.get("initial_milestones")
+            )
+            if student_proposal_url and str(student_proposal_url).strip():
+                proposition_url = str(student_proposal_url).strip()
+            elif has_proposal_text:
+                proposition_url = f"/dashboard/tickets/{ticket_id}"
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="A project SPG needs a proposition PDF or project proposal.",
+                )
     elif proposition is not None:
         raise HTTPException(status_code=400, detail="Only project SPGs use a proposition PDF.")
 

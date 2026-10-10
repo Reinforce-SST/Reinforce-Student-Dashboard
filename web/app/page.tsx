@@ -4,6 +4,7 @@ import LandingMotion from "@/components/landing/LandingMotion";
 import ClosingSections from "@/components/landing/ClosingSections";
 import WorkSections from "@/components/landing/WorkSections";
 import HeroCollage from "@/components/landing/HeroCollage";
+import HeroCta from "@/components/landing/HeroCta";
 import { LandingButton, MarkerText, Stars, stagger } from "@/components/landing/Primitives";
 import styles from "./page.module.css";
 
@@ -30,8 +31,7 @@ export default function Home() {
             The AI/ML club at SST. Real competitions, open-source products, and research you can reproduce.
           </p>
           <div className={`${styles.hctas} ${styles.rise}`} data-animate="rise" style={stagger(4)}>
-            <LandingButton href="/auth" large>Join the club</LandingButton>
-            <LandingButton href="#ledger" variant="ghost" large>See the ledger</LandingButton>
+            <HeroCta variant="hero" />
           </div>
           <p className={`${styles.hfine} ${styles.rise}`} data-animate="rise" style={stagger(5)}>Google sign-in · @sst.scaler.com & @scaler.com</p>
         </div>

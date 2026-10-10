@@ -1,4 +1,6 @@
 import Link from "next/link";
+import Image from "next/image";
+import logo from "@/public/brand/logo_main_trim.png";
 import LandingFooter from "./landing/LandingFooter";
 import styles from "./SiteFooter.module.css";
 
@@ -14,7 +16,14 @@ export default function SiteFooter({ landing = false }: { landing?: boolean }) {
     <footer className={styles.footer}>
       <div className={`page ${styles.inner}`}>
         <div>
-          <p className={styles.brand}>Rein<em>force</em></p>
+          <Link href="/" className={styles.brand} aria-label="Reinforce Home">
+            <Image
+              src={logo}
+              alt="Reinforce SST"
+              height={28}
+              className={styles.brandLogo}
+            />
+          </Link>
           <p className={styles.line}>The AI/ML club at Scaler School of Technology.</p>
         </div>
 

@@ -5,8 +5,23 @@
  * not require one. The browser never talks to Firestore directly.
  */
 
-import type { SPGRecord, SPGReportRecord } from "./spgData";
-export type { SPGRecord, SPGReportRecord } from "./spgData";
+import type {
+  SPGRecord,
+  SPGReportRecord,
+  SPGMilestone,
+  SPGMilestoneCreate,
+  SPGMilestoneUpdate,
+  SPGSubmilestoneCreate,
+} from "./spgData";
+export type {
+  SPGRecord,
+  SPGReportRecord,
+  SPGMilestone,
+  SPGMilestoneCreate,
+  SPGMilestoneUpdate,
+  SPGSubmilestone,
+  SPGSubmilestoneCreate,
+} from "./spgData";
 import type { ContributionPage, ContributionRecord, PublicContributionRecord } from "./contributionData";
 
 const BASE =
@@ -35,6 +50,8 @@ export type ArticleDetail = ArticleSummary & { content: string };
 export type IdeaSummary = {
   id: string; title: string; description: string;
   track: string; difficulty?: string | null; is_verified: boolean;
+  is_featured?: boolean;
+  spg_creation_type?: string | null;
   stats: { upvote_count: number; views_count: number; claims_count: number };
   created_at?: string | null;
   approved_at?: string | null;
@@ -104,6 +121,43 @@ async function request<T>(path: string, token?: string | null, init?: RequestIni
   }
 
   if (!res.ok) {
+    // If the token expired (401), automatically force-refresh it via Firebase and retry the request once
+    if (res.status === 401 && typeof window !== "undefined") {
+      try {
+        const { getFirebaseAuth, isFirebaseConfigured } = await import("./firebase");
+        if (isFirebaseConfigured) {
+          const auth = getFirebaseAuth();
+          if (auth.currentUser) {
+            const freshToken = await auth.currentUser.getIdToken(true);
+            if (freshToken) {
+              const retryController = new AbortController();
+              const retryTimer = setTimeout(() => retryController.abort(), TIMEOUT_MS);
+              try {
+                const retryRes = await fetch(`${BASE}${path}`, {
+                  ...init,
+                  headers: {
+                    ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+                    Authorization: `Bearer ${freshToken}`,
+                    ...init?.headers,
+                  },
+                  cache: "no-store",
+                  signal: retryController.signal,
+                });
+                if (retryRes.ok) {
+                  return retryRes.json() as Promise<T>;
+                }
+                res = retryRes;
+              } finally {
+                clearTimeout(retryTimer);
+              }
+            }
+          }
+        }
+      } catch {
+        // Fall through to error reporting
+      }
+    }
+
     let detail = `Request failed with status ${res.status}`;
     try {
       const body = await res.json();
@@ -404,6 +458,7 @@ type ApiTicketMessage = {
 const FIELD_ORDER: Partial<Record<TicketCategory, string[]>> = {
   spg_registration: [
     "Project Name",
+    "Group Type",
     "Based on Idea",
     "Track",
     "Team Leader",
@@ -411,6 +466,10 @@ const FIELD_ORDER: Partial<Record<TicketCategory, string[]>> = {
     "Duration (Days)",
     "Report Frequency (Days)",
     "Summary & Goals",
+    "Vision",
+    "First Steps",
+    "Initial Milestones",
+    "Proposal Document URL",
     "Duration & Frequency",
     "Project Name & Track",
   ],
@@ -434,38 +493,72 @@ const FIELD_ORDER: Partial<Record<TicketCategory, string[]>> = {
   report: ["Incident Summary", "Report Details"],
 };
 
-function ticketFields(category: TicketCategory, fields: Record<string, unknown>) {
-  const order = FIELD_ORDER[category] ?? [];
-  const internalKeysToSkip = new Set([
-    "leader_uid",
-    "member_uids",
-    "duration_days",
-    "frequency_days",
-    "prerequisites",
-    "rough_roadmap",
-    "learning_outcomes",
-    "topic",
-  ]);
+export type FormattedTicketField = { label: string; value: string };
 
-  const rawEntries: [string, unknown][] = [];
+export function ticketFields(category: TicketCategory, fields: Record<string, unknown>): FormattedTicketField[] {
+  const order = FIELD_ORDER[category] ?? [];
+
+  const hasGroupType = fields["Group Type"] !== undefined && String(fields["Group Type"]).trim() !== "";
+  const hasTeamLeader = fields["Team Leader"] !== undefined && String(fields["Team Leader"]).trim() !== "";
+  const hasTeamMembers = fields["Team Members"] !== undefined && String(fields["Team Members"]).trim() !== "";
+  const hasTrack = fields["Track"] !== undefined && String(fields["Track"]).trim() !== "";
+  const hasDuration = fields["Duration (Days)"] !== undefined && String(fields["Duration (Days)"]).trim() !== "";
+  const hasFrequency = fields["Report Frequency (Days)"] !== undefined && String(fields["Report Frequency (Days)"]).trim() !== "";
+  const hasProjectName = fields["Project Name"] !== undefined && String(fields["Project Name"]).trim() !== "";
+  const hasIdeaTitle = fields["Idea Title"] !== undefined && String(fields["Idea Title"]).trim() !== "";
+  const hasDifficulty = fields["Difficulty"] !== undefined && String(fields["Difficulty"]).trim() !== "";
+  const hasOverview = fields["Overview"] !== undefined && String(fields["Overview"]).trim() !== "";
+  const hasPrerequisites = fields["Prerequisites"] !== undefined && String(fields["Prerequisites"]).trim() !== "";
+  const hasRoadmap = (fields["Rough Roadmap"] !== undefined && String(fields["Rough Roadmap"]).trim() !== "") ||
+    (fields["Roadmap"] !== undefined && String(fields["Roadmap"]).trim() !== "");
+  const hasOutcomes = fields["Learning Outcomes"] !== undefined && String(fields["Learning Outcomes"]).trim() !== "";
+  const hasProposalDoc = fields["Proposal Document URL"] !== undefined && String(fields["Proposal Document URL"]).trim() !== "";
+
+  const rawEntries: [string, string][] = [];
+
   for (const [key, val] of Object.entries(fields)) {
     if (val === undefined || val === null) continue;
-    const strVal = String(val).trim();
+    let strVal = typeof val === "object" && Array.isArray(val) ? val.join(", ") : String(val).trim();
     if (!strVal || strVal === "None specified" || strVal === "None") continue;
-    // A document id means nothing to a member. The server stores the idea's
-    // title alongside it as "Based on Idea".
+
+    // Never display raw idea_id (Based on Idea holds the title)
     if (key === "idea_id") continue;
 
-    // Skip redundant raw snake_case keys if Title Case key exists
-    if (
-      internalKeysToSkip.has(key.toLowerCase()) &&
-      Object.keys(fields).some(
-        (k) => k !== key && k.toLowerCase().replace(/[^a-z0-9]/g, "") === key.replace(/[^a-z0-9]/g, "")
-      )
-    ) {
-      continue;
-    }
-    rawEntries.push([key, strVal]);
+    // Redundant alias suppression
+    if (hasGroupType && key === "spg_type") continue;
+    if (hasProposalDoc && key === "proposal_document_url") continue;
+    if (hasTeamLeader && (key === "leader_uid" || key === "Team Leader UID")) continue;
+    if (hasTeamMembers && (key === "member_uids" || key === "Team Member UIDs")) continue;
+    if (hasTrack && key === "track") continue;
+    if (hasDuration && (key === "duration_days" || key === "Duration & Frequency")) continue;
+    if (hasFrequency && (key === "frequency_days" || key === "Duration & Frequency")) continue;
+    if (hasProjectName && key === "Project Name & Track") continue;
+    if (hasIdeaTitle && (key === "title" || key === "Idea Title & Track")) continue;
+    if (hasDifficulty && (key === "difficulty" || key === "Track & Difficulty")) continue;
+    if (hasOverview && (key === "description" || key === "Details")) continue;
+    if (hasPrerequisites && key === "prerequisites") continue;
+    if (hasRoadmap && (key === "rough_roadmap" || key === "roadmap" || key === "Roadmap & Outcomes")) continue;
+    if (hasOutcomes && (key === "learning_outcomes" || key === "Roadmap & Outcomes")) continue;
+
+    // Fallback normalization when display key was not provided
+    let label = key;
+    if (!hasGroupType && key === "spg_type") {
+      label = "Group Type";
+      strVal = strVal === "project" ? "Project SPG" : "Learning SPG";
+    } else if (!hasProposalDoc && key === "proposal_document_url") {
+      label = "Proposal Document URL";
+    } else if (!hasTeamLeader && (key === "leader_uid" || key === "Team Leader UID")) label = "Team Leader";
+    else if (!hasTeamMembers && (key === "member_uids" || key === "Team Member UIDs")) label = "Team Members";
+    else if (!hasTrack && key === "track") {
+      label = "Track";
+      strVal = `${strVal[0].toUpperCase()}${strVal.slice(1)} Track`;
+    } else if (!hasDuration && key === "duration_days") label = "Duration (Days)";
+    else if (!hasFrequency && key === "frequency_days") label = "Report Frequency (Days)";
+    else if (!hasIdeaTitle && key === "title") label = "Idea Title";
+    else if (!hasDifficulty && key === "difficulty") label = "Difficulty";
+    else if (!hasOverview && (key === "description" || key === "Details")) label = "Overview";
+
+    rawEntries.push([label, strVal]);
   }
 
   // Sort according to preferred order
@@ -482,10 +575,12 @@ function ticketFields(category: TicketCategory, fields: Record<string, unknown>)
 
   // Deduplicate synonym labels or duplicate values
   const seenValues = new Map<string, string>();
+  const seenLabels = new Set<string>();
   const deduped: { label: string; value: string }[] = [];
 
-  for (const [label, val] of rawEntries) {
-    const strVal = String(val).trim();
+  for (const [label, strVal] of rawEntries) {
+    if (seenLabels.has(label)) continue;
+
     // Synonym mapping:
     // Suggestion Topic <-> Feedback Topic
     // Feedback Details <-> Comments
@@ -511,6 +606,7 @@ function ticketFields(category: TicketCategory, fields: Record<string, unknown>)
       }
     }
 
+    seenLabels.add(label);
     seenValues.set(strVal, label);
     deduped.push({ label, value: strVal });
   }
@@ -729,6 +825,93 @@ export const api = {
 
   getSpg: <T = SPGRecord>(token: string, spgId: string) =>
     request<T>(`/spgs/${encodeURIComponent(spgId)}`, token),
+
+  updateSpg: <T = SPGRecord>(token: string, spgId: string, payload: Partial<SPGRecord> & Record<string, unknown>) =>
+    request<T>(`/spgs/${encodeURIComponent(spgId)}`, token, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  adminPauseSpg: <T = SPGRecord>(token: string, spgId: string) =>
+    request<T>(`/spgs/${encodeURIComponent(spgId)}/pause`, token, {
+      method: "POST",
+    }),
+
+  adminResumeSpg: <T = SPGRecord>(token: string, spgId: string) =>
+    request<T>(`/spgs/${encodeURIComponent(spgId)}/resume`, token, {
+      method: "POST",
+    }),
+
+  adminDisbandSpg: <T = SPGRecord>(token: string, spgId: string) =>
+    request<T>(`/spgs/${encodeURIComponent(spgId)}/disband`, token, {
+      method: "POST",
+    }),
+
+  verifySpgReport: <T = SPGReportRecord>(token: string, reportId: string) =>
+    request<T>(`/spgs/reports/${encodeURIComponent(reportId)}/verify`, token, {
+      method: "POST",
+    }),
+
+  addSpgMember: <T = SPGRecord>(token: string, spgId: string, userId: string) =>
+    request<T>(`/spgs/${encodeURIComponent(spgId)}/members/${encodeURIComponent(userId)}`, token, {
+      method: "POST",
+    }),
+
+  removeSpgMember: <T = SPGRecord>(token: string, spgId: string, userId: string) =>
+    request<T>(`/spgs/${encodeURIComponent(spgId)}/members/${encodeURIComponent(userId)}`, token, {
+      method: "DELETE",
+    }),
+
+  changeSpgLead: <T = SPGRecord>(token: string, spgId: string, newLeadId: string) =>
+    request<T>(`/spgs/${encodeURIComponent(spgId)}/lead`, token, {
+      method: "PATCH",
+      body: JSON.stringify({ new_lead_id: newLeadId }),
+    }),
+
+  listMilestones: (token: string, spgId: string) =>
+    request<SPGMilestone[]>(`/spgs/${encodeURIComponent(spgId)}/milestones`, token),
+
+  createMilestone: (token: string, spgId: string, payload: SPGMilestoneCreate) =>
+    request<SPGMilestone>(`/spgs/${encodeURIComponent(spgId)}/milestones`, token, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  updateMilestone: (token: string, spgId: string, milestoneId: string, payload: SPGMilestoneUpdate) =>
+    request<SPGMilestone>(`/spgs/${encodeURIComponent(spgId)}/milestones/${encodeURIComponent(milestoneId)}`, token, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  deleteMilestone: (token: string, spgId: string, milestoneId: string) =>
+    request<void>(`/spgs/${encodeURIComponent(spgId)}/milestones/${encodeURIComponent(milestoneId)}`, token, {
+      method: "DELETE",
+    }),
+
+  addSubmilestone: (token: string, spgId: string, milestoneId: string, payload: SPGSubmilestoneCreate) =>
+    request<SPGMilestone>(`/spgs/${encodeURIComponent(spgId)}/milestones/${encodeURIComponent(milestoneId)}/submilestones`, token, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  toggleSubmilestone: (token: string, spgId: string, milestoneId: string, subId: string, isCompleted: boolean) =>
+    request<SPGMilestone>(
+      `/spgs/${encodeURIComponent(spgId)}/milestones/${encodeURIComponent(milestoneId)}/submilestones/${encodeURIComponent(subId)}`,
+      token,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ is_completed: isCompleted }),
+      }
+    ),
+
+  deleteSubmilestone: (token: string, spgId: string, milestoneId: string, subId: string) =>
+    request<SPGMilestone>(
+      `/spgs/${encodeURIComponent(spgId)}/milestones/${encodeURIComponent(milestoneId)}/submilestones/${encodeURIComponent(subId)}`,
+      token,
+      {
+        method: "DELETE",
+      }
+    ),
 
   listSpgReports: <T = SPGReportRecord>(
     token: string,

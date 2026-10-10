@@ -49,6 +49,13 @@ class FakeDocumentRef:
                 value = cursor.get(parts[-1], 0) + value.value
             cursor[parts[-1]] = copy.deepcopy(value)
 
+    def delete(self) -> None:
+        if self._collection in self._store and self.id in self._store[self._collection]:
+            del self._store[self._collection][self.id]
+
+    def collection(self, name: str) -> "FakeCollection":
+        return FakeCollection(self._store, f"{self._collection}/{self.id}/{name}")
+
 
 class FakeQuery:
     def __init__(
@@ -131,13 +138,19 @@ class FakeTransaction:
     def update(self, reference: FakeDocumentRef, data: dict) -> None:
         self.writes.append((reference, data, "update"))
 
+    def delete(self, reference: FakeDocumentRef) -> None:
+        self.writes.append((reference, None, "delete"))
+
     def commit(self) -> None:
         for write in self.writes:
-            reference, data = write[:2]
-            if len(write) == 3:
-                reference.update(data)
+            reference = write[0]
+            action = write[2] if len(write) == 3 else "set"
+            if action == "delete":
+                reference.delete()
+            elif action == "update":
+                reference.update(write[1])
             else:
-                reference.set(data)
+                reference.set(write[1])
 
 
 class FakeFirestore:

@@ -70,6 +70,7 @@ def store_pdf(payload: bytes, destination_path: str) -> str:
         file_obj=io.BytesIO(payload),
         destination_path=destination_path,
         content_type=PDF_CONTENT_TYPE,
+        shareable=True,
     )
 
 
