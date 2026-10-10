@@ -66,7 +66,7 @@ export default function TracksPage() {
           lede="You are not locked in, and you can be in more than one. Nobody here started knowing this — the tracks exist to give you a concrete goal and people to work on it with, not to sort you."
         />
 
-        <section className={`section-paper on-light ${styles.wrap}`}>
+        <section className={`${styles.wrap}`}>
           <div className="page">
             {TRACKS.map((track, i) => (
               // Reveal renders the <article> itself rather than wrapping it. A
@@ -98,7 +98,7 @@ export default function TracksPage() {
         </section>
 
         {/* How a project group works — the mechanics, taken from the bot's flow */}
-        <section className={`section-paper-2 on-light ${styles.wrap}`}>
+        <section className={`${styles.wrap} ${styles.spgSection}`}>
           <div className="page">
             <Reveal>
               <Eyebrow index="02" align="left">How a project group works</Eyebrow>

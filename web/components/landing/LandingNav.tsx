@@ -8,10 +8,10 @@ import { useAuth } from "@/lib/useAuth";
 import styles from "@/app/page.module.css";
 
 const LINKS = [
-  { href: "#tracks", label: "Tracks" },
+  { href: "/tracks", label: "Tracks" },
   { href: "/projects", label: "Projects" },
-  { href: "#ledger", label: "The ledger" },
-  { href: "#joining", label: "Joining" },
+  { href: "/#ledger", label: "The ledger" },
+  { href: "/#joining", label: "Joining" },
 ];
 
 export default function LandingNav() {

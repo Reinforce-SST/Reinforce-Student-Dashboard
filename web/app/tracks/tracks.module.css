@@ -1,133 +1,169 @@
-.wrap { padding: clamp(48px, 8vh, 80px) 0; }
+.wrap {
+  padding: clamp(64px, 10vh, 104px) 0;
+  background: var(--bg, #110F0A);
+}
+
+.spgSection {
+  background: var(--bg-2, #16130C);
+  border-top: 1px solid var(--edge, #2E2718);
+}
 
 /* ---------------------------------------------------------------- track -- */
 .track {
   display: grid;
   grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
-  gap: 40px;
-  padding: 36px 0;
-  border-bottom: 1px dashed var(--paper-line-2);
+  gap: 48px;
+  padding: 44px 0;
+  border-bottom: 1px dashed var(--edge, #2E2718);
 }
 .track:first-child { padding-top: 0; }
 .track:last-child { border-bottom: 0; padding-bottom: 0; }
 
-/* The two grid columns of a track. The left column is short and the right is
-   tall, so it is pinned to the top rather than stretching to match. */
 .trackHead { align-self: start; }
 .trackBody { min-width: 0; }
 
 .trackIndex {
-  color: var(--brand-ink);
-  font-size: 0.625rem;
-  letter-spacing: 0.16em;
-  margin-bottom: 12px;
+  font-family: var(--font-mono);
+  color: var(--brand, #E5B731);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+  font-weight: 700;
 }
 
 .trackName {
-  font-family: var(--font-display);
-  font-weight: 400;
-  font-size: clamp(1.875rem, 3.4vw, 2.5rem);
-  line-height: 1.05;
-  color: var(--paper-ink);
-  margin-bottom: 10px;
+  font-family: var(--font-sans);
+  font-weight: 800;
+  font-size: clamp(2rem, 3.8vw, 2.75rem);
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  color: var(--ink, #FFFFFF);
+  margin-bottom: 14px;
 }
 
 .trackLede {
-  font-size: 0.9375rem;
+  font-size: 16px;
   line-height: 1.6;
-  color: var(--paper-ink-2);
-  max-width: 34ch;
+  color: var(--ink-2, #CBC3B2);
+  max-width: 36ch;
 }
 
 .para {
-  font-size: 0.9375rem;
+  font-size: 15px;
   line-height: 1.75;
-  color: var(--paper-ink-2);
-  margin-bottom: 14px;
-  max-width: 66ch;
+  color: var(--ink-2, #CBC3B2);
+  margin-bottom: 18px;
+  max-width: 68ch;
 }
 
 .learnLabel {
-  font-size: 0.5625rem;
-  letter-spacing: 0.16em;
-  color: var(--paper-ink-3);
-  margin-top: 22px;
-  margin-bottom: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--brand, #E5B731);
+  margin-top: 28px;
+  margin-bottom: 14px;
+  font-weight: 700;
 }
 
-.learn { display: grid; gap: 7px; }
+.learn { display: grid; gap: 10px; }
 .learnItem {
   position: relative;
-  padding-left: 18px;
-  font-size: 0.875rem;
-  line-height: 1.55;
-  color: var(--paper-ink);
+  padding-left: 22px;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--ink, #FFFFFF);
 }
 .learnItem::before {
-  content: "";
+  content: "→";
   position: absolute;
   left: 0;
-  top: 8px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--brand-ink);
+  top: 0;
+  color: var(--brand, #E5B731);
+  font-weight: 700;
 }
 
 /* -------------------------------------------------------------- section -- */
 .sectionTitle {
-  font-size: clamp(1.625rem, 3.4vw, 2.375rem);
+  font-size: clamp(1.8rem, 3.6vw, 2.6rem);
   font-weight: 800;
   letter-spacing: -0.03em;
-  line-height: 1.14;
-  color: var(--paper-ink);
-  margin-bottom: 12px;
+  line-height: 1.12;
+  color: var(--ink, #FFFFFF);
+  margin-bottom: 14px;
 }
-.accent { color: var(--brand-ink); }
+.accent { color: var(--brand, #E5B731); }
 
 .sectionLede {
-  font-size: 0.9375rem;
+  font-size: 16px;
   line-height: 1.7;
-  color: var(--paper-ink-2);
-  max-width: 62ch;
-  margin-bottom: 32px;
+  color: var(--ink-2, #CBC3B2);
+  max-width: 64ch;
+  margin-bottom: 36px;
 }
 
-.spec { display: grid; gap: 0; border-top: 1px solid var(--paper-line); }
+.spec {
+  display: grid;
+  gap: 16px;
+  border-top: 1px solid var(--edge, #2E2718);
+  padding-top: 20px;
+}
+
 .spec > div {
   display: grid;
-  grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
-  gap: 28px;
-  padding: 20px 0;
-  border-bottom: 1px solid var(--paper-line);
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  gap: 32px;
+  padding: 24px 28px;
+  background: linear-gradient(170deg, var(--panel-2, #231E14), var(--panel, #1C1810));
+  border: 1px solid var(--edge, #2E2718);
+  border-radius: 12px;
 }
 
 .specKey {
-  font-size: 0.5625rem;
-  letter-spacing: 0.14em;
-  color: var(--brand-ink);
-  padding-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--brand, #E5B731);
+  font-weight: 700;
 }
 
 .specVal {
-  font-size: 0.9375rem;
+  font-size: 15px;
   line-height: 1.7;
-  color: var(--paper-ink-2);
+  color: var(--ink-2, #CBC3B2);
   max-width: 66ch;
 }
 
 /* ------------------------------------------------------------------ cta -- */
-.cta { padding: clamp(56px, 10vh, 104px) 0; }
-.ctaInner { text-align: center; }
-.ctaTitle { font-size: clamp(1.75rem, 4.4vw, 2.875rem); margin-bottom: 16px; }
-.ctaBody {
-  font-size: 0.9375rem;
-  line-height: 1.7;
-  color: var(--ink-3);
-  max-width: 54ch;
-  margin: 0 auto 28px;
+.cta {
+  padding: clamp(64px, 11vh, 110px) 0;
+  background: var(--deep, #0B0A07);
+  border-top: 1px solid var(--edge, #2E2718);
 }
-.ctaRow { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.ctaInner { text-align: center; }
+.ctaTitle {
+  font-size: clamp(2rem, 4.6vw, 3.2rem);
+  font-weight: 800;
+  margin-bottom: 16px;
+  color: var(--ink, #FFFFFF);
+}
+.ctaTitle em {
+  font-family: var(--font-caveat), cursive;
+  font-style: normal;
+  font-weight: 700;
+  color: var(--brand, #E5B731);
+}
+.ctaBody {
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--ink-2, #CBC3B2);
+  max-width: 58ch;
+  margin: 0 auto 32px;
+}
+.ctaRow { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
 
 @media (max-width: 800px) {
   .track { grid-template-columns: 1fr; gap: 20px; }
