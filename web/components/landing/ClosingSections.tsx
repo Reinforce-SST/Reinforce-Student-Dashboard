@@ -1,4 +1,5 @@
 import { LandingButton, MarkerText, Stars, stagger } from "./Primitives";
+import HeroCta from "./HeroCta";
 import styles from "@/app/page.module.css";
 
 export default function ClosingSections() {
@@ -35,8 +36,7 @@ export default function ClosingSections() {
         <h2 id="close-heading"><span className={styles.rise} data-animate="rise">Reinforce</span> <MarkerText>it.</MarkerText></h2>
         <p className={styles.rise} data-animate="rise" style={stagger(1)}>Open to students at SST. No prior ML required, only the willingness to learn in public.</p>
         <div className={`${styles.hctas} ${styles.rise}`} data-animate="rise" style={stagger(2)}>
-          <LandingButton href="/auth" large>Join the club</LandingButton>
-          <LandingButton href="https://github.com/Reinforce-SST" variant="ghost" large external>Browse the code</LandingButton>
+          <HeroCta variant="closing" />
         </div>
       </div>
     </section>

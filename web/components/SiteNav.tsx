@@ -6,6 +6,8 @@ import { useEffect, useState } from "react";
 import Pill from "./Pill";
 import styles from "./SiteNav.module.css";
 
+import { useAuth } from "@/lib/useAuth";
+
 // Only routes that exist and have real data behind them. Writing, Events,
 // Research and Team are in the PRD but have no source yet — no collection, no
 // admin entry path — so they are deliberately absent rather than linked to a
@@ -21,6 +23,8 @@ export default function SiteNav({ landing = false }: { landing?: boolean }) {
 }
 
 function DefaultNav() {
+  const { user } = useAuth();
+  const isLoggedIn = Boolean(user);
   const [condensed, setCondensed] = useState(false);
 
   useEffect(() => {
@@ -49,7 +53,11 @@ function DefaultNav() {
         </ul>
 
         <div className={styles.actions}>
-          <Pill href="/auth" variant="filled">Sign in</Pill>
+          {isLoggedIn ? (
+            <Pill href="/dashboard" variant="filled">Dashboard</Pill>
+          ) : (
+            <Pill href="/auth" variant="filled">Sign in</Pill>
+          )}
         </div>
       </nav>
     </header>
