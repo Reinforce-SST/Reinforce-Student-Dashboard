@@ -10,7 +10,7 @@
 }
 
 .inner {
-  max-width: 960px;
+  max-width: var(--page, 1220px);
 }
 
 .title {

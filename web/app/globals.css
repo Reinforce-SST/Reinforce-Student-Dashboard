@@ -69,8 +69,8 @@
   --dur-hero: 700ms;
 
   /* ---- layout ---- */
-  --page: 1140px;
-  --gutter: clamp(20px, 5vw, 56px);
+  --page: 1220px;
+  --gutter: clamp(20px, 4vw, 40px);
   --radius: 10px;
   --radius-lg: 14px;
   --radius-pill: 999px;
@@ -166,6 +166,21 @@ ul, ol { list-style: none; }
    1. Only transform and opacity animate. Animating layout properties stutters
       on the machines half the club actually uses.
    2. Everything degrades under prefers-reduced-motion. */
+
+@keyframes pageTransitionEnter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.pageTransition {
+  animation: pageTransitionEnter 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
 
 @keyframes rise {
   from { opacity: 0; transform: translate3d(0, 16px, 0); }
