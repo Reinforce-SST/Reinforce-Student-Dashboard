@@ -89,44 +89,9 @@ export function useAuth(): AuthState & { signOut: () => Promise<void> } {
       settle({ user: null, token: null, degraded: true });
     }
 
-    // Proactively refresh the token every 10 minutes so in-memory credentials never expire
-    const keepAliveTimer = setInterval(async () => {
-      try {
-        const auth = getFirebaseAuth();
-        if (auth.currentUser) {
-          const freshToken = await auth.currentUser.getIdToken(true);
-          setState((prev) => (prev.user ? { ...prev, token: freshToken } : prev));
-        }
-      } catch {
-        // Ignored
-      }
-    }, 10 * 60 * 1000);
-
-    // Refresh token immediately when window regains focus or tab becomes visible
-    const onWakeOrFocus = async () => {
-      try {
-        const auth = getFirebaseAuth();
-        if (auth.currentUser) {
-          const freshToken = await auth.currentUser.getIdToken();
-          setState((prev) => (prev.user ? { ...prev, token: freshToken } : prev));
-        }
-      } catch {
-        // Ignored
-      }
-    };
-
-    window.addEventListener("focus", onWakeOrFocus);
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") void onWakeOrFocus();
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-
     return () => {
       cancelled = true;
       clearTimeout(watchdog);
-      clearInterval(keepAliveTimer);
-      window.removeEventListener("focus", onWakeOrFocus);
-      document.removeEventListener("visibilitychange", onVisibility);
       unsubscribe?.();
     };
   }, []);

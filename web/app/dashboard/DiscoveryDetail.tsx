@@ -357,15 +357,23 @@ export default function DiscoveryDetail({
                 <p className={styles.spgCtaText}>
                   Launch a Student Project Group around this proposal. Forms are auto-filled directly from this Idea Jar submission.
                 </p>
-                <button
-                  type="button"
-                  className={styles.startSpgSidebarBtn}
-                  onClick={() => setIsSpgModalOpen(true)}
-                  id="btn-start-spg-from-idea"
-                >
-                  <MemberIcon name="plus" size={15} />
-                  <span>Start SPG from this Idea →</span>
-                </button>
+                <div className={styles.spgActionGroup}>
+                  <button
+                    type="button"
+                    className={styles.startSpgSidebarBtn}
+                    onClick={() => setIsSpgModalOpen(true)}
+                    id="btn-start-spg-from-idea"
+                  >
+                    <MemberIcon name="plus" size={15} />
+                    <span>Quick Charter Modal →</span>
+                  </button>
+                  <Link
+                    href={`/dashboard/tickets?category=spg_registration&idea=${encodeURIComponent(idea.id)}`}
+                    className={styles.startGroupLink}
+                  >
+                    Start a project group from this idea →
+                  </Link>
+                </div>
               </div>
 
               {/* Engagement & Metrics Card */}

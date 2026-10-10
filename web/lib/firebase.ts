@@ -31,9 +31,6 @@ export function getFirebaseAuth(): Auth {
   if (_authInstance) return _authInstance;
   const app = getApps().length ? getApp() : initializeApp(config);
   _authInstance = getAuth(app);
-  if (typeof window !== "undefined") {
-    void setPersistence(_authInstance, browserLocalPersistence).catch(() => {});
-  }
   return _authInstance;
 }
 

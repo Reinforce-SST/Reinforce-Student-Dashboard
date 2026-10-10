@@ -60,6 +60,9 @@
   border-radius: 12px;
   padding: 4px;
   gap: 4px;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .scopeTabBtn {
@@ -719,6 +722,28 @@
 
   .controlsGroup {
     justify-content: space-between;
+  }
+
+  .scopeTabs {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .scopeTabBtn {
+    flex: 1 1 auto;
+    padding: 6px 10px;
+    font-size: 0.72rem;
+    justify-content: center;
+  }
+
+  .searchBox {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .filterTabs {
+    width: 100%;
+    overflow-x: auto;
   }
 }
 

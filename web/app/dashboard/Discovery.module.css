@@ -370,3 +370,6 @@
 .resourceEvent { color: #aaa !important; font-size: .8rem !important; }
 .resourceEvent a { color: var(--brand, #e5b731); font-weight: 700; }
 .visuallyHidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.spgActionGroup { display: grid; gap: 8px; }
+.startGroupLink { display: flex; align-items: center; justify-content: center; padding: 10px 14px; border: 1px solid rgba(229, 183, 49, 0.4); border-radius: 8px; background: rgba(229, 183, 49, 0.08); color: var(--brand, #e5b731); font-size: 0.8rem; font-weight: 750; text-decoration: none; text-align: center; }
+.startGroupLink:hover { background: rgba(229, 183, 49, 0.16); border-color: var(--brand, #e5b731); }
