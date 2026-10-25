@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, 
 from firebase_admin import auth, firestore
 from google.api_core.exceptions import AlreadyExists
 
-from app.api.security import get_admin_user, get_current_user
+from app.api.security import get_admin_user, get_current_user, get_optional_current_user
 from app.services.discord_link import consume_link, unlink_member
 from app.services.firebase import db, upload_file_to_storage
 from app.services.images import ImageRejected, read_image
@@ -637,9 +637,26 @@ def get_leaderboard(
 
 
 @router.get("/{id_or_email}", response_model=UserPublicResponse, summary="Get public member profile")
-def get_user_profile(id_or_email: str) -> UserPublicResponse:
-    """Fetch public member profile by UID, email, or linked Discord ID."""
+def get_user_profile(
+    id_or_email: str,
+    user: Optional[dict] = Depends(get_optional_current_user),
+) -> UserPublicResponse:
+    """Fetch public member profile by UID, or by email/linked Discord ID when signed in.
+
+    Resolving a bare string to "member exists" via a 200/404 split is an email
+    enumeration oracle against an anonymous caller, so the email and Discord-ID
+    fallbacks only run for an authenticated request.
+    """
     clean_target = id_or_email.strip()
+
+    # Discord linking also writes users/{email} and users/{discord_id} alias
+    # docs (see AGENTS.md), so an email- or Discord-ID-shaped target can resolve
+    # straight through the plain doc lookup below for any already-linked
+    # member, bypassing the email/Discord-ID gate further down. A real Firebase
+    # UID is never "@"-shaped and never purely numeric, so refuse both shapes
+    # up front for an anonymous caller before touching Firestore at all.
+    if ("@" in clean_target or clean_target.isdigit()) and user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member profile not found")
 
     # 1. Try UID direct lookup or compatibility alias
     doc = db.collection(USERS_COLLECTION).document(clean_target).get()
@@ -651,6 +668,9 @@ def get_user_profile(id_or_email: str) -> UserPublicResponse:
             if canonical.exists:
                 return _to_user_public(canonical.id, canonical.to_dict() or {}, allow_fetch=True)
         return _to_user_public(doc.id, data, allow_fetch=True)
+
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member profile not found")
 
     # 2. Try email query
     query_email = (
@@ -695,6 +715,7 @@ def list_users(
     is_member: Optional[bool] = Query(None, description="Filter by club member status"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    user: Optional[dict] = Depends(get_optional_current_user),
 ) -> UserListResponse:
     """Search and browse member directory with filters."""
     docs = _get_all_users_raw()
@@ -729,7 +750,10 @@ def list_users(
         if search:
             s = search.lower().strip()
             name_match = s in public_user.full_name.lower()
-            email_match = s in (data.get("email") or "").lower()
+            # Matching the hidden email field for an anonymous caller turns this
+            # into an email-enumeration oracle (the response itself omits email,
+            # but presence in the result set confirms a guessed address exists).
+            email_match = user is not None and s in (data.get("email") or "").lower()
             id_match = s in public_user.id.lower()
             skill_match = any(s in sk.lower() for sk in public_user.skills)
             bio_match = s in (public_user.bio or "").lower()
