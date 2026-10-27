@@ -202,8 +202,10 @@ function ProfileClientContent() {
   // Fetch Live Contributions from API
   const fetchContributions = useCallback(async () => {
     if (!token) return;
-    const cacheKey = isOwner ? "contribs:my:100" : (queryId ? `contribs:public:${queryId}:100` : null);
-    if (!cacheKey) return;
+    const targetQueryId = queryId;
+    if (!isOwner && !targetQueryId) return;
+
+    const cacheKey = isOwner ? "contribs:my:100" : `contribs:public:${targetQueryId}:100`;
 
     const hasCached = Boolean(appCache.get(cacheKey));
     if (!hasCached) {
@@ -218,10 +220,11 @@ function ProfileClientContent() {
           if (isOwner) {
             const res = await api.getMyContributions(token, 100);
             return (res?.items || []).filter((item) => item.status === "approved");
-          } else {
-            const res = await api.getPublicUserContributions(token, queryId, 100);
+          } else if (targetQueryId) {
+            const res = await api.getPublicUserContributions(token, targetQueryId, 100);
             return res?.items || [];
           }
+          return [];
         },
         { ttl: 2 * 60 * 1000, tags: ["contributions", "profile"] }
       );
