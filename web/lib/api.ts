@@ -340,6 +340,7 @@ export type StudentProfile = {
   full_name: string;
   avatar_url?: string | null;
   discord_id?: string | null;
+  discord_username?: string | null;
   is_verified: boolean;
   discord_link_version?: number | null;
   verified_at?: string | null;
@@ -1221,6 +1222,28 @@ export const api = {
   getEventRegistrations: (token: string, eventId: string) =>
     request<EventRegistration[]>(`/events/${encodeURIComponent(eventId)}/registrations`, token),
 
+  adminDownloadAttendanceCsv: async (
+    token: string,
+    eventId: string,
+    status?: string
+  ): Promise<Blob> => {
+    const query = status && status !== "all" ? `?status=${encodeURIComponent(status)}` : "";
+    const res = await fetch(`${BASE}/events/${encodeURIComponent(eventId)}/registrations/csv${query}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) {
+      let detail = `Failed to download CSV (${res.status})`;
+      try {
+        const err = await res.json();
+        if (err.detail) detail = err.detail;
+      } catch {}
+      throw new ApiError(detail, res.status);
+    }
+    return res.blob();
+  },
+
   adminGetEventRegistrations: (token: string, eventId: string) =>
     request<EventRegistration[]>(`/events/${encodeURIComponent(eventId)}/registrations`, token),
 
@@ -1304,6 +1327,11 @@ export const api = {
       throw err;
     }
   },
+
+  adminBackfillDiscordSocials: (token: string) =>
+    request<{ success: boolean; updated_count: number; message: string }>("/users/admin-backfill-discord-socials", token, {
+      method: "POST",
+    }),
 
   adminAwardContribution: (token: string, userId: string, payload: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/contributions/award/user/${encodeURIComponent(userId)}`, token, {

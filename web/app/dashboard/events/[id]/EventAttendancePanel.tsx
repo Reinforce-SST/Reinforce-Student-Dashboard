@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { api, type EventRegistration, type AttendeeProfile, type StudentProfile } from "@/lib/api";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import StudentHoverCard from "./StudentHoverCard";
@@ -37,6 +37,21 @@ export default function EventAttendancePanel({
   // Per-item loading state (regId -> boolean)
   const [updatingIds, setUpdatingIds] = useState<Record<string, boolean>>({});
 
+  // View mode: table or cards (defaults to table as requested)
+  const [viewMode, setViewMode] = useState<"cards" | "table">("table");
+  const [downloadingCsv, setDownloadingCsv] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
   // Note editing state (regId -> note text)
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
@@ -336,6 +351,76 @@ export default function EventAttendancePanel({
       setError(err instanceof Error ? err.message : "Bulk roll-call failed.");
     } finally {
       setBulkBusy(false);
+    }
+  };
+
+  const escapeCsv = (val: unknown): string => {
+    if (val === null || val === undefined) return '""';
+    const str = String(val).replace(/"/g, '""');
+    return `"${str}"`;
+  };
+
+  const formatIstTime = (isoStr?: string | null): string => {
+    if (!isoStr) return "";
+    try {
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return isoStr;
+      return d.toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
+    } catch {
+      return isoStr;
+    }
+  };
+
+  const handleDownloadBackendCsv = async (scopeStatus?: string) => {
+    if (!token) return;
+    setDownloadingCsv(true);
+    setError(null);
+    setSuccessMsg(null);
+
+    const activeFilter =
+      scopeStatus !== undefined
+        ? scopeStatus
+        : statusFilter !== "all"
+        ? statusFilter
+        : undefined;
+
+    try {
+      const blob = await api.adminDownloadAttendanceCsv(token, eventId, activeFilter);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const cleanSlug = eventId.replace(/[^a-zA-Z0-9_-]/g, "_");
+      const scopeLabel = activeFilter
+        ? activeFilter === "checked_in"
+          ? "present"
+          : activeFilter
+        : "all";
+      const dateStr = new Date().toISOString().slice(0, 10);
+      link.href = url;
+      link.download = `${cleanSlug}-attendance-${scopeLabel}-${dateStr}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      setShowExportMenu(false);
+      setSuccessMsg("Attendance CSV downloaded successfully from backend!");
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to download attendance CSV from backend."
+      );
+    } finally {
+      setDownloadingCsv(false);
     }
   };
 
@@ -739,6 +824,28 @@ export default function EventAttendancePanel({
             </button>
           ))}
         </div>
+
+        {/* View Switcher: Table vs Cards */}
+        <div className={styles.viewToggleGroup}>
+          <button
+            type="button"
+            className={`${styles.viewToggleBtn} ${viewMode === "table" ? styles.viewToggleBtnActive : ""}`}
+            onClick={() => setViewMode("table")}
+            title="Tabular Data View"
+          >
+            <MemberIcon name="articles" size={13} />
+            Table View
+          </button>
+          <button
+            type="button"
+            className={`${styles.viewToggleBtn} ${viewMode === "cards" ? styles.viewToggleBtnActive : ""}`}
+            onClick={() => setViewMode("cards")}
+            title="Cards Roster View"
+          >
+            <MemberIcon name="users" size={13} />
+            Cards View
+          </button>
+        </div>
       </div>
 
       {/* Bulk Roll-Call Options */}
@@ -780,16 +887,66 @@ export default function EventAttendancePanel({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={handleBulkCheckIn}
-          disabled={bulkBusy || loading}
-          className={styles.bulkRollCallBtn}
-          title="Mark all pending registrations as Present"
-        >
-          <MemberIcon name="check" size={14} />
-          {bulkBusy ? "Processing Roll-Call…" : "Check-in All Unmarked"}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+          {/* Attendance CSV Download from Backend */}
+          <div className={styles.csvExportContainer} ref={exportMenuRef}>
+            <button
+              type="button"
+              onClick={() => handleDownloadBackendCsv()}
+              disabled={downloadingCsv || loading}
+              className={styles.exportCsvBtn}
+              title="Download attendance CSV file from server"
+            >
+              <MemberIcon name="download" size={14} />
+              {downloadingCsv ? "Downloading CSV…" : "Download Attendance CSV"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowExportMenu((prev) => !prev)}
+              disabled={downloadingCsv || loading}
+              className={styles.exportCsvDropdownBtn}
+              title="More export options"
+            >
+              ▾
+            </button>
+            {showExportMenu && (
+              <div className={styles.exportCsvDropdownMenu}>
+                <button
+                  type="button"
+                  className={styles.exportDropdownItem}
+                  onClick={() => handleDownloadBackendCsv("checked_in")}
+                >
+                  <span style={{ color: "#22c55e" }}>●</span> Export Present Attendees Only
+                </button>
+                <button
+                  type="button"
+                  className={styles.exportDropdownItem}
+                  onClick={() => handleDownloadBackendCsv()}
+                >
+                  <span style={{ color: "#e5b731" }}>●</span> Export Current View ({filtered.length})
+                </button>
+                <button
+                  type="button"
+                  className={styles.exportDropdownItem}
+                  onClick={() => handleDownloadBackendCsv("all")}
+                >
+                  <span style={{ color: "#8c8c98" }}>●</span> Export All Registrations ({registrations.length})
+                </button>
+              </div>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleBulkCheckIn}
+            disabled={bulkBusy || loading}
+            className={styles.bulkRollCallBtn}
+            title="Mark all pending registrations as Present"
+          >
+            <MemberIcon name="check" size={14} />
+            {bulkBusy ? "Processing Roll-Call…" : "Check-in All Unmarked"}
+          </button>
+        </div>
       </div>
 
       {/* ATTENDANCE ROSTER */}
@@ -803,6 +960,205 @@ export default function EventAttendancePanel({
           <p style={{ marginTop: "12px", fontSize: "14px", color: "#8c8c98" }}>
             No attendee records found matching the active filter.
           </p>
+        </div>
+      ) : viewMode === "table" ? (
+        <div className={styles.tableResponsiveContainer}>
+          <table className={styles.attendanceTable}>
+            <thead>
+              <tr>
+                <th style={{ width: "45px" }}>#</th>
+                <th>Attendee / Team</th>
+                <th>Email / Teammates</th>
+                <th>Type & Batch</th>
+                <th>Attendance Status</th>
+                <th>Attendance Notes</th>
+                <th>Checked In At</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((r, idx) => {
+                const isBusy = updatingIds[r.id] || false;
+                const isTeam = Boolean(r.team_name || (r.member_uids && r.member_uids.length > 1) || r.spg_id);
+                const leadName = r.user_profile?.full_name || r.user_id;
+                const rowName = isTeam ? `team ${r.team_name || leadName}` : leadName;
+
+                return (
+                  <tr key={r.id} className={styles.attendanceTableRow}>
+                    <td className={styles.tableIndexCell}>{idx + 1}</td>
+                    <td>
+                      <div className={styles.tableIdentityCell}>
+                        <span className={isTeam ? styles.teamIconBox : styles.soloIconBox}>
+                          <MemberIcon name={isTeam ? "users" : "user"} size={13} />
+                        </span>
+                        {isTeam ? (
+                          <div>
+                            <strong className={styles.tableStudentName}>{r.team_name || "Team"}</strong>
+                            <div style={{ fontSize: "11px", color: "#8c8c98", marginTop: "2px" }}>
+                              Lead:{" "}
+                              <StudentHoverCard profile={r.user_profile} fallbackId={r.user_id}>
+                                <span className={styles.clickableStudentName}>{leadName}</span>
+                              </StudentHoverCard>
+                            </div>
+                          </div>
+                        ) : (
+                          <StudentHoverCard profile={r.user_profile} fallbackId={r.user_id}>
+                            <span className={styles.clickableStudentName} style={{ fontWeight: 700, fontSize: "13.5px" }}>
+                              {leadName}
+                            </span>
+                          </StudentHoverCard>
+                        )}
+                      </div>
+                    </td>
+                    <td>
+                      {isTeam ? (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", maxWidth: "260px" }}>
+                          {r.member_uids?.map((uid) => {
+                            const prof = getMemberProfile(r, uid);
+                            const nameDisplay = prof?.full_name || uid;
+                            return (
+                              <StudentHoverCard key={uid} profile={prof} fallbackId={uid}>
+                                <span className={styles.clickableMemberChip} style={{ fontSize: "11px", padding: "1px 6px" }}>
+                                  {uid === r.user_id ? `👑 ${nameDisplay}` : nameDisplay}
+                                </span>
+                              </StudentHoverCard>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <span className={styles.tableEmailText}>{r.user_profile?.email || r.user_id}</span>
+                      )}
+                    </td>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                        <span className={styles.rosterTypeTag} style={{ fontSize: "10px", padding: "1px 5px" }}>
+                          {isTeam ? "TEAM" : "SOLO"}
+                        </span>
+                        {r.user_profile?.batch_year && (
+                          <span className={styles.tableBatchTag}>
+                            Batch {r.user_profile.batch_year}
+                          </span>
+                        )}
+                        {r.spg_id && (
+                          <span style={{ fontSize: "10px", color: "#e5b731", fontWeight: 750 }}>
+                            SPG
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <select
+                          aria-label={`Attendance status for ${rowName}`}
+                          value={r.status}
+                          disabled={isBusy}
+                          onChange={(e) => handleUpdateStatus(r.id, e.target.value as AttendanceStatus)}
+                          className={`${styles.attendanceDropdown} ${getDropdownClass(r.status)}`}
+                          style={{ height: "30px", fontSize: "12px", minWidth: "125px" }}
+                        >
+                          <option value="checked_in">✓ Present</option>
+                          <option value="absent">✗ Absent</option>
+                          <option value="disqualified">⊘ Disqualified</option>
+                          <option value="excused">○ Excused</option>
+                          <option value="registered">Registered</option>
+                          <option value="waitlisted">Waitlisted</option>
+                        </select>
+                        {isBusy && <span className={styles.rosterBusyText}>…</span>}
+                      </div>
+                    </td>
+                    <td className={styles.tableNoteCell}>
+                      {editingNoteId === r.id ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                          <input
+                            type="text"
+                            value={noteDraft}
+                            onChange={(e) => setNoteDraft(e.target.value)}
+                            className={styles.noteInputField}
+                            style={{ height: "28px", fontSize: "11.5px", minWidth: "140px" }}
+                            placeholder="Enter note…"
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleSaveNote(r.id)}
+                            disabled={isBusy}
+                            className={styles.saveNoteBtn}
+                            style={{ padding: "3px 8px", fontSize: "11px" }}
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingNoteId(null)}
+                            className={styles.cancelNoteBtn}
+                            style={{ padding: "3px 8px", fontSize: "11px" }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ) : r.attendance_note ? (
+                        <div className={styles.tableNoteDisplay}>
+                          <span className={styles.tableNoteText} title={r.attendance_note}>
+                            {r.attendance_note}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingNoteId(r.id);
+                              setNoteDraft(r.attendance_note || "");
+                            }}
+                            className={styles.editNoteLink}
+                            style={{ fontSize: "11px", whiteSpace: "nowrap" }}
+                          >
+                            Edit
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingNoteId(r.id);
+                            setNoteDraft("");
+                          }}
+                          className={styles.addNoteBtn}
+                          style={{ fontSize: "11px", padding: "2px 6px" }}
+                        >
+                          + Add Note
+                        </button>
+                      )}
+                    </td>
+                    <td>
+                      <span className={styles.tableTimeText}>
+                        {r.checked_in_at
+                          ? formatIstTime(r.checked_in_at)
+                          : r.registered_at
+                          ? formatIstTime(r.registered_at)
+                          : "—"}
+                      </span>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (editingNoteId === r.id) {
+                            setEditingNoteId(null);
+                          } else {
+                            setEditingNoteId(r.id);
+                            setNoteDraft(r.attendance_note || "");
+                          }
+                        }}
+                        className={styles.changeStudentBtn}
+                        style={{ fontSize: "11px", padding: "4px 8px", whiteSpace: "nowrap" }}
+                        title="Add or edit attendance note"
+                      >
+                        {editingNoteId === r.id ? "Done" : "Note"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       ) : (
         <div className={styles.rosterList}>

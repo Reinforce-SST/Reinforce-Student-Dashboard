@@ -95,7 +95,8 @@ export default function LeaderboardClient() {
       api.browseUsers(token, {
         search: debouncedSearch.trim() || undefined,
         track: viewMode === "LEADERBOARD" && selectedTrack !== "total" ? selectedTrack : undefined,
-        tier: selectedTier !== "all" ? selectedTier : undefined,
+        tier: selectedTier === "advanced" || selectedTier === "beginner" ? selectedTier : undefined,
+        is_member: selectedTier === "open" ? false : undefined,
         page,
         page_size: pageSize,
       }),
@@ -345,7 +346,8 @@ export default function LeaderboardClient() {
           >
             <option value="all">ALL TIERS</option>
             <option value="advanced">ADVANCED</option>
-            <option value="beginner">BEGINNER</option>
+            <option value="beginner">GENERAL</option>
+            <option value="open">OPEN</option>
           </select>
         </div>
       </div>
@@ -417,22 +419,17 @@ export default function LeaderboardClient() {
                         <div className={styles.memberNameGroup}>
                           <span className={styles.memberNameText}>
                             {entry.full_name}
-                            {originalMember?.is_verified && (
-                              <span style={{ color: "#5865F2", fontSize: "0.8rem" }} title="Verified Discord Member">
-                                ✓
-                              </span>
-                            )}
                           </span>
                           <span className={styles.memberBioMuted}>
-                            {originalMember?.bio || "Reinforce Club Member"}
+                            {originalMember?.bio || (entry.is_member ? "Reinforce Club Member" : "")}
                           </span>
                         </div>
                       </div>
 
                       {/* Tier */}
                       <div className={styles.tierCol}>
-                        <span className={`${styles.tierChip} ${entry.tier === "advanced" ? styles.tierAdvanced : styles.tierBeginner}`}>
-                          {entry.tier.toUpperCase()}
+                        <span className={`${styles.tierChip} ${!entry.is_member ? styles.tierOpen : entry.tier === "advanced" ? styles.tierAdvanced : styles.tierGeneral}`}>
+                          {!entry.is_member ? "OPEN" : entry.tier === "advanced" ? "ADVANCED" : "GENERAL"}
                         </span>
                       </div>
 
@@ -537,14 +534,9 @@ export default function LeaderboardClient() {
                           <h2 style={{ fontSize: "0.96rem", fontWeight: "800", color: "#ffffff", margin: 0 }}>
                             {member.full_name}
                           </h2>
-                          {member.is_verified && (
-                            <span style={{ color: "#5865F2", fontSize: "0.8rem" }} title="Verified Discord Member">
-                              ✓
-                            </span>
-                          )}
                         </div>
                         <span style={{ fontSize: "0.68rem", color: "#8c8c98" }}>
-                          Batch &apos;{member.batch_year ? String(member.batch_year).slice(-2) : "24"} • {member.tier?.toUpperCase() || "MEMBER"}
+                          Batch &apos;{member.batch_year ? String(member.batch_year).slice(-2) : "24"} • {!member.is_member ? "OPEN" : member.tier === "advanced" ? "ADVANCED" : "GENERAL"}
                         </span>
                       </div>
                     </div>
@@ -556,7 +548,7 @@ export default function LeaderboardClient() {
 
                   {/* Bio */}
                   <p className={styles.cardBio}>
-                    {member.bio || "Active contributor and project builder in Reinforce SST guild."}
+                    {member.bio || (member.is_member ? "Active contributor and project builder in Reinforce SST guild." : "")}
                   </p>
 
                   {/* Skills Tags */}
@@ -656,15 +648,10 @@ export default function LeaderboardClient() {
                   <h2 id="profile-modal-title" style={{ fontSize: "1.25rem", fontWeight: "900", color: "#ffffff", margin: 0 }}>
                     {selectedMember.full_name}
                   </h2>
-                  {selectedMember.is_verified && (
-                    <span style={{ color: "#5865F2", fontSize: "0.95rem" }} title="Verified Discord Link">
-                      ✓
-                    </span>
-                  )}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span className={`${styles.tierChip} ${selectedMember.tier === "advanced" ? styles.tierAdvanced : styles.tierBeginner}`}>
-                    {selectedMember.tier?.toUpperCase() || "MEMBER"}
+                  <span className={`${styles.tierChip} ${!selectedMember.is_member ? styles.tierOpen : selectedMember.tier === "advanced" ? styles.tierAdvanced : styles.tierGeneral}`}>
+                    {!selectedMember.is_member ? "OPEN" : selectedMember.tier === "advanced" ? "ADVANCED" : "GENERAL"}
                   </span>
                   <span style={{ fontSize: "0.75rem", color: "#8c8c98" }}>
                     Batch of {selectedMember.batch_year || 2024}

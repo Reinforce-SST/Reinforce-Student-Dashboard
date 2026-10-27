@@ -24,8 +24,7 @@ ideas, and publish articles.
 |---|---|---|
 | Next.js website | [reinforce-sst.com](https://www.reinforce-sst.com/) | Serving the integrated frontend |
 | FastAPI | [api.reinforce-sst.com](https://api.reinforce-sst.com/health) | Health endpoint returned 200 |
-| YUVI hosted endpoint | [YUVI health](https://yuvi-182k.onrender.com/health) | Returned 503; Discord bridge is not verified live |
-| Older Vercel URL | [reinforce-student-dashboard.vercel.app](https://reinforce-student-dashboard.vercel.app/) | Still serves the legacy Vite client |
+| YUVI hosted endpoint | [yuvi.reinforce-sst.com](https://yuvi.reinforce-sst.com/health) | Health endpoint returned 200 |
 
 These checks establish availability, not a complete signed-in workflow. The
 dashboard ticket bridge and Discord role grant still require an end-to-end test

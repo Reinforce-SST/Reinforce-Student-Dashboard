@@ -147,6 +147,12 @@
   text-transform: uppercase;
 }
 
+.tierBadgeOpen {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+}
+
 .metaRow {
   display: flex;
   align-items: center;

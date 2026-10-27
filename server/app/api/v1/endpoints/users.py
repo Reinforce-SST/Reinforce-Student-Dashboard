@@ -166,11 +166,26 @@ def _get_all_users_raw() -> List[Dict[str, Any]]:
     return items
 
 
+def _resolve_social_links(data: Dict[str, Any]) -> SocialLinks:
+    social_raw = dict(data.get("social_links") or {})
+    discord_username = data.get("discord_username")
+    discord_id = data.get("discord_id")
+    current_discord = str(social_raw.get("discord") or "").strip()
+
+    # If current value is missing or a raw numeric snowflake ID, prefer real username
+    if discord_username and (not current_discord or current_discord.isdigit()):
+        social_raw["discord"] = str(discord_username).strip()
+    elif not current_discord and (discord_username or discord_id):
+        discord_val = discord_username or discord_id
+        if discord_val:
+            social_raw["discord"] = str(discord_val).strip()
+    return SocialLinks(**social_raw) if isinstance(social_raw, dict) else SocialLinks()
+
+
 def _to_user_me(uid: str, data: Dict[str, Any]) -> UserMeResponse:
     live = _get_user_live_points(uid)
     points = live if live is not None else _normalize_points(data.get("points"))
-    social_raw = data.get("social_links") or {}
-    social_links = SocialLinks(**social_raw) if isinstance(social_raw, dict) else SocialLinks()
+    social_links = _resolve_social_links(data)
 
     raw_tier = data.get("tier")
     tier = _normalize_tier(raw_tier)
@@ -193,6 +208,7 @@ def _to_user_me(uid: str, data: Dict[str, Any]) -> UserMeResponse:
         full_name=data.get("full_name") or "Club Member",
         avatar_url=data.get("avatar_url"),
         discord_id=data.get("discord_id"),
+        discord_username=data.get("discord_username"),
         discord_link_version=data.get("discord_link_version"),
         is_admin=bool(data.get("is_admin", False)),
         is_member=bool(data.get("is_member", False)),
@@ -224,8 +240,7 @@ def _to_user_public(
         points = live if live is not None else _normalize_points(data.get("points"))
     else:
         points = _normalize_points(data.get("points"))
-    social_raw = data.get("social_links") or {}
-    social_links = SocialLinks(**social_raw) if isinstance(social_raw, dict) else SocialLinks()
+    social_links = _resolve_social_links(data)
 
     raw_tier = data.get("tier")
     tier = _normalize_tier(raw_tier)
@@ -280,6 +295,14 @@ def _get_or_create_user(user_token: dict) -> UserMeResponse:
         if resolved_batch is not None and resolved_batch != data.get("batch_year"):
             updates["batch_year"] = resolved_batch
             data["batch_year"] = resolved_batch
+        # Backfill social_links.discord if missing for verified members with discord_id or discord_username
+        is_verified = bool(data.get("is_verified") and data.get("discord_link_version") == 1)
+        discord_val = data.get("discord_username") or data.get("discord_id")
+        current_socials = dict(data.get("social_links") or {})
+        if (is_verified or data.get("discord_id")) and discord_val and not current_socials.get("discord"):
+            current_socials["discord"] = str(discord_val).strip()
+            updates["social_links"] = current_socials
+            data["social_links"] = current_socials
         doc_ref.set(updates, merge=True)
         data["last_login"] = now
         data["updated_at"] = now
@@ -409,17 +432,18 @@ def verify_discord(
             if not bot_response_data.get("role_assigned"):
                 bot_response_data = {"status": "bot_warning", "detail": "Your account is linked, but the Discord role is pending. Run /auth again to retry."}
 
-            bot_discord_user = bot_response_data.get("discord_username")
+            bot_discord_user = bot_response_data.get("discord_username") or bot_response_data.get("username")
             if bot_discord_user and isinstance(bot_discord_user, str) and bot_discord_user.strip():
                 clean_bot_user = bot_discord_user.strip()
                 current_socials = dict(member.get("social_links") or {})
-                if current_socials.get("discord") != clean_bot_user:
-                    current_socials["discord"] = clean_bot_user
-                    db.collection(USERS_COLLECTION).document(uid).set({
-                        "social_links": current_socials,
-                        "updated_at": now_iso(),
-                    }, merge=True)
-                    member["social_links"] = current_socials
+                current_socials["discord"] = clean_bot_user
+                db.collection(USERS_COLLECTION).document(uid).set({
+                    "discord_username": clean_bot_user,
+                    "social_links": current_socials,
+                    "updated_at": now_iso(),
+                }, merge=True)
+                member["discord_username"] = clean_bot_user
+                member["social_links"] = current_socials
         except urllib.error.HTTPError as e:
             error_detail = e.read().decode("utf-8")
             try:

@@ -238,11 +238,19 @@ function ProfileClientContent() {
   const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
   const bio = activeProfile?.bio || "";
   const skills = activeProfile?.skills || [];
+  const rawDiscord = (
+    activeProfile?.social_links?.discord ||
+    activeProfile?.discord_username ||
+    ""
+  ).trim();
+  const isSnowflake = /^\d{16,21}$/.test(rawDiscord);
+  const cleanDiscordHandle = isSnowflake ? "" : rawDiscord.replace(/^@/, "");
+
   const socialLinks = {
     github: activeProfile?.social_links?.github || "",
     kaggle: activeProfile?.social_links?.kaggle || "",
     linkedin: activeProfile?.social_links?.linkedin || "",
-    discord: activeProfile?.social_links?.discord || activeProfile?.discord_id || "",
+    discord: cleanDiscordHandle,
   };
 
   // The API stores the graduation batch; study year is not inferred here.
@@ -527,10 +535,12 @@ function ProfileClientContent() {
             <div className={styles.nameBlock}>
               <div className={styles.nameRow}>
                 <h1 className={styles.fullName}>{fullName}</h1>
-                <span className={styles.tierBadge}>
-                  {activeProfile?.is_member
-                    ? `${(activeProfile.tier || "beginner").toUpperCase()} MEMBER`
-                    : "MEMBERSHIP PENDING"}
+                <span className={`${styles.tierBadge} ${!activeProfile?.is_member ? styles.tierBadgeOpen : ""}`}>
+                  {!activeProfile?.is_member
+                    ? "OPEN MEMBER"
+                    : activeProfile.tier === "advanced"
+                    ? "ADVANCED MEMBER"
+                    : "GENERAL MEMBER"}
                 </span>
                 {activeProfile?.is_admin && (
                   <span style={{ fontSize: "0.65rem", fontWeight: "850", padding: "3px 8px", borderRadius: "5px", background: "rgba(248, 113, 113, 0.15)", color: "#f87171", border: "1px solid rgba(248, 113, 113, 0.35)", textTransform: "uppercase" }}>
@@ -552,10 +562,10 @@ function ProfileClientContent() {
                     {activeProfile.email}
                   </span>
                 )}
-                {activeProfile?.is_verified && Boolean(activeProfile?.discord_id) ? (
+                {activeProfile?.is_verified ? (
                   <span className={styles.verifiedChip}>
                     <MemberIcon name="check" size={13} />
-                    Discord: {socialLinks.discord || activeProfile.discord_id}
+                    Discord: {cleanDiscordHandle ? `@${cleanDiscordHandle}` : "Verified"}
                   </span>
                 ) : (
                   <span className={styles.metaItem} style={{ color: "#71717a" }}>
@@ -668,6 +678,15 @@ function ProfileClientContent() {
                 LinkedIn
               </a>
             )}
+            {socialLinks.discord && (
+              <span
+                className={styles.socialBtn}
+                title={`Discord: @${socialLinks.discord}`}
+              >
+                <MemberIcon name="discord" size={14} />
+                @{socialLinks.discord}
+              </span>
+            )}
           </div>
         </div>
       </section>
@@ -691,7 +710,11 @@ function ProfileClientContent() {
               />
             </div>
             <div className={styles.tierSubtext}>
-              {activeProfile?.is_member ? `${(activeProfile.tier || "beginner").toUpperCase()} TIER` : "MEMBERSHIP PENDING"}
+              {!activeProfile?.is_member
+                ? "OPEN TIER"
+                : activeProfile.tier === "advanced"
+                ? "ADVANCED TIER"
+                : "GENERAL TIER"}
             </div>
           </article>
 

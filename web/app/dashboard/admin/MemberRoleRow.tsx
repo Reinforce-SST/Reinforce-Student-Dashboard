@@ -89,11 +89,6 @@ export default function MemberRoleRow({
         <div className={styles.nameGroup}>
           <div className={styles.nameRow}>
             <span className={styles.memberName}>{member.full_name || "Unnamed Member"}</span>
-            {member.is_verified && (
-              <span className={styles.verifiedBadge} title="Verified Discord Student">
-                ✓
-              </span>
-            )}
             {isAdmin && <span className={styles.adminBadge}>Admin</span>}
           </div>
           <span className={styles.memberEmail}>{member.email || "No email"}</span>
@@ -109,7 +104,7 @@ export default function MemberRoleRow({
           value={tier}
           onChange={(event) => setTier(event.target.value as "beginner" | "advanced")}
         >
-          <option value="beginner">Beginner Tier</option>
+          <option value="beginner">General Tier</option>
           <option value="advanced">Advanced Tier</option>
         </select>
 

@@ -8,6 +8,7 @@ import { type SPGRecord, type SPGStatus, type SPGType } from "@/lib/spgData";
 import { loadAllSpgs } from "@/lib/memberData";
 import { useDebounce } from "@/lib/useDebounce";
 import MemberIcon from "@/components/dashboard/MemberIcon";
+import { useConfirmDialog } from "@/components/dashboard/useConfirmDialog";
 import AdminTicketsPanel from "./AdminTicketsPanel";
 import styles from "./AdminSpgManagement.module.css";
 
@@ -29,6 +30,7 @@ export default function AdminSpgManagementPanel({ token }: { token: string }) {
       : "all";
 
   const [activeTab, setActiveTab] = useState<TabMode>(resolvedTab);
+  const { confirm, DialogComponent } = useConfirmDialog();
 
   // Sync tab state when URL changes (supports browser Back and Forward buttons)
   useEffect(() => {
@@ -177,9 +179,13 @@ export default function AdminSpgManagementPanel({ token }: { token: string }) {
 
   const handleDisbandSpg = async (spg: SPGRecord) => {
     if (busySpgId) return;
-    if (!window.confirm(`Are you sure you want to permanently disband "${spg.name}"? This action cannot be undone.`)) {
-      return;
-    }
+    const confirmed = await confirm({
+      title: "Disband Project Cluster",
+      message: `Are you sure you want to permanently disband "${spg.name}"? This action cannot be undone.`,
+      confirmLabel: "Disband SPG",
+      variant: "danger",
+    });
+    if (!confirmed) return;
     setBusySpgId(spg.id);
     setNotice("");
     try {
@@ -1278,6 +1284,7 @@ export default function AdminSpgManagementPanel({ token }: { token: string }) {
           </div>
         </div>
       )}
+      {DialogComponent}
     </div>
   );
 }
