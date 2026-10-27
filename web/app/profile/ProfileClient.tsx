@@ -238,11 +238,19 @@ function ProfileClientContent() {
   const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
   const bio = activeProfile?.bio || "";
   const skills = activeProfile?.skills || [];
+  const rawDiscord = (
+    activeProfile?.social_links?.discord ||
+    activeProfile?.discord_username ||
+    ""
+  ).trim();
+  const isSnowflake = /^\d{16,21}$/.test(rawDiscord);
+  const cleanDiscordHandle = isSnowflake ? "" : rawDiscord.replace(/^@/, "");
+
   const socialLinks = {
     github: activeProfile?.social_links?.github || "",
     kaggle: activeProfile?.social_links?.kaggle || "",
     linkedin: activeProfile?.social_links?.linkedin || "",
-    discord: activeProfile?.social_links?.discord || activeProfile?.discord_id || "",
+    discord: cleanDiscordHandle,
   };
 
   // The API stores the graduation batch; study year is not inferred here.
@@ -554,10 +562,10 @@ function ProfileClientContent() {
                     {activeProfile.email}
                   </span>
                 )}
-                {activeProfile?.is_verified && Boolean(activeProfile?.discord_id) ? (
+                {activeProfile?.is_verified ? (
                   <span className={styles.verifiedChip}>
                     <MemberIcon name="check" size={13} />
-                    Discord: {socialLinks.discord || activeProfile.discord_id}
+                    Discord: {cleanDiscordHandle ? `@${cleanDiscordHandle}` : "Verified"}
                   </span>
                 ) : (
                   <span className={styles.metaItem} style={{ color: "#71717a" }}>
@@ -669,6 +677,15 @@ function ProfileClientContent() {
                 <MemberIcon name="linkedin" size={14} />
                 LinkedIn
               </a>
+            )}
+            {socialLinks.discord && (
+              <span
+                className={styles.socialBtn}
+                title={`Discord: @${socialLinks.discord}`}
+              >
+                <MemberIcon name="discord" size={14} />
+                @{socialLinks.discord}
+              </span>
             )}
           </div>
         </div>

@@ -340,6 +340,7 @@ export type StudentProfile = {
   full_name: string;
   avatar_url?: string | null;
   discord_id?: string | null;
+  discord_username?: string | null;
   is_verified: boolean;
   discord_link_version?: number | null;
   verified_at?: string | null;
@@ -1326,6 +1327,11 @@ export const api = {
       throw err;
     }
   },
+
+  adminBackfillDiscordSocials: (token: string) =>
+    request<{ success: boolean; updated_count: number; message: string }>("/users/admin-backfill-discord-socials", token, {
+      method: "POST",
+    }),
 
   adminAwardContribution: (token: string, userId: string, payload: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/contributions/award/user/${encodeURIComponent(userId)}`, token, {
