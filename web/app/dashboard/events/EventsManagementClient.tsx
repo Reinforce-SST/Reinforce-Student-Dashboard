@@ -84,18 +84,18 @@ export default function EventsManagementClient() {
   const [activeTab, setActiveTab] = useState<"ALL" | "WORKSHOPS" | "HACKATHONS" | "MEETUPS">("ALL");
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
 
-  const cachedAllEvents = appCache.get<any[]>("events:all");
   const [events, setEvents] = useState<CalendarEventItem[]>(() => {
-    if (!cachedAllEvents?.data) return [];
+    const cached = appCache.get<any[]>("events:all");
+    if (!cached?.data) return [];
     const now = Date.now();
-    return cachedAllEvents.data
+    return cached.data
       .filter((ev: any) =>
         !ev.event_type?.toLowerCase().includes("banner") &&
         ["published", "registration_closed", "ongoing", "completed"].includes(ev.status)
       )
       .map((ev: any) => mapEventToCalendarItem(ev, now));
   });
-  const [loading, setLoading] = useState(() => !cachedAllEvents);
+  const [loading, setLoading] = useState(() => !appCache.has("events:all"));
   const [loadError, setLoadError] = useState("");
 
   // Current calendar month view (default to current date)
@@ -113,7 +113,7 @@ export default function EventsManagementClient() {
     let active = true;
     async function fetchEvents() {
       try {
-        if (!cachedAllEvents) {
+        if (!appCache.has("events:all")) {
           setLoading(true);
         }
         const allFetched = await loadAllEvents(token);
@@ -145,7 +145,7 @@ export default function EventsManagementClient() {
         }
       } catch {
         if (!active) return;
-        if (!cachedAllEvents) {
+        if (!appCache.has("events:all")) {
           setLoadError("Events could not be loaded. Try again in a moment.");
           setEvents([]);
         }
@@ -161,7 +161,7 @@ export default function EventsManagementClient() {
     return () => {
       active = false;
     };
-  }, [token, cachedAllEvents]);
+  }, [token]);
 
   const handleToggleRsvp = (slug: string, e: React.MouseEvent) => {
     e.preventDefault();

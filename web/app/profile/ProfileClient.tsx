@@ -172,7 +172,8 @@ function ProfileClientContent() {
     }
 
     let isMounted = true;
-    if (!cachedUser) {
+    const hasCache = appCache.has(`user:profile:${queryId}`);
+    if (!hasCache) {
       setProfileLoading(true);
     }
 
@@ -188,7 +189,7 @@ function ProfileClientContent() {
       })
       .catch(() => {
         if (!isMounted) return;
-        if (!cachedUser) setNotFound(true);
+        if (!appCache.has(`user:profile:${queryId}`)) setNotFound(true);
       })
       .finally(() => {
         if (isMounted) setProfileLoading(false);
@@ -197,7 +198,7 @@ function ProfileClientContent() {
     return () => {
       isMounted = false;
     };
-  }, [isOwner, queryId, token, cachedUser]);
+  }, [isOwner, queryId, token]);
 
   // Fetch Live Contributions from API
   const fetchContributions = useCallback(async () => {

@@ -51,9 +51,9 @@ export async function loadAllUpcomingEvents(token: string, force?: boolean): Pro
     async () => {
       const first = await api.listEvents(token, { timeline: "upcoming", limit: 100, page: 1 });
       const events = [...first.events];
-      for (let page = 2; events.length < first.total; page += 1) {
+      for (let page = 2; events.length < first.total && page <= 20; page += 1) {
         const next = await api.listEvents(token, { timeline: "upcoming", limit: 100, page });
-        if (next.events.length === 0) break;
+        if (!next.events || next.events.length === 0) break;
         events.push(...next.events);
       }
       return events;
@@ -74,9 +74,9 @@ export async function loadAllEvents(token: string, force?: boolean): Promise<Eve
     async () => {
       const first = await api.listEvents(token, { limit: 100, page: 1 });
       const events = [...first.events];
-      for (let page = 2; events.length < first.total; page += 1) {
+      for (let page = 2; events.length < first.total && page <= 20; page += 1) {
         const next = await api.listEvents(token, { limit: 100, page });
-        if (next.events.length === 0) break;
+        if (!next.events || next.events.length === 0) break;
         events.push(...next.events);
       }
       return events;
