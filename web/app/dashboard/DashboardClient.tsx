@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMember } from "@/lib/useMember";
 import { api, type EventSummaryItem, type BannerDocument } from "@/lib/api";
 import { appCache } from "@/lib/cache";
-import { getBannerPresentation, getDashboardEvents, indiaDateKey, indiaDateParts } from "@/lib/dashboardData";
+import { getDashboardEvents, indiaDateKey, indiaDateParts } from "@/lib/dashboardData";
 import { loadAllSpgs, loadAllUpcomingEvents } from "@/lib/memberData";
 import type { SPGRecord } from "@/lib/spgData";
 import type { ContributionRecord } from "@/lib/contributionData";
@@ -59,6 +60,7 @@ function initials(name: string) {
 }
 
 export default function DashboardClient() {
+  const router = useRouter();
   const { token, profile } = useMember();
   const cachedSpgs = appCache.get<SPGRecord[]>("spgs:all:{}");
   const cachedEvents = appCache.get<EventSummaryItem[]>("events:upcoming");
@@ -320,9 +322,17 @@ export default function DashboardClient() {
     return () => { active = false; };
   }, [token, slides]);
 
+  const navigateTo = (url: string) => {
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+      window.location.assign(url);
+    } else {
+      router.push(url);
+    }
+  };
+
   const handleBannerRsvp = async (slide: FeaturedBanner) => {
     if (!slide.eventId) {
-      window.location.href = slide.detailsLink;
+      navigateTo(slide.detailsLink);
       return;
     }
     setRsvpLoadingId(slide.eventId);
@@ -348,7 +358,7 @@ export default function DashboardClient() {
         }));
       }
     } catch {
-      window.location.href = slide.detailsLink;
+      navigateTo(slide.detailsLink);
     } finally {
       setRsvpLoadingId(null);
     }
