@@ -127,8 +127,13 @@ export default function Header({
           aria-label={`View profile for ${displayName}`}
         >
           <div className={styles.userText}>
-            <span className={styles.userName}>{displayName}</span>
-            <span className={styles.userTrack}>{profile?.is_admin ? "ADMIN" : !profile?.is_member ? "MEMBERSHIP PENDING" : profile.role_label?.toUpperCase() || `${(profile.tier || "beginner").toUpperCase()} MEMBER`}</span>
+            <span className={styles.userTrack}>
+              {profile?.is_admin
+                ? "ADMIN"
+                : !profile?.is_member
+                ? "OPEN MEMBER"
+                : profile.role_label?.toUpperCase() || (profile.tier === "advanced" ? "ADVANCED MEMBER" : "GENERAL MEMBER")}
+            </span>
           </div>
           <div className={styles.userAvatar}>
             {profile?.avatar_url && profile.avatar_url !== failedAvatarUrl ? (

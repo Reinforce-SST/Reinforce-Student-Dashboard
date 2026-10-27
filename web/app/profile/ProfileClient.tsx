@@ -527,10 +527,12 @@ function ProfileClientContent() {
             <div className={styles.nameBlock}>
               <div className={styles.nameRow}>
                 <h1 className={styles.fullName}>{fullName}</h1>
-                <span className={styles.tierBadge}>
-                  {activeProfile?.is_member
-                    ? `${(activeProfile.tier || "beginner").toUpperCase()} MEMBER`
-                    : "MEMBERSHIP PENDING"}
+                <span className={`${styles.tierBadge} ${!activeProfile?.is_member ? styles.tierBadgeOpen : ""}`}>
+                  {!activeProfile?.is_member
+                    ? "OPEN MEMBER"
+                    : activeProfile.tier === "advanced"
+                    ? "ADVANCED MEMBER"
+                    : "GENERAL MEMBER"}
                 </span>
                 {activeProfile?.is_admin && (
                   <span style={{ fontSize: "0.65rem", fontWeight: "850", padding: "3px 8px", borderRadius: "5px", background: "rgba(248, 113, 113, 0.15)", color: "#f87171", border: "1px solid rgba(248, 113, 113, 0.35)", textTransform: "uppercase" }}>
@@ -691,7 +693,11 @@ function ProfileClientContent() {
               />
             </div>
             <div className={styles.tierSubtext}>
-              {activeProfile?.is_member ? `${(activeProfile.tier || "beginner").toUpperCase()} TIER` : "MEMBERSHIP PENDING"}
+              {!activeProfile?.is_member
+                ? "OPEN TIER"
+                : activeProfile.tier === "advanced"
+                ? "ADVANCED TIER"
+                : "GENERAL TIER"}
             </div>
           </article>
 

@@ -1636,7 +1636,11 @@ export default function AdminClient({ initialTab }: { initialTab?: AdminTab } = 
                               <div className={styles.candidateBadges}>
                                 {member.is_admin && <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Admin</span>}
                                 {member.role_label?.toLowerCase() === "core" && <span className={`${styles.candidateBadge} ${styles.candidateBadgeCore}`}>Core</span>}
-                                {member.tier && member.tier !== "beginner" && <span className={styles.candidateBadge}>{member.tier}</span>}
+                                {member.tier && (
+                                  <span className={styles.candidateBadge}>
+                                    {member.tier === "advanced" ? "Advanced" : "General"}
+                                  </span>
+                                )}
                               </div>
                             </div>
                             <span className={styles.candidateEmail}>{member.email}</span>

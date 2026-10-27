@@ -1318,12 +1318,16 @@ export default function TicketManagementClient() {
                             <span className={styles.leaderEmail}>{spgLeader.email || spgLeader.id}</span>
                             <div className={styles.leaderBadges}>
                               {spgLeader.is_member ? (
-                                <span className={`${styles.candidateBadge} ${styles.candidateBadgeMember}`}>✓ Club Member</span>
+                                <span className={`${styles.candidateBadge} ${styles.candidateBadgeMember}`}>Club Member</span>
                               ) : (
-                                <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Membership pending</span>
+                                <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Open Member</span>
                               )}
                               {spgLeader.is_admin && <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Admin</span>}
-                              {spgLeader.tier && spgLeader.tier !== "beginner" && <span className={styles.candidateBadge}>{spgLeader.tier}</span>}
+                              {spgLeader.tier && (
+                                <span className={styles.candidateBadge}>
+                                  {spgLeader.tier === "advanced" ? "Advanced" : "General"}
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -1431,9 +1435,17 @@ export default function TicketManagementClient() {
                                     <div className={styles.candidateNameRow}>
                                       <span className={styles.candidateName}>{m.full_name}</span>
                                       <div className={styles.candidateBadges}>
-                                        {m.is_member && <span className={`${styles.candidateBadge} ${styles.candidateBadgeMember}`}>Member</span>}
+                                        {m.is_member ? (
+                                          <span className={`${styles.candidateBadge} ${styles.candidateBadgeMember}`}>Member</span>
+                                        ) : (
+                                          <span className={styles.candidateBadge}>Open</span>
+                                        )}
                                         {m.is_admin && <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Admin</span>}
-                                        {m.tier && m.tier !== "beginner" && <span className={styles.candidateBadge}>{m.tier}</span>}
+                                        {m.tier && (
+                                          <span className={styles.candidateBadge}>
+                                            {m.tier === "advanced" ? "Advanced" : "General"}
+                                          </span>
+                                        )}
                                       </div>
                                     </div>
                                     <span className={styles.candidateEmail}>{m.email || m.id}</span>
@@ -1557,9 +1569,17 @@ export default function TicketManagementClient() {
                                     <div className={styles.candidateNameRow}>
                                       <span className={styles.candidateName}>{m.full_name}</span>
                                       <div className={styles.candidateBadges}>
-                                        {m.is_member && <span className={`${styles.candidateBadge} ${styles.candidateBadgeMember}`}>Member</span>}
+                                        {m.is_member ? (
+                                          <span className={`${styles.candidateBadge} ${styles.candidateBadgeMember}`}>Member</span>
+                                        ) : (
+                                          <span className={styles.candidateBadge}>Open</span>
+                                        )}
                                         {m.is_admin && <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Admin</span>}
-                                        {m.tier && m.tier !== "beginner" && <span className={styles.candidateBadge}>{m.tier}</span>}
+                                        {m.tier && (
+                                          <span className={styles.candidateBadge}>
+                                            {m.tier === "advanced" ? "Advanced" : "General"}
+                                          </span>
+                                        )}
                                       </div>
                                     </div>
                                     <span className={styles.candidateEmail}>{m.email || m.id}</span>
