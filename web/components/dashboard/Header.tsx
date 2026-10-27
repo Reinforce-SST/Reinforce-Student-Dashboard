@@ -110,8 +110,8 @@ export default function Header({
           </span>
           <input
             type="search"
-            aria-label="Search projects, tickets, ideas, and articles"
-            placeholder="Search projects, tickets, ideas..."
+            aria-label="Search events, members, projects, tickets, and ideas"
+            placeholder="Search events, members, projects..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className={styles.searchInput}

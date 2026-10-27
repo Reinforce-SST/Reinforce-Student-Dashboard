@@ -38,9 +38,11 @@ const frameSrc = ["'self'", firebaseAuthDomain].filter(Boolean).join(" ");
 // content could land inside an executable <script> tag regardless of this
 // directive. The CSP still earns its keep via connect-src/frame-src/img-src/
 // object-src/frame-ancestors below.
+const isDev = process.env.NODE_ENV !== "production";
+
 const contentSecurityPolicy = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   // Article/idea Markdown lets members link an image from any host (see
   // ArticleMarkdown.tsx), so img-src can't be a fixed host allowlist.
