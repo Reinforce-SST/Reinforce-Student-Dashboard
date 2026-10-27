@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMember } from "@/lib/useMember";
 import { loadAllEvents } from "@/lib/memberData";
+import { appCache } from "@/lib/cache";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import PaginationBar from "@/components/dashboard/PaginationBar";
 import LoadingBar from "@/components/dashboard/LoadingBar";
@@ -29,13 +30,72 @@ export type CalendarEventItem = {
   bannerUrl?: string | null;
 };
 
+function mapEventToCalendarItem(ev: any, now = Date.now()): CalendarEventItem {
+  const start = new Date(ev.schedule.start_time);
+  const isEnded = ev.status === "completed" || start.getTime() < now;
+
+  const monthStr = start.toLocaleString("en-US", { month: "short" }).toUpperCase();
+  const dayNum = start.getDate();
+  const yearNum = start.getFullYear();
+  const timeStr = start.toLocaleString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+
+  const rawType = ev.event_type.toLowerCase();
+  const registrationOpen = !isEnded &&
+    (ev.status === "published" || ev.status === "ongoing") &&
+    (!ev.schedule.registration_deadline || new Date(ev.schedule.registration_deadline).getTime() >= now);
+  const loc =
+    ev.venue_info?.room ||
+    ev.venue_info?.venue_name ||
+    (ev.format === "online" ? "Online" : "Venue to be announced");
+
+  const statusText = isEnded
+    ? "ENDED"
+    : registrationOpen
+    ? "OPEN"
+    : "REGISTRATION CLOSED";
+
+  return {
+    id: ev.id,
+    slug: ev.slug || ev.id,
+    month: monthStr,
+    day: dayNum,
+    year: yearNum,
+    title: ev.title,
+    type: rawType,
+    typeLabel: ev.event_type.toUpperCase(),
+    time: timeStr,
+    location: loc,
+    statusText,
+    statusType: isEnded ? "ended" : "available",
+    registrationOpen,
+    isEnded,
+    startDate: start,
+    bannerUrl: ev.banner_url || null,
+  };
+}
+
 export default function EventsManagementClient() {
   const router = useRouter();
   const { token } = useMember();
   const [activeTab, setActiveTab] = useState<"ALL" | "WORKSHOPS" | "HACKATHONS" | "MEETUPS">("ALL");
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
-  const [events, setEvents] = useState<CalendarEventItem[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  const cachedAllEvents = appCache.get<any[]>("events:all");
+  const [events, setEvents] = useState<CalendarEventItem[]>(() => {
+    if (!cachedAllEvents?.data) return [];
+    const now = Date.now();
+    return cachedAllEvents.data
+      .filter((ev: any) =>
+        !ev.event_type?.toLowerCase().includes("banner") &&
+        ["published", "registration_closed", "ongoing", "completed"].includes(ev.status)
+      )
+      .map((ev: any) => mapEventToCalendarItem(ev, now));
+  });
+  const [loading, setLoading] = useState(() => !cachedAllEvents);
   const [loadError, setLoadError] = useState("");
 
   // Current calendar month view (default to current date)
@@ -53,6 +113,9 @@ export default function EventsManagementClient() {
     let active = true;
     async function fetchEvents() {
       try {
+        if (!cachedAllEvents) {
+          setLoading(true);
+        }
         const allFetched = await loadAllEvents(token);
         if (!active) return;
         setLoadError("");
@@ -64,55 +127,8 @@ export default function EventsManagementClient() {
               !ev.event_type?.toLowerCase().includes("banner") &&
               ["published", "registration_closed", "ongoing", "completed"].includes(ev.status)
             )
-            .map((ev) => {
-              const start = new Date(ev.schedule.start_time);
-              const isEnded = ev.status === "completed" || start.getTime() < now;
+            .map((ev) => mapEventToCalendarItem(ev, now));
 
-              const monthStr = start.toLocaleString("en-US", { month: "short" }).toUpperCase();
-              const dayNum = start.getDate();
-              const yearNum = start.getFullYear();
-              const timeStr = start.toLocaleString("en-US", {
-                hour: "numeric",
-                minute: "2-digit",
-                hour12: true,
-              });
-
-              const rawType = ev.event_type.toLowerCase();
-              const registrationOpen = !isEnded &&
-                (ev.status === "published" || ev.status === "ongoing") &&
-                (!ev.schedule.registration_deadline || new Date(ev.schedule.registration_deadline).getTime() >= now);
-              const loc =
-                ev.venue_info?.room ||
-                ev.venue_info?.venue_name ||
-                (ev.format === "online" ? "Online" : "Venue to be announced");
-
-              const statusText = isEnded
-                ? "ENDED"
-                : registrationOpen
-                ? "OPEN"
-                : "REGISTRATION CLOSED";
-
-              return {
-                id: ev.id,
-                slug: ev.slug || ev.id,
-                month: monthStr,
-                day: dayNum,
-                year: yearNum,
-                title: ev.title,
-                type: rawType,
-                typeLabel: ev.event_type.toUpperCase(),
-                time: timeStr,
-                location: loc,
-                statusText,
-                statusType: isEnded ? "ended" : "available",
-                registrationOpen,
-                isEnded,
-                startDate: start,
-                bannerUrl: ev.banner_url,
-              };
-            });
-
-          // Sort upcoming events first (ascending by start date), followed by ended events (descending by start date)
           mapped.sort((a, b) => {
             if (a.isEnded !== b.isEnded) {
               return a.isEnded ? 1 : -1;
@@ -128,17 +144,24 @@ export default function EventsManagementClient() {
           setEvents([]);
         }
       } catch {
-        if (active) setLoadError("Events could not be loaded. Please refresh.");
+        if (!active) return;
+        if (!cachedAllEvents) {
+          setLoadError("Events could not be loaded. Try again in a moment.");
+          setEvents([]);
+        }
       } finally {
         if (active) setLoading(false);
       }
     }
 
-    fetchEvents();
+    if (token) {
+      void fetchEvents();
+    }
+
     return () => {
       active = false;
     };
-  }, [token]);
+  }, [token, cachedAllEvents]);
 
   const handleToggleRsvp = (slug: string, e: React.MouseEvent) => {
     e.preventDefault();

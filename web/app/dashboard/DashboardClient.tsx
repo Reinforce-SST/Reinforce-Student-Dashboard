@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useMember } from "@/lib/useMember";
 import { api, type EventSummaryItem, type BannerDocument } from "@/lib/api";
+import { appCache } from "@/lib/cache";
 import { getBannerPresentation, getDashboardEvents, indiaDateKey, indiaDateParts } from "@/lib/dashboardData";
 import { loadAllSpgs, loadAllUpcomingEvents } from "@/lib/memberData";
 import type { SPGRecord } from "@/lib/spgData";
@@ -47,58 +48,80 @@ function initials(name: string) {
 
 export default function DashboardClient() {
   const { token, profile } = useMember();
-  const [spgs, setSpgs] = useState<SPGRecord[]>([]);
-  const [events, setEvents] = useState<EventSummaryItem[]>([]);
-  const [dedicatedBanners, setDedicatedBanners] = useState<BannerDocument[]>([]);
-  const [contributions, setContributions] = useState<ContributionRecord[]>([]);
-  const [contributionsComplete, setContributionsComplete] = useState(false);
-  const [spgStatus, setSpgStatus] = useState<LoadStatus>("loading");
-  const [eventStatus, setEventStatus] = useState<LoadStatus>("loading");
-  const [contributionStatus, setContributionStatus] = useState<LoadStatus>("loading");
-  const [bannerStatus, setBannerStatus] = useState<LoadStatus>("loading");
+  const cachedSpgs = appCache.get<SPGRecord[]>("spgs:all:{}");
+  const cachedEvents = appCache.get<EventSummaryItem[]>("events:upcoming");
+  const cachedContribs = profile.id ? appCache.get<{ items: ContributionRecord[]; next_cursor?: string | null }>(`contribs:user:${profile.id}`) : null;
+  const cachedBanners = appCache.get<{ banners: BannerDocument[] }>("banners:list");
+
+  const [spgs, setSpgs] = useState<SPGRecord[]>(() => cachedSpgs?.data || []);
+  const [events, setEvents] = useState<EventSummaryItem[]>(() => cachedEvents?.data || []);
+  const [dedicatedBanners, setDedicatedBanners] = useState<BannerDocument[]>(() => cachedBanners?.data?.banners || []);
+  const [contributions, setContributions] = useState<ContributionRecord[]>(() =>
+    cachedContribs?.data?.items?.filter((record) => record.status === "approved") || []
+  );
+  const [contributionsComplete, setContributionsComplete] = useState(() => Boolean(cachedContribs && !cachedContribs.data?.next_cursor));
+  const [spgStatus, setSpgStatus] = useState<LoadStatus>(() => (cachedSpgs ? "ready" : "loading"));
+  const [eventStatus, setEventStatus] = useState<LoadStatus>(() => (cachedEvents ? "ready" : "loading"));
+  const [contributionStatus, setContributionStatus] = useState<LoadStatus>(() => (cachedContribs ? "ready" : "loading"));
+  const [bannerStatus, setBannerStatus] = useState<LoadStatus>(() => (cachedBanners ? "ready" : "loading"));
   const [retryCount, setRetryCount] = useState(0);
   const [monthOffset, setMonthOffset] = useState(0);
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [slideIndex, setSlideIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+
   useEffect(() => {
     let active = true;
     const load = async () => {
-      setSpgStatus("loading");
-      setEventStatus("loading");
-      setContributionStatus("loading");
-      setBannerStatus("loading");
+      const force = retryCount > 0;
+      if (!cachedSpgs || force) setSpgStatus("loading");
+      if (!cachedEvents || force) setEventStatus("loading");
+      if (!cachedContribs || force) setContributionStatus("loading");
+      if (!cachedBanners || force) setBannerStatus("loading");
+
       const results = await Promise.allSettled([
-        loadAllSpgs(token),
-        loadAllUpcomingEvents(token),
-        profile.id ? api.getUserContributions(token, profile.id, 100) : Promise.reject(new Error("Missing member ID")),
-        api.listBanners(token, { limit: 20 }),
+        loadAllSpgs(token, undefined, force),
+        loadAllUpcomingEvents(token, force),
+        profile.id
+          ? appCache.fetch(
+              `contribs:user:${profile.id}`,
+              () => api.getUserContributions(token, profile.id, 100),
+              { ttl: 3 * 60 * 1000, tags: ["contributions", "dashboard"], userScope: profile.id, force }
+            )
+          : Promise.reject(new Error("Missing member ID")),
+        appCache.fetch(
+          "banners:list",
+          () => api.listBanners(token, { limit: 20 }),
+          { ttl: 5 * 60 * 1000, tags: ["banners", "dashboard"], force }
+        ),
       ]);
       if (!active) return;
       const [spgResult, eventResult, contributionResult, bannerResult] = results;
       if (spgResult.status === "fulfilled") {
         setSpgs(spgResult.value);
         setSpgStatus("ready");
-      } else {
+      } else if (!cachedSpgs) {
         setSpgStatus("error");
       }
       if (eventResult.status === "fulfilled") {
         setEvents(eventResult.value);
         setEventStatus("ready");
-      } else {
+      } else if (!cachedEvents) {
         setEventStatus("error");
       }
       if (contributionResult.status === "fulfilled") {
         setContributions(contributionResult.value.items.filter((record) => record.status === "approved"));
         setContributionsComplete(!contributionResult.value.next_cursor);
         setContributionStatus("ready");
-      } else {
+      } else if (!cachedContribs) {
         setContributionStatus("error");
       }
       if (bannerResult && bannerResult.status === "fulfilled") {
         setDedicatedBanners(bannerResult.value.banners || []);
+        setBannerStatus("ready");
+      } else {
+        setBannerStatus("ready");
       }
-      setBannerStatus("ready");
     };
     void load();
     return () => { active = false; };

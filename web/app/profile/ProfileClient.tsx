@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useMember } from "@/lib/useMember";
 import { api, type StudentProfile, type TrackPoints } from "@/lib/api";
+import { appCache } from "@/lib/cache";
 import { graduationBatchYear } from "@/lib/batchYear";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import MemberLoading from "@/components/dashboard/MemberLoading";
@@ -135,7 +136,8 @@ function ProfileClientContent() {
     return false;
   }, [queryId, loggedInProfile]);
 
-  const [fetchedProfile, setFetchedProfile] = useState<StudentProfile | null>(null);
+  const cachedUser = queryId ? appCache.get<StudentProfile>(`user:profile:${queryId}`) : null;
+  const [fetchedProfile, setFetchedProfile] = useState<StudentProfile | null>(() => cachedUser?.data || null);
   const [profileOverrides, setProfileOverrides] = useState<Partial<StudentProfile>>({});
 
   const activeProfile = useMemo(() => {
@@ -144,12 +146,15 @@ function ProfileClientContent() {
     return { ...base, ...profileOverrides };
   }, [isOwner, loggedInProfile, fetchedProfile, profileOverrides]);
 
-  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(() => (!isOwner && Boolean(queryId) && !cachedUser));
   const [notFound, setNotFound] = useState(false);
 
   // Live Contributions State
-  const [liveContributions, setLiveContributions] = useState<PublicContributionRecord[]>([]);
-  const [contributionsLoading, setContributionsLoading] = useState(true);
+  const contribCacheKey = isOwner ? "contribs:my:100" : (queryId ? `contribs:public:${queryId}:100` : null);
+  const cachedContribs = contribCacheKey ? appCache.get<PublicContributionRecord[]>(contribCacheKey) : null;
+
+  const [liveContributions, setLiveContributions] = useState<PublicContributionRecord[]>(() => cachedContribs?.data || []);
+  const [contributionsLoading, setContributionsLoading] = useState(() => !cachedContribs);
   const [contributionsError, setContributionsError] = useState(false);
 
   // Collapsible Activity & Category Hierarchy Guide toggle
@@ -167,7 +172,9 @@ function ProfileClientContent() {
     }
 
     let isMounted = true;
-    setProfileLoading(true);
+    if (!cachedUser) {
+      setProfileLoading(true);
+    }
 
     api.getUserProfile(token, queryId)
       .then((data) => {
@@ -181,7 +188,7 @@ function ProfileClientContent() {
       })
       .catch(() => {
         if (!isMounted) return;
-        setNotFound(true);
+        if (!cachedUser) setNotFound(true);
       })
       .finally(() => {
         if (isMounted) setProfileLoading(false);
@@ -190,27 +197,37 @@ function ProfileClientContent() {
     return () => {
       isMounted = false;
     };
-  }, [isOwner, queryId, token]);
+  }, [isOwner, queryId, token, cachedUser]);
 
   // Fetch Live Contributions from API
   const fetchContributions = useCallback(async () => {
     if (!token) return;
-    setContributionsLoading(true);
+    const cacheKey = isOwner ? "contribs:my:100" : (queryId ? `contribs:public:${queryId}:100` : null);
+    if (!cacheKey) return;
+
+    const hasCached = Boolean(appCache.get(cacheKey));
+    if (!hasCached) {
+      setContributionsLoading(true);
+    }
     setContributionsError(false);
-    setLiveContributions([]);
+
     try {
-      if (isOwner) {
-        const res = await api.getMyContributions(token, 100);
-        setLiveContributions((res?.items || []).filter((item) => item.status === "approved"));
-      } else {
-        const targetUserId = queryId;
-        if (targetUserId) {
-          const res = await api.getPublicUserContributions(token, targetUserId, 100);
-          setLiveContributions(res?.items || []);
-        }
-      }
+      const items = await appCache.fetch(
+        cacheKey,
+        async () => {
+          if (isOwner) {
+            const res = await api.getMyContributions(token, 100);
+            return (res?.items || []).filter((item) => item.status === "approved");
+          } else {
+            const res = await api.getPublicUserContributions(token, queryId, 100);
+            return res?.items || [];
+          }
+        },
+        { ttl: 2 * 60 * 1000, tags: ["contributions", "profile"] }
+      );
+      setLiveContributions(items);
     } catch {
-      setContributionsError(true);
+      if (!hasCached) setContributionsError(true);
     } finally {
       setContributionsLoading(false);
     }

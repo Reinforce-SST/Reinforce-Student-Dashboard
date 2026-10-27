@@ -23,6 +23,8 @@ export type {
   SPGSubmilestoneCreate,
 } from "./spgData";
 import type { ContributionPage, ContributionRecord, PublicContributionRecord } from "./contributionData";
+import { appCache } from "./cache";
+export { appCache };
 
 const BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080/api/v1";
@@ -618,43 +620,80 @@ export function ticketFields(category: TicketCategory, fields: Record<string, un
 /* --------------------------------------------------------------- requests */
 
 export const api = {
-  listArticles: (search = "", page = 1, kind?: ArticleKind) => {
+  invalidate: (tags: string | string[]) => appCache.invalidateTags(tags),
+  listArticles: (search = "", page = 1, kind?: ArticleKind, force?: boolean) => {
     const query = new URLSearchParams({ page: String(page), page_size: "20" });
     if (search.trim()) query.set("search", search.trim());
     if (kind) query.set("kind", kind);
-    return request<{ items: ArticleSummary[]; has_more: boolean; total: number }>(`/blogs?${query}`);
+    return appCache.fetch(
+      `articles:list:${query.toString()}`,
+      () => request<{ items: ArticleSummary[]; has_more: boolean; total: number }>(`/blogs?${query}`),
+      { ttl: 2 * 60 * 1000, tags: ["articles"], force }
+    );
   },
-  getArticle: (slug: string) => request<ArticleDetail>(`/blogs/${encodeURIComponent(slug)}`),
-  publishArticle: (
+  getArticle: (slug: string, force?: boolean) =>
+    appCache.fetch(
+      `article:${slug}`,
+      () => request<ArticleDetail>(`/blogs/${encodeURIComponent(slug)}`),
+      { ttl: 5 * 60 * 1000, tags: ["articles", `article:${slug}`], force }
+    ),
+  publishArticle: async (
     token: string,
     body: { title: string; summary: string; content: string; tags: string[]; kind?: ArticleKind; paper?: PaperDetails | null },
-  ) =>
-    request<ArticleDetail>("/blogs", token, { method: "POST", body: JSON.stringify({ ...body, status: "published" }) }),
-  upvoteArticle: (token: string, id: string) =>
-    request<{ upvoted: boolean; upvote_count: number }>(`/blogs/${encodeURIComponent(id)}/upvote`, token, { method: "POST" }),
+  ) => {
+    const res = await request<ArticleDetail>("/blogs", token, { method: "POST", body: JSON.stringify({ ...body, status: "published" }) });
+    appCache.invalidateTags(["articles", "dashboard"]);
+    return res;
+  },
+  upvoteArticle: async (token: string, id: string) => {
+    const res = await request<{ upvoted: boolean; upvote_count: number }>(`/blogs/${encodeURIComponent(id)}/upvote`, token, { method: "POST" });
+    appCache.invalidateTags(["articles"]);
+    return res;
+  },
   listIdeas: (
     search = "",
     page = 1,
     pageSize = 20,
     track?: string,
     difficulty?: string,
-    sortBy?: string
+    sortBy?: string,
+    force?: boolean
   ) => {
     const query = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
     if (search.trim()) query.set("search", search.trim());
     if (track && track !== "all") query.set("track", track);
     if (difficulty && difficulty !== "all") query.set("difficulty", difficulty);
     if (sortBy) query.set("sort_by", sortBy);
-    return request<{ items: IdeaSummary[]; has_more: boolean; total: number; page: number; page_size: number }>(`/ideas?${query}`);
+    return appCache.fetch(
+      `ideas:list:${query.toString()}`,
+      () => request<{ items: IdeaSummary[]; has_more: boolean; total: number; page: number; page_size: number }>(`/ideas?${query}`),
+      { ttl: 2 * 60 * 1000, tags: ["ideas"], force }
+    );
   },
-  getIdea: (id: string, token?: string) => request<IdeaDetail>(`/ideas/${encodeURIComponent(id)}`, token),
-  myIdeas: (token: string) => request<{ items: IdeaSummary[] }>("/ideas/my", token),
+  getIdea: (id: string, token?: string, force?: boolean) =>
+    appCache.fetch(
+      `idea:${id}`,
+      () => request<IdeaDetail>(`/ideas/${encodeURIComponent(id)}`, token),
+      { ttl: 3 * 60 * 1000, tags: ["ideas", `idea:${id}`], force }
+    ),
+  myIdeas: (token: string, force?: boolean) =>
+    appCache.fetch(
+      "ideas:my",
+      () => request<{ items: IdeaSummary[] }>("/ideas/my", token),
+      { ttl: 60 * 1000, tags: ["ideas"], force }
+    ),
   /** One approved idea, chosen by the server. 404 when the jar is empty. */
   randomIdea: (token?: string | null) => request<IdeaDetail>("/ideas/random", token),
-  createIdea: (token: string, body: { title: string; description: string; track: string }) =>
-    request<IdeaDetail>("/ideas", token, { method: "POST", body: JSON.stringify(body) }),
-  upvoteIdea: (token: string, id: string) =>
-    request<{ upvoted: boolean; upvote_count: number }>(`/ideas/${encodeURIComponent(id)}/upvote`, token, { method: "POST" }),
+  createIdea: async (token: string, body: { title: string; description: string; track: string }) => {
+    const res = await request<IdeaDetail>("/ideas", token, { method: "POST", body: JSON.stringify(body) });
+    appCache.invalidateTags(["ideas", "dashboard"]);
+    return res;
+  },
+  upvoteIdea: async (token: string, id: string) => {
+    const res = await request<{ upvoted: boolean; upvote_count: number }>(`/ideas/${encodeURIComponent(id)}/upvote`, token, { method: "POST" });
+    appCache.invalidateTags(["ideas", `idea:${id}`]);
+    return res;
+  },
   pendingIdeas: (token: string) => request<{ items: IdeaSummary[] }>("/ideas/pending", token),
   adminListIdeas: (
     token: string,
@@ -679,7 +718,7 @@ export const api = {
       token
     );
   },
-  updateIdea: (
+  updateIdea: async (
     token: string,
     id: string,
     body: Partial<{
@@ -691,15 +730,24 @@ export const api = {
       rough_roadmap: string[];
       learning_outcomes: string[];
     }>
-  ) =>
-    request<IdeaDetail>(`/ideas/${encodeURIComponent(id)}`, token, {
+  ) => {
+    const res = await request<IdeaDetail>(`/ideas/${encodeURIComponent(id)}`, token, {
       method: "PATCH",
       body: JSON.stringify(body),
-    }),
-  approveIdea: (token: string, id: string) =>
-    request<IdeaDetail>(`/ideas/${encodeURIComponent(id)}/approve`, token, { method: "POST" }),
-  rejectIdea: (token: string, id: string) =>
-    request<{ message: string; id: string }>(`/ideas/${encodeURIComponent(id)}`, token, { method: "DELETE" }),
+    });
+    appCache.invalidateTags(["ideas", `idea:${id}`, "dashboard"]);
+    return res;
+  },
+  approveIdea: async (token: string, id: string) => {
+    const res = await request<IdeaDetail>(`/ideas/${encodeURIComponent(id)}/approve`, token, { method: "POST" });
+    appCache.invalidateTags(["ideas", `idea:${id}`, "dashboard"]);
+    return res;
+  },
+  rejectIdea: async (token: string, id: string) => {
+    const res = await request<{ message: string; id: string }>(`/ideas/${encodeURIComponent(id)}`, token, { method: "DELETE" });
+    appCache.invalidateTags(["ideas", `idea:${id}`, "dashboard"]);
+    return res;
+  },
   syncUser: (token: string) =>
     request<StudentProfile>("/users/sync", token, {
       method: "POST",
@@ -714,11 +762,18 @@ export const api = {
       body: JSON.stringify({ link_token: linkToken }),
     }),
 
-  createTicket: (token: string, body: TicketCreateRequest) =>
-    request<ApiTicketDetail>("/tickets", token, { method: "POST", body: JSON.stringify(body) }),
+  createTicket: async (token: string, body: TicketCreateRequest) => {
+    const res = await request<ApiTicketDetail>("/tickets", token, { method: "POST", body: JSON.stringify(body) });
+    appCache.invalidateTags(["tickets", "dashboard"]);
+    return res;
+  },
 
-  ticketDetail: (token: string, id: string) =>
-    request<ApiTicketDetail>(`/tickets/${encodeURIComponent(id)}`, token),
+  ticketDetail: (token: string, id: string, force?: boolean) =>
+    appCache.fetch(
+      `ticket:detail:${id}`,
+      () => request<ApiTicketDetail>(`/tickets/${encodeURIComponent(id)}`, token),
+      { ttl: 60 * 1000, tags: ["tickets", `ticket:${id}`], force }
+    ),
 
   ticket: async (token: string, id: string): Promise<TicketThread> => {
     const path = `/tickets/${encodeURIComponent(id)}`;
@@ -747,8 +802,12 @@ export const api = {
     };
   },
 
-  myTickets: async (token: string) => {
-    const data = await request<{ total: number; items: TicketSummary[] }>("/tickets/my", token);
+  myTickets: async (token: string, force?: boolean) => {
+    const data = await appCache.fetch(
+      "tickets:my",
+      () => request<{ total: number; items: TicketSummary[] }>("/tickets/my", token),
+      { ttl: 45 * 1000, tags: ["tickets"], force }
+    );
     return data.items.slice(0, 100);
   },
 
@@ -824,50 +883,78 @@ export const api = {
     );
   },
 
-  getSpg: <T = SPGRecord>(token: string, spgId: string) =>
-    request<T>(`/spgs/${encodeURIComponent(spgId)}`, token),
+  getSpg: <T = SPGRecord>(token: string, spgId: string, force?: boolean) =>
+    appCache.fetch(
+      `spgs:detail:${spgId}`,
+      () => request<T>(`/spgs/${encodeURIComponent(spgId)}`, token),
+      { ttl: 2 * 60 * 1000, tags: ["spgs", `spg:${spgId}`], force }
+    ),
 
-  updateSpg: <T = SPGRecord>(token: string, spgId: string, payload: Partial<SPGRecord> & Record<string, unknown>) =>
-    request<T>(`/spgs/${encodeURIComponent(spgId)}`, token, {
+  updateSpg: async <T = SPGRecord>(token: string, spgId: string, payload: Partial<SPGRecord> & Record<string, unknown>) => {
+    const res = await request<T>(`/spgs/${encodeURIComponent(spgId)}`, token, {
       method: "PATCH",
       body: JSON.stringify(payload),
-    }),
+    });
+    appCache.invalidateTags(["spgs", "dashboard", `spg:${spgId}`]);
+    return res;
+  },
 
-  adminPauseSpg: <T = SPGRecord>(token: string, spgId: string) =>
-    request<T>(`/spgs/${encodeURIComponent(spgId)}/pause`, token, {
+  adminPauseSpg: async <T = SPGRecord>(token: string, spgId: string) => {
+    const res = await request<T>(`/spgs/${encodeURIComponent(spgId)}/pause`, token, {
       method: "POST",
-    }),
+    });
+    appCache.invalidateTags(["spgs", "dashboard", `spg:${spgId}`]);
+    return res;
+  },
 
-  adminResumeSpg: <T = SPGRecord>(token: string, spgId: string) =>
-    request<T>(`/spgs/${encodeURIComponent(spgId)}/resume`, token, {
+  adminResumeSpg: async <T = SPGRecord>(token: string, spgId: string) => {
+    const res = await request<T>(`/spgs/${encodeURIComponent(spgId)}/resume`, token, {
       method: "POST",
-    }),
+    });
+    appCache.invalidateTags(["spgs", "dashboard", `spg:${spgId}`]);
+    return res;
+  },
 
-  adminDisbandSpg: <T = SPGRecord>(token: string, spgId: string) =>
-    request<T>(`/spgs/${encodeURIComponent(spgId)}/disband`, token, {
+  adminDisbandSpg: async <T = SPGRecord>(token: string, spgId: string) => {
+    const res = await request<T>(`/spgs/${encodeURIComponent(spgId)}/disband`, token, {
       method: "POST",
-    }),
+    });
+    appCache.invalidateTags(["spgs", "dashboard", `spg:${spgId}`]);
+    return res;
+  },
 
-  verifySpgReport: <T = SPGReportRecord>(token: string, reportId: string) =>
-    request<T>(`/spgs/reports/${encodeURIComponent(reportId)}/verify`, token, {
+  verifySpgReport: async <T = SPGReportRecord>(token: string, reportId: string) => {
+    const res = await request<T>(`/spgs/reports/${encodeURIComponent(reportId)}/verify`, token, {
       method: "POST",
-    }),
+    });
+    appCache.invalidateTags(["spgs", "dashboard"]);
+    return res;
+  },
 
-  addSpgMember: <T = SPGRecord>(token: string, spgId: string, userId: string) =>
-    request<T>(`/spgs/${encodeURIComponent(spgId)}/members/${encodeURIComponent(userId)}`, token, {
+  addSpgMember: async <T = SPGRecord>(token: string, spgId: string, userId: string) => {
+    const res = await request<T>(`/spgs/${encodeURIComponent(spgId)}/members/${encodeURIComponent(userId)}`, token, {
       method: "POST",
-    }),
+    });
+    appCache.invalidateTags(["spgs", "dashboard", `spg:${spgId}`]);
+    return res;
+  },
 
-  removeSpgMember: <T = SPGRecord>(token: string, spgId: string, userId: string) =>
-    request<T>(`/spgs/${encodeURIComponent(spgId)}/members/${encodeURIComponent(userId)}`, token, {
+  removeSpgMember: async <T = SPGRecord>(token: string, spgId: string, userId: string) => {
+    const res = await request<T>(`/spgs/${encodeURIComponent(spgId)}/members/${encodeURIComponent(userId)}`, token, {
       method: "DELETE",
-    }),
+    });
+    appCache.invalidateTags(["spgs", "dashboard", `spg:${spgId}`]);
+    return res;
+  },
 
-  changeSpgLead: <T = SPGRecord>(token: string, spgId: string, newLeadId: string) =>
-    request<T>(`/spgs/${encodeURIComponent(spgId)}/lead`, token, {
+  changeSpgLead: async <T = SPGRecord>(token: string, spgId: string, newLeadId: string) => {
+    const res = await request<T>(`/spgs/${encodeURIComponent(spgId)}/lead`, token, {
       method: "PATCH",
       body: JSON.stringify({ new_lead_id: newLeadId }),
-    }),
+    });
+    appCache.invalidateTags(["spgs", "dashboard", `spg:${spgId}`]);
+    return res;
+  },
 
   listMilestones: (token: string, spgId: string) =>
     request<SPGMilestone[]>(`/spgs/${encodeURIComponent(spgId)}/milestones`, token),
@@ -1015,7 +1102,11 @@ export const api = {
   },
 
   getUserProfile: (token: string, idOrEmail: string) =>
-    request<StudentProfile>(`/users/${encodeURIComponent(idOrEmail)}`, token),
+    appCache.fetch(
+      `user:profile:${idOrEmail}`,
+      () => request<StudentProfile>(`/users/${encodeURIComponent(idOrEmail)}`, token),
+      { ttl: 5 * 60 * 1000, tags: ["users", `user:${idOrEmail}`] }
+    ),
 
   getMyContributions: <T = ContributionRecord>(token: string, limit: number = 50, cursor?: string | null) => {
     const qs = new URLSearchParams();
@@ -1099,13 +1190,19 @@ export const api = {
     request<{ is_registered: boolean; registration: { status: string } | null }>(
       `/events/${encodeURIComponent(id)}/my-registration`, token),
 
-  registerForEvent: (token: string, id: string, payload: { team_name?: string; member_uids?: string[] }) =>
-    request<{ status: string }>(`/events/${encodeURIComponent(id)}/register`, token, {
+  registerForEvent: async (token: string, id: string, payload: { team_name?: string; member_uids?: string[] }) => {
+    const res = await request<{ status: string }>(`/events/${encodeURIComponent(id)}/register`, token, {
       method: "POST", body: JSON.stringify(payload),
-    }),
+    });
+    appCache.invalidateTags(["events", "dashboard", `event:${id}`]);
+    return res;
+  },
 
-  cancelEventRegistration: (token: string, id: string) =>
-    request<unknown>(`/events/${encodeURIComponent(id)}/register`, token, { method: "DELETE" }),
+  cancelEventRegistration: async (token: string, id: string) => {
+    const res = await request<unknown>(`/events/${encodeURIComponent(id)}/register`, token, { method: "DELETE" });
+    appCache.invalidateTags(["events", "dashboard", `event:${id}`]);
+    return res;
+  },
 
   submitEventFeedback: (token: string, id: string, payload: {
     rating_content: number; rating_organization: number; rating_overall: number;
@@ -1126,25 +1223,38 @@ export const api = {
     );
   },
 
-  getBanner: (id: string, token?: string | null) =>
-    request<BannerDocument>(`/banners/${encodeURIComponent(id)}`, token || undefined),
+  getBanner: (id: string, token?: string | null, force?: boolean) =>
+    appCache.fetch(
+      `banners:detail:${id}`,
+      () => request<BannerDocument>(`/banners/${encodeURIComponent(id)}`, token || undefined),
+      { ttl: 3 * 60 * 1000, tags: ["banners", `banner:${id}`], force }
+    ),
 
-  adminCreateBanner: (token: string, payload: Record<string, unknown>) =>
-    request<BannerDocument>("/banners", token, {
+  adminCreateBanner: async (token: string, payload: Record<string, unknown>) => {
+    const res = await request<BannerDocument>("/banners", token, {
       method: "POST",
       body: JSON.stringify(payload),
-    }),
+    });
+    appCache.invalidateTags(["banners", "dashboard"]);
+    return res;
+  },
 
-  adminUpdateBanner: (token: string, bannerId: string, payload: Record<string, unknown>) =>
-    request<BannerDocument>(`/banners/${encodeURIComponent(bannerId)}`, token, {
+  adminUpdateBanner: async (token: string, bannerId: string, payload: Record<string, unknown>) => {
+    const res = await request<BannerDocument>(`/banners/${encodeURIComponent(bannerId)}`, token, {
       method: "PUT",
       body: JSON.stringify(payload),
-    }),
+    });
+    appCache.invalidateTags(["banners", "dashboard", `banner:${bannerId}`]);
+    return res;
+  },
 
-  adminDeleteBanner: (token: string, bannerId: string) =>
-    request<{ message: string }>(`/banners/${encodeURIComponent(bannerId)}`, token, {
+  adminDeleteBanner: async (token: string, bannerId: string) => {
+    const res = await request<{ message: string }>(`/banners/${encodeURIComponent(bannerId)}`, token, {
       method: "DELETE",
-    }),
+    });
+    appCache.invalidateTags(["banners", "dashboard", `banner:${bannerId}`]);
+    return res;
+  },
 
   adminUploadBannerMedia: async (token: string, file: File): Promise<{ url: string }> => {
     const formData = new FormData();
@@ -1201,23 +1311,32 @@ export const api = {
     }
   },
 
-  adminCreateEvent: (token: string, payload: Record<string, unknown>) =>
-    request<EventSummaryItem>("/events", token, {
+  adminCreateEvent: async (token: string, payload: Record<string, unknown>) => {
+    const res = await request<EventSummaryItem>("/events", token, {
       method: "POST",
       body: JSON.stringify(payload),
-    }),
+    });
+    appCache.invalidateTags(["events", "dashboard"]);
+    return res;
+  },
 
-  adminUpdateEvent: (token: string, eventId: string, payload: Record<string, unknown>) =>
-    request<EventSummaryItem>(`/events/${encodeURIComponent(eventId)}`, token, {
+  adminUpdateEvent: async (token: string, eventId: string, payload: Record<string, unknown>) => {
+    const res = await request<EventSummaryItem>(`/events/${encodeURIComponent(eventId)}`, token, {
       method: "PUT",
       body: JSON.stringify(payload),
-    }),
+    });
+    appCache.invalidateTags(["events", "dashboard", `event:${eventId}`]);
+    return res;
+  },
 
-  adminUpdateEventStatus: (token: string, eventId: string, status: string) =>
-    request<EventSummaryItem>(`/events/${encodeURIComponent(eventId)}/status`, token, {
+  adminUpdateEventStatus: async (token: string, eventId: string, status: string) => {
+    const res = await request<EventSummaryItem>(`/events/${encodeURIComponent(eventId)}/status`, token, {
       method: "PATCH",
       body: JSON.stringify({ status }),
-    }),
+    });
+    appCache.invalidateTags(["events", "dashboard", `event:${eventId}`]);
+    return res;
+  },
 
   getEventRegistrations: (token: string, eventId: string) =>
     request<EventRegistration[]>(`/events/${encodeURIComponent(eventId)}/registrations`, token),
@@ -1288,8 +1407,8 @@ export const api = {
     ),
 
   /** Only registered or already checked-in attendees can be checked in; the rest come back in failed_uids. */
-  adminRollCall: (token: string, eventId: string, attendeeUids: string[], awardPoints: boolean = true, category: string = "participation") =>
-    request<{
+  adminRollCall: async (token: string, eventId: string, attendeeUids: string[], awardPoints: boolean = true, category: string = "participation") => {
+    const res = await request<{
       event_id: string;
       checked_in_count: number;
       points_awarded_per_user: number;
@@ -1298,17 +1417,23 @@ export const api = {
     }>(`/events/${encodeURIComponent(eventId)}/attendance/roll-call`, token, {
       method: "POST",
       body: JSON.stringify({ attendee_uids: attendeeUids, award_points: awardPoints, category }),
-    }),
+    });
+    appCache.invalidateTags(["events", "contributions", "leaderboard", "dashboard"]);
+    return res;
+  },
 
-  adminUpdateUserStatus: (
+  adminUpdateUserStatus: async (
     token: string,
     userId: string,
     payload: { is_admin?: boolean; is_member?: boolean; tier?: MemberTier; role_label?: string | null }
-  ) =>
-    request<StudentProfile>(`/users/${encodeURIComponent(userId)}/status`, token, {
+  ) => {
+    const res = await request<StudentProfile>(`/users/${encodeURIComponent(userId)}/status`, token, {
       method: "PATCH",
       body: JSON.stringify(payload),
-    }),
+    });
+    appCache.invalidateTags(["users", "profile", "leaderboard", "dashboard"]);
+    return res;
+  },
 
   adminDirectory: async (token: string, params: { search?: string; page?: number; page_size?: number } = {}) => {
     const query = new URLSearchParams();
@@ -1328,19 +1453,20 @@ export const api = {
     }
   },
 
-  adminBackfillDiscordSocials: (token: string) =>
-    request<{ success: boolean; updated_count: number; message: string }>("/users/admin-backfill-discord-socials", token, {
-      method: "POST",
-    }),
-
-  adminAwardContribution: (token: string, userId: string, payload: Record<string, unknown>) =>
-    request<Record<string, unknown>>(`/contributions/award/user/${encodeURIComponent(userId)}`, token, {
+  adminAwardContribution: async (token: string, userId: string, payload: Record<string, unknown>) => {
+    const res = await request<Record<string, unknown>>(`/contributions/award/user/${encodeURIComponent(userId)}`, token, {
       method: "POST",
       body: JSON.stringify(payload),
-    }),
+    });
+    appCache.invalidateTags(["contributions", "leaderboard", "profile", "dashboard"]);
+    return res;
+  },
 
-  adminRecalculateUserPoints: (token: string, userId: string) =>
-    request<Record<string, unknown>>(`/contributions/recalculate/${encodeURIComponent(userId)}`, token, { method: "POST" }),
+  adminRecalculateUserPoints: async (token: string, userId: string) => {
+    const res = await request<Record<string, unknown>>(`/contributions/recalculate/${encodeURIComponent(userId)}`, token, { method: "POST" });
+    appCache.invalidateTags(["contributions", "leaderboard", "profile", "dashboard"]);
+    return res;
+  },
 
   /** The admin ledger. `status: "pending"` is the review queue that actions fill. */
   adminListContributions: (
@@ -1369,7 +1495,7 @@ export const api = {
     return request<ContributionPage>(`/contributions${qs ? `?${qs}` : ""}`, token);
   },
 
-  adminUpdateContribution: (
+  adminUpdateContribution: async (
     token: string,
     recordId: string,
     payload: {
@@ -1380,13 +1506,16 @@ export const api = {
       track?: string;
       occurred_at?: string;
     }
-  ) =>
-    request<ContributionRecord>(`/contributions/${encodeURIComponent(recordId)}`, token, {
+  ) => {
+    const res = await request<ContributionRecord>(`/contributions/${encodeURIComponent(recordId)}`, token, {
       method: "PATCH",
       body: JSON.stringify(payload),
-    }),
+    });
+    appCache.invalidateTags(["contributions", "leaderboard", "profile", "dashboard"]);
+    return res;
+  },
 
-  adminBatchUpdateContributions: (
+  adminBatchUpdateContributions: async (
     token: string,
     updates: Array<{
       record_id: string;
@@ -1399,35 +1528,44 @@ export const api = {
         occurred_at?: string;
       };
     }>
-  ) =>
-    request<ContributionRecord[]>("/contributions/batch-update", token, {
+  ) => {
+    const res = await request<ContributionRecord[]>("/contributions/batch-update", token, {
       method: "POST",
       body: JSON.stringify({ updates }),
-    }),
+    });
+    appCache.invalidateTags(["contributions", "leaderboard", "profile", "dashboard"]);
+    return res;
+  },
 
-  adminRevokeContribution: (
+  adminRevokeContribution: async (
     token: string,
     recordId: string,
     reason: string
-  ) =>
-    request<ContributionRecord>(`/contributions/${encodeURIComponent(recordId)}/revoke`, token, {
+  ) => {
+    const res = await request<ContributionRecord>(`/contributions/${encodeURIComponent(recordId)}/revoke`, token, {
       method: "PATCH",
       body: JSON.stringify({ status_reason: reason }),
-    }),
+    });
+    appCache.invalidateTags(["contributions", "leaderboard", "profile", "dashboard"]);
+    return res;
+  },
 
   /**
    * Settle a pending contribution. Approving sets the points the admin chose;
    * rejecting needs a reason. An approved record is corrected by revocation.
    */
-  adminReviewContribution: (
+  adminReviewContribution: async (
     token: string,
     contribId: string,
     review: { action: "approve"; points: number } | { action: "reject"; reason: string },
-  ) =>
-    request<ContributionRecord>(`/contributions/${encodeURIComponent(contribId)}/review`, token, {
+  ) => {
+    const res = await request<ContributionRecord>(`/contributions/${encodeURIComponent(contribId)}/review`, token, {
       method: "PATCH",
       body: JSON.stringify(review),
-    }),
+    });
+    appCache.invalidateTags(["contributions", "leaderboard", "profile", "dashboard"]);
+    return res;
+  },
 
   /** Every filter maps to an equality filter in list_all_tickets. Unset means "any". */
   adminGetAllTickets: (token: string, page = 1, filters: AdminTicketFilters = {}) => {
@@ -1438,68 +1576,103 @@ export const api = {
     if (filters.assignedTo) query.set("assigned_to_uid", filters.assignedTo);
     return request<{ total: number; items: TicketSummary[] }>(`/tickets?${query}`, token);
   },
-  adminUpdateTicketStatus: (token: string, ticketId: string, nextStatus: TicketStatus, closeReason?: string) =>
-    request<TicketSummary>(`/tickets/${encodeURIComponent(ticketId)}/status`, token, {
+  adminUpdateTicketStatus: async (token: string, ticketId: string, nextStatus: TicketStatus, closeReason?: string) => {
+    const res = await request<TicketSummary>(`/tickets/${encodeURIComponent(ticketId)}/status`, token, {
       method: "PATCH",
       body: JSON.stringify({ status: nextStatus, ...(closeReason ? { close_reason: closeReason } : {}) }),
-    }),
-  adminApproveSpgTicket: (token: string, ticketId: string, approval: { type: string; track: string; visibility: string; proposition?: File | null }) => {
+    });
+    appCache.invalidateTags(["tickets", "dashboard", `ticket:${ticketId}`]);
+    return res;
+  },
+  adminApproveSpgTicket: async (token: string, ticketId: string, approval: { type: string; track: string; visibility: string; proposition?: File | null }) => {
     const body = new FormData();
     body.set("spg_type", approval.type);
     body.set("track", approval.track);
     body.set("visibility", approval.visibility);
     if (approval.proposition) body.set("proposition", approval.proposition);
-    return request<ApiTicketDetail>(`/tickets/${encodeURIComponent(ticketId)}/approve-spg`, token, { method: "POST", body });
+    const res = await request<ApiTicketDetail>(`/tickets/${encodeURIComponent(ticketId)}/approve-spg`, token, { method: "POST", body });
+    appCache.invalidateTags(["tickets", "spgs", "dashboard", `ticket:${ticketId}`]);
+    return res;
   },
-  postTicketMessage: (token: string, ticketId: string, content: string, attachments: string[] = []) =>
-    request<ApiTicketMessage>(`/tickets/${encodeURIComponent(ticketId)}/messages`, token, {
+  postTicketMessage: async (token: string, ticketId: string, content: string, attachments: string[] = []) => {
+    const res = await request<ApiTicketMessage>(`/tickets/${encodeURIComponent(ticketId)}/messages`, token, {
       method: "POST",
       body: JSON.stringify({ content, attachments }),
-    }),
-  adminAssignTicket: (token: string, ticketId: string, assignedToUid: string) =>
-    request<ApiTicketDetail>(`/tickets/${encodeURIComponent(ticketId)}/assign`, token, {
+    });
+    appCache.invalidateTags(["tickets", `ticket:${ticketId}`]);
+    return res;
+  },
+  adminAssignTicket: async (token: string, ticketId: string, assignedToUid: string) => {
+    const res = await request<ApiTicketDetail>(`/tickets/${encodeURIComponent(ticketId)}/assign`, token, {
       method: "PATCH",
       body: JSON.stringify({ assigned_to_uid: assignedToUid }),
-    }),
-  closeTicket: (token: string, ticketId: string, closeReason?: string) =>
-    request<ApiTicketDetail>(`/tickets/${encodeURIComponent(ticketId)}/close`, token, {
+    });
+    appCache.invalidateTags(["tickets", `ticket:${ticketId}`]);
+    return res;
+  },
+  closeTicket: async (token: string, ticketId: string, closeReason?: string) => {
+    const res = await request<ApiTicketDetail>(`/tickets/${encodeURIComponent(ticketId)}/close`, token, {
       method: "POST",
       body: JSON.stringify({ close_reason: closeReason || null }),
-    }),
+    });
+    appCache.invalidateTags(["tickets", "dashboard", `ticket:${ticketId}`]);
+    return res;
+  },
 
   /* ------------------------------------------------ Learning Resources APIs */
-  listLearningResources: (filters: LearningResourceFilters = {}, token?: string | null) => {
+  listLearningResources: (filters: LearningResourceFilters = {}, token?: string | null, force?: boolean) => {
     const qs = new URLSearchParams();
     for (const [key, value] of Object.entries(filters)) {
       if (value) qs.set(key, value);
     }
     const query = qs.toString();
-    return request<{ resources: LearningResource[]; total: number }>(
-      `/learning-resources${query ? `?${query}` : ""}`,
-      token || undefined,
+    return appCache.fetch(
+      `resources:list:${query || "all"}`,
+      () =>
+        request<{ resources: LearningResource[]; total: number }>(
+          `/learning-resources${query ? `?${query}` : ""}`,
+          token || undefined,
+        ),
+      { ttl: 3 * 60 * 1000, tags: ["resources"], force }
     );
   },
-  adminCreateLearningResource: (token: string, payload: LearningResourceInput) =>
-    request<LearningResource>("/learning-resources", token, {
+  adminCreateLearningResource: async (token: string, payload: LearningResourceInput) => {
+    const res = await request<LearningResource>("/learning-resources", token, {
       method: "POST",
       body: JSON.stringify(payload),
-    }),
+    });
+    appCache.invalidateTags(["resources", "dashboard"]);
+    return res;
+  },
   getEventLearningResources: (eventId: string, token?: string | null) =>
-    request<EventLearningResourceList>(`/learning-resources/for-event/${encodeURIComponent(eventId)}`, token),
-  adminUpdateLearningResource: (token: string, resourceId: string, payload: Partial<LearningResourceInput>) =>
-    request<LearningResource>(`/learning-resources/${encodeURIComponent(resourceId)}`, token, {
+    appCache.fetch(
+      `resources:event:${eventId}`,
+      () => request<EventLearningResourceList>(`/learning-resources/for-event/${encodeURIComponent(eventId)}`, token),
+      { ttl: 3 * 60 * 1000, tags: ["resources", `event:${eventId}`] }
+    ),
+  adminUpdateLearningResource: async (token: string, resourceId: string, payload: Partial<LearningResourceInput>) => {
+    const res = await request<LearningResource>(`/learning-resources/${encodeURIComponent(resourceId)}`, token, {
       method: "PUT",
       body: JSON.stringify(payload),
-    }),
-  adminDeleteLearningResource: (token: string, resourceId: string) =>
-    request<{ message: string }>(`/learning-resources/${encodeURIComponent(resourceId)}`, token, {
+    });
+    appCache.invalidateTags(["resources", "dashboard"]);
+    return res;
+  },
+  adminDeleteLearningResource: async (token: string, resourceId: string) => {
+    const res = await request<{ message: string }>(`/learning-resources/${encodeURIComponent(resourceId)}`, token, {
       method: "DELETE",
-    }),
+    });
+    appCache.invalidateTags(["resources", "dashboard"]);
+    return res;
+  },
   /** Save an event's recording, slides and write-up links as resources. Safe to repeat. */
-  adminSaveEventResources: (token: string, eventId: string) =>
-    request<EventResourceImport>(`/learning-resources/from-event/${encodeURIComponent(eventId)}`, token, {
+  adminSaveEventResources: async (token: string, eventId: string) => {
+    const res = await request<EventResourceImport>(`/learning-resources/from-event/${encodeURIComponent(eventId)}`, token, {
       method: "POST",
-    }),
+    });
+    appCache.invalidateTags(["resources", "dashboard"]);
+    return res;
+  },
 };
 
 /**

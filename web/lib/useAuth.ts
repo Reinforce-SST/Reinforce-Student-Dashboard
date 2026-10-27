@@ -8,6 +8,8 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { getFirebaseAuth, isFirebaseConfigured } from "./firebase";
 
+import { appCache } from "./cache";
+
 export type AuthState = {
   user: User | null;
   token: string | null;
@@ -98,6 +100,11 @@ export function useAuth(): AuthState & { signOut: () => Promise<void> } {
 
   const signOut = useCallback(async () => {
     if (!isFirebaseConfigured) return;
+    try {
+      appCache.clear();
+    } catch {
+      // Ignore cache clearing errors
+    }
     await fbSignOut(getFirebaseAuth());
   }, []);
 
