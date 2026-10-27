@@ -17,7 +17,7 @@ concurrency:
 jobs:
   web:
     name: Web — lint and build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: web
@@ -45,7 +45,7 @@ jobs:
 
   e2e:
     name: Web — end-to-end
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: web
@@ -80,7 +80,7 @@ jobs:
 
   server:
     name: Server — dependencies, syntax and tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: server
