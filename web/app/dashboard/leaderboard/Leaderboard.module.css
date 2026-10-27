@@ -422,10 +422,16 @@
 .tierChip {
   font-size: 0.65rem;
   font-weight: 800;
-  padding: 2px 7px;
+  padding: 3px 0;
   border-radius: 4px;
   text-transform: uppercase;
-  width: fit-content;
+  width: 78px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  box-sizing: border-box;
+  letter-spacing: 0.04em;
 }
 
 .tierAdvanced {
@@ -434,10 +440,17 @@
   border: 1px solid rgba(229, 183, 49, 0.28);
 }
 
-.tierBeginner {
+.tierBeginner,
+.tierGeneral {
   background: rgba(56, 200, 255, 0.12);
   color: #38c8ff;
   border: 1px solid rgba(56, 200, 255, 0.28);
+}
+
+.tierOpen {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.28);
 }
 
 .trackPillsGroup {

@@ -13,7 +13,8 @@ import io
 from typing import Any, Dict, List, Optional, Set
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+import csv
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from google.cloud import firestore
 
 from app.api.security import get_admin_user, get_current_user, get_optional_current_user
@@ -1117,6 +1118,166 @@ def list_event_registrations(
         results.append(RegistrationDocument.model_validate(r_dict))
 
     return results
+
+
+@router.get(
+    "/{id}/registrations/csv",
+    summary="Download event attendee attendance roster as CSV (Admin only)",
+)
+def download_event_attendance_csv(
+    id: str,
+    status_filter: Optional[str] = Query(None, alias="status"),
+    current_user: Dict[str, Any] = Depends(get_admin_user),
+):
+    """Download CSV file of attendees/registrations with their attendance status and notes."""
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event_data = event_doc.to_dict() or {}
+    event_slug = event_data.get("slug") or event_data.get("title") or event_id
+
+    regs = (
+        db.collection(EVENTS_COLLECTION)
+        .document(event_id)
+        .collection(REGISTRATIONS_SUBCOLLECTION)
+        .stream()
+    )
+
+    raw_regs: List[Dict[str, Any]] = []
+    all_uids: Set[str] = set()
+
+    for r in regs:
+        r_dict = r.to_dict() or {}
+        r_dict["id"] = r.id
+        raw_regs.append(r_dict)
+        if r_dict.get("user_id"):
+            all_uids.add(r_dict["user_id"])
+        for m in r_dict.get("member_uids") or []:
+            if m:
+                all_uids.add(m)
+
+    user_profiles: Dict[str, Dict[str, Any]] = {}
+    if all_uids:
+        user_refs = [db.collection(USERS_COLLECTION).document(uid) for uid in all_uids]
+        try:
+            user_snaps = db.get_all(user_refs)
+            for snap in user_snaps:
+                if snap.exists:
+                    udata = snap.to_dict() or {}
+                    user_profiles[snap.id] = {
+                        "id": snap.id,
+                        "full_name": udata.get("full_name") or "Club Member",
+                        "email": udata.get("email") or "",
+                        "batch_year": udata.get("batch_year"),
+                        "tier": udata.get("tier") or "beginner",
+                        "role_label": udata.get("role_label"),
+                    }
+        except Exception:
+            for uid in all_uids:
+                snap = db.collection(USERS_COLLECTION).document(uid).get()
+                if snap.exists:
+                    udata = snap.to_dict() or {}
+                    user_profiles[uid] = {
+                        "id": uid,
+                        "full_name": udata.get("full_name") or "Club Member",
+                        "email": udata.get("email") or "",
+                        "batch_year": udata.get("batch_year"),
+                        "tier": udata.get("tier") or "beginner",
+                        "role_label": udata.get("role_label"),
+                    }
+
+    filtered_regs = raw_regs
+    if status_filter:
+        sf = status_filter.strip().lower()
+        if sf in ("present", "checked_in"):
+            filtered_regs = [r for r in raw_regs if r.get("status") == "checked_in"]
+        elif sf in ("absent", "disqualified", "excused", "registered", "waitlisted", "cancelled"):
+            filtered_regs = [r for r in raw_regs if r.get("status") == sf]
+
+    status_labels: Dict[str, str] = {
+        "checked_in": "Present",
+        "absent": "Absent",
+        "disqualified": "Disqualified",
+        "excused": "Excused",
+        "registered": "Registered",
+        "waitlisted": "Waitlisted",
+        "cancelled": "Cancelled",
+    }
+
+    output = io.StringIO()
+    output.write("\ufeff")
+    writer = csv.writer(output)
+
+    writer.writerow([
+        "S.No",
+        "Name",
+        "Email",
+        "User ID",
+        "Batch",
+        "Registration Type",
+        "Team Name",
+        "Teammates",
+        "SPG ID",
+        "Attendance Status",
+        "Status Code",
+        "Attendance Note",
+        "Checked In At",
+        "Registered At",
+    ])
+
+    for idx, r in enumerate(filtered_regs):
+        uid = r.get("user_id") or ""
+        uprof = user_profiles.get(uid, {})
+        lead_name = uprof.get("full_name") or uid
+        email = uprof.get("email") or ""
+        batch = f"Batch {uprof.get('batch_year')}" if uprof.get("batch_year") else ""
+        is_team = bool(r.get("team_name") or (r.get("member_uids") and len(r["member_uids"]) > 1) or r.get("spg_id"))
+        reg_type = "Team" if is_team else "Solo"
+        team_name = r.get("team_name") or ""
+
+        teammate_names: List[str] = []
+        for mid in r.get("member_uids") or []:
+            mprof = user_profiles.get(mid, {})
+            mname = mprof.get("full_name") or mid
+            memail = mprof.get("email")
+            teammate_names.append(f"{mname} ({memail})" if memail else mname)
+        teammates_str = "; ".join(teammate_names)
+
+        st_code = r.get("status") or "registered"
+        st_label = status_labels.get(st_code, st_code)
+        note = r.get("attendance_note") or ""
+        checked_in = r.get("checked_in_at") or ""
+        registered_at = r.get("registered_at") or ""
+
+        writer.writerow([
+            str(idx + 1),
+            lead_name,
+            email,
+            uid,
+            batch,
+            reg_type,
+            team_name,
+            teammates_str,
+            r.get("spg_id") or "",
+            st_label,
+            st_code,
+            note,
+            checked_in,
+            registered_at,
+        ])
+
+    csv_data = output.getvalue()
+    clean_name = slugify(event_slug) or "event"
+    suffix = status_filter.strip().lower() if status_filter else "all"
+    filename = f"{clean_name}_attendance_{suffix}.csv"
+
+    return Response(
+        content=csv_data,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-cache",
+        },
+    )
 
 
 def _hydrate_single_registration_profiles(r_dict: Dict[str, Any]) -> Dict[str, Any]:

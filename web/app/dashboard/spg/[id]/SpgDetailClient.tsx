@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import MemberIcon from "@/components/dashboard/MemberIcon";
+import { useConfirmDialog } from "@/components/dashboard/useConfirmDialog";
 import { useMember } from "@/lib/useMember";
 import { api } from "@/lib/api";
 import {
@@ -16,6 +17,7 @@ import styles from "./SpgDetail.module.css";
 
 export default function SpgDetailClient({ spgId }: { spgId: string }) {
   const { token, profile } = useMember();
+  const { confirm, alert, DialogComponent } = useConfirmDialog();
   const [spg, setSpg] = useState<SPGRecord | null>(null);
   const [reports, setReports] = useState<SPGReportRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -139,7 +141,13 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
 
   const handleDeleteMilestone = async (milestoneId: string) => {
     if (!token || !canEditMilestones) return;
-    if (!window.confirm("Are you sure you want to delete this milestone?")) return;
+    const confirmed = await confirm({
+      title: "Delete Milestone",
+      message: "Are you sure you want to delete this milestone? This action cannot be undone.",
+      confirmLabel: "Delete Milestone",
+      variant: "danger",
+    });
+    if (!confirmed) return;
     setUpdatingMilestoneId(milestoneId);
     try {
       await api.deleteMilestone(token, spgId, milestoneId);
@@ -152,7 +160,11 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
         });
       }
     } catch {
-      alert("Failed to delete milestone. Please try again.");
+      await alert({
+        title: "Action Failed",
+        message: "Failed to delete milestone. Please try again.",
+        variant: "danger",
+      });
     } finally {
       setUpdatingMilestoneId(null);
     }
@@ -179,7 +191,11 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
       setNewMilestoneDescription("");
       setIsAddMilestoneOpen(false);
     } catch {
-      alert("Failed to create milestone. Please try again.");
+      await alert({
+        title: "Action Failed",
+        message: "Failed to create milestone. Please try again.",
+        variant: "danger",
+      });
     } finally {
       setAddingMilestone(false);
     }
@@ -196,7 +212,11 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
       setNewSubmilestoneTitle("");
       setAddingSubmilestoneFor(null);
     } catch {
-      alert("Failed to add submilestone. Please try again.");
+      await alert({
+        title: "Action Failed",
+        message: "Failed to add submilestone. Please try again.",
+        variant: "danger",
+      });
     } finally {
       setSubmittingSubmilestone(false);
     }
@@ -236,11 +256,22 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
 
   const handleDeleteSubmilestone = async (milestoneId: string, subId: string) => {
     if (!token || !canEditMilestones) return;
+    const confirmed = await confirm({
+      title: "Delete Submilestone",
+      message: "Are you sure you want to delete this submilestone item?",
+      confirmLabel: "Delete",
+      variant: "danger",
+    });
+    if (!confirmed) return;
     try {
       const updated = await api.deleteSubmilestone(token, spgId, milestoneId, subId);
       setMilestonesList((prev) => prev.map((m) => (m.id === milestoneId ? updated : m)));
     } catch {
-      alert("Failed to delete submilestone. Please try again.");
+      await alert({
+        title: "Action Failed",
+        message: "Failed to delete submilestone. Please try again.",
+        variant: "danger",
+      });
     }
   };
 
@@ -1367,6 +1398,7 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
           </div>
         </div>
       )}
+      {DialogComponent}
     </div>
   );
 }

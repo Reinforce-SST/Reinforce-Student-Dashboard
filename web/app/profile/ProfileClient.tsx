@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useMember } from "@/lib/useMember";
 import { api, type StudentProfile, type TrackPoints } from "@/lib/api";
+import { appCache } from "@/lib/cache";
 import { graduationBatchYear } from "@/lib/batchYear";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import MemberLoading from "@/components/dashboard/MemberLoading";
@@ -135,7 +136,8 @@ function ProfileClientContent() {
     return false;
   }, [queryId, loggedInProfile]);
 
-  const [fetchedProfile, setFetchedProfile] = useState<StudentProfile | null>(null);
+  const cachedUser = queryId ? appCache.get<StudentProfile>(`user:profile:${queryId}`) : null;
+  const [fetchedProfile, setFetchedProfile] = useState<StudentProfile | null>(() => cachedUser?.data || null);
   const [profileOverrides, setProfileOverrides] = useState<Partial<StudentProfile>>({});
 
   const activeProfile = useMemo(() => {
@@ -144,12 +146,15 @@ function ProfileClientContent() {
     return { ...base, ...profileOverrides };
   }, [isOwner, loggedInProfile, fetchedProfile, profileOverrides]);
 
-  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(() => (!isOwner && Boolean(queryId) && !cachedUser));
   const [notFound, setNotFound] = useState(false);
 
   // Live Contributions State
-  const [liveContributions, setLiveContributions] = useState<PublicContributionRecord[]>([]);
-  const [contributionsLoading, setContributionsLoading] = useState(true);
+  const contribCacheKey = isOwner ? "contribs:my:100" : (queryId ? `contribs:public:${queryId}:100` : null);
+  const cachedContribs = contribCacheKey ? appCache.get<PublicContributionRecord[]>(contribCacheKey) : null;
+
+  const [liveContributions, setLiveContributions] = useState<PublicContributionRecord[]>(() => cachedContribs?.data || []);
+  const [contributionsLoading, setContributionsLoading] = useState(() => !cachedContribs);
   const [contributionsError, setContributionsError] = useState(false);
 
   // Collapsible Activity & Category Hierarchy Guide toggle
@@ -167,7 +172,10 @@ function ProfileClientContent() {
     }
 
     let isMounted = true;
-    setProfileLoading(true);
+    const hasCache = appCache.has(`user:profile:${queryId}`);
+    if (!hasCache) {
+      setProfileLoading(true);
+    }
 
     api.getUserProfile(token, queryId)
       .then((data) => {
@@ -181,7 +189,7 @@ function ProfileClientContent() {
       })
       .catch(() => {
         if (!isMounted) return;
-        setNotFound(true);
+        if (!appCache.has(`user:profile:${queryId}`)) setNotFound(true);
       })
       .finally(() => {
         if (isMounted) setProfileLoading(false);
@@ -195,22 +203,35 @@ function ProfileClientContent() {
   // Fetch Live Contributions from API
   const fetchContributions = useCallback(async () => {
     if (!token) return;
-    setContributionsLoading(true);
+    const targetQueryId = queryId;
+    if (!isOwner && !targetQueryId) return;
+
+    const cacheKey = isOwner ? "contribs:my:100" : `contribs:public:${targetQueryId}:100`;
+
+    const hasCached = Boolean(appCache.get(cacheKey));
+    if (!hasCached) {
+      setContributionsLoading(true);
+    }
     setContributionsError(false);
-    setLiveContributions([]);
+
     try {
-      if (isOwner) {
-        const res = await api.getMyContributions(token, 100);
-        setLiveContributions((res?.items || []).filter((item) => item.status === "approved"));
-      } else {
-        const targetUserId = queryId;
-        if (targetUserId) {
-          const res = await api.getPublicUserContributions(token, targetUserId, 100);
-          setLiveContributions(res?.items || []);
-        }
-      }
+      const items = await appCache.fetch(
+        cacheKey,
+        async () => {
+          if (isOwner) {
+            const res = await api.getMyContributions(token, 100);
+            return (res?.items || []).filter((item) => item.status === "approved");
+          } else if (targetQueryId) {
+            const res = await api.getPublicUserContributions(token, targetQueryId, 100);
+            return res?.items || [];
+          }
+          return [];
+        },
+        { ttl: 2 * 60 * 1000, tags: ["contributions", "profile"] }
+      );
+      setLiveContributions(items);
     } catch {
-      setContributionsError(true);
+      if (!hasCached) setContributionsError(true);
     } finally {
       setContributionsLoading(false);
     }
@@ -238,11 +259,19 @@ function ProfileClientContent() {
   const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
   const bio = activeProfile?.bio || "";
   const skills = activeProfile?.skills || [];
+  const rawDiscord = (
+    activeProfile?.social_links?.discord ||
+    activeProfile?.discord_username ||
+    ""
+  ).trim();
+  const isSnowflake = /^\d{16,21}$/.test(rawDiscord);
+  const cleanDiscordHandle = isSnowflake ? "" : rawDiscord.replace(/^@/, "");
+
   const socialLinks = {
     github: activeProfile?.social_links?.github || "",
     kaggle: activeProfile?.social_links?.kaggle || "",
     linkedin: activeProfile?.social_links?.linkedin || "",
-    discord: activeProfile?.social_links?.discord || activeProfile?.discord_id || "",
+    discord: cleanDiscordHandle,
   };
 
   // The API stores the graduation batch; study year is not inferred here.
@@ -527,10 +556,12 @@ function ProfileClientContent() {
             <div className={styles.nameBlock}>
               <div className={styles.nameRow}>
                 <h1 className={styles.fullName}>{fullName}</h1>
-                <span className={styles.tierBadge}>
-                  {activeProfile?.is_member
-                    ? `${(activeProfile.tier || "beginner").toUpperCase()} MEMBER`
-                    : "MEMBERSHIP PENDING"}
+                <span className={`${styles.tierBadge} ${!activeProfile?.is_member ? styles.tierBadgeOpen : ""}`}>
+                  {!activeProfile?.is_member
+                    ? "OPEN MEMBER"
+                    : activeProfile.tier === "advanced"
+                    ? "ADVANCED MEMBER"
+                    : "GENERAL MEMBER"}
                 </span>
                 {activeProfile?.is_admin && (
                   <span style={{ fontSize: "0.65rem", fontWeight: "850", padding: "3px 8px", borderRadius: "5px", background: "rgba(248, 113, 113, 0.15)", color: "#f87171", border: "1px solid rgba(248, 113, 113, 0.35)", textTransform: "uppercase" }}>
@@ -552,10 +583,10 @@ function ProfileClientContent() {
                     {activeProfile.email}
                   </span>
                 )}
-                {activeProfile?.is_verified && Boolean(activeProfile?.discord_id) ? (
+                {activeProfile?.is_verified ? (
                   <span className={styles.verifiedChip}>
                     <MemberIcon name="check" size={13} />
-                    Discord: {socialLinks.discord || activeProfile.discord_id}
+                    Discord: {cleanDiscordHandle ? `@${cleanDiscordHandle}` : "Verified"}
                   </span>
                 ) : (
                   <span className={styles.metaItem} style={{ color: "#71717a" }}>
@@ -668,6 +699,15 @@ function ProfileClientContent() {
                 LinkedIn
               </a>
             )}
+            {socialLinks.discord && (
+              <span
+                className={styles.socialBtn}
+                title={`Discord: @${socialLinks.discord}`}
+              >
+                <MemberIcon name="discord" size={14} />
+                @{socialLinks.discord}
+              </span>
+            )}
           </div>
         </div>
       </section>
@@ -691,7 +731,11 @@ function ProfileClientContent() {
               />
             </div>
             <div className={styles.tierSubtext}>
-              {activeProfile?.is_member ? `${(activeProfile.tier || "beginner").toUpperCase()} TIER` : "MEMBERSHIP PENDING"}
+              {!activeProfile?.is_member
+                ? "OPEN TIER"
+                : activeProfile.tier === "advanced"
+                ? "ADVANCED TIER"
+                : "GENERAL TIER"}
             </div>
           </article>
 

@@ -10,11 +10,12 @@ export interface ConfirmModalProps {
   message: string;
   confirmLabel?: string;
   cancelLabel?: string;
-  variant?: "danger" | "brand";
+  variant?: "danger" | "brand" | "info";
+  isAlert?: boolean;
   isBusy?: boolean;
   isLoading?: boolean;
   onConfirm: () => void | Promise<void>;
-  onCancel: () => void;
+  onCancel?: () => void;
 }
 
 export default function ConfirmModal({
@@ -24,6 +25,7 @@ export default function ConfirmModal({
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   variant = "danger",
+  isAlert = false,
   isBusy = false,
   isLoading = false,
   onConfirm,
@@ -32,12 +34,21 @@ export default function ConfirmModal({
   const confirmBtnRef = useRef<HTMLButtonElement>(null);
   const busy = isBusy || isLoading;
 
+  const handleDismiss = () => {
+    if (busy) return;
+    if (onCancel) {
+      onCancel();
+    } else {
+      void onConfirm();
+    }
+  };
+
   useEffect(() => {
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !busy) {
-        onCancel();
+      if (e.key === "Escape") {
+        handleDismiss();
       }
     };
 
@@ -47,7 +58,7 @@ export default function ConfirmModal({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isOpen, busy, onCancel]);
+  }, [isOpen, busy, onCancel, onConfirm]);
 
   if (!isOpen) return null;
 
@@ -55,8 +66,8 @@ export default function ConfirmModal({
     <div
       className={styles.backdrop}
       onClick={(e) => {
-        if (e.target === e.currentTarget && !busy) {
-          onCancel();
+        if (e.target === e.currentTarget) {
+          handleDismiss();
         }
       }}
       role="dialog"
@@ -68,11 +79,15 @@ export default function ConfirmModal({
         <div className={styles.iconRow}>
           <div
             className={
-              variant === "danger" ? styles.iconBoxDanger : styles.iconBoxBrand
+              variant === "danger"
+                ? styles.iconBoxDanger
+                : styles.iconBoxBrand
             }
           >
             {variant === "danger" ? (
-              <MemberIcon name="tickets" size={20} />
+              <MemberIcon name="alert-circle" size={20} />
+            ) : variant === "info" ? (
+              <MemberIcon name="info" size={20} />
             ) : (
               <MemberIcon name="lightning" size={20} />
             )}
@@ -88,14 +103,16 @@ export default function ConfirmModal({
         </p>
 
         <div className={styles.actions}>
-          <button
-            type="button"
-            className={styles.cancelBtn}
-            onClick={onCancel}
-            disabled={busy}
-          >
-            {cancelLabel}
-          </button>
+          {!isAlert && onCancel && (
+            <button
+              type="button"
+              className={styles.cancelBtn}
+              onClick={handleDismiss}
+              disabled={busy}
+            >
+              {cancelLabel}
+            </button>
+          )}
           <button
             ref={confirmBtnRef}
             type="button"

@@ -2455,3 +2455,258 @@
   color: #ffffff;
   border-color: #383844;
 }
+
+/* ==========================================================================
+   Admin Attendance Tabular View & CSV Export Additions
+   ========================================================================== */
+.viewToggleGroup {
+  display: inline-flex;
+  align-items: center;
+  background: #141417;
+  border: 1px solid #282830;
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.viewToggleBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: #8c8c98;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.viewToggleBtn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.viewToggleBtnActive {
+  background: #24242c;
+  color: #e5b731;
+  font-weight: 700;
+}
+
+.csvExportContainer {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.exportCsvBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #212128;
+  color: #e5b731;
+  border: 1px solid rgba(229, 183, 49, 0.35);
+  border-radius: 7px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.exportCsvBtn:hover:not(:disabled) {
+  background: rgba(229, 183, 49, 0.12);
+  border-color: #e5b731;
+  color: #ffffff;
+}
+
+.exportCsvDropdownBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #212128;
+  color: #e5b731;
+  border: 1px solid rgba(229, 183, 49, 0.35);
+  border-left: none;
+  border-radius: 0 7px 7px 0;
+  padding: 7px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.exportCsvDropdownMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: #18181c;
+  border: 1px solid #31343a;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 220px;
+  z-index: 50;
+}
+
+.exportDropdownItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #d1d1d6;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  width: 100%;
+}
+
+.exportDropdownItem:hover {
+  background: #24242c;
+  color: #e5b731;
+}
+
+.exportItemCount {
+  font-size: 11px;
+  font-weight: 700;
+  color: #8c8c98;
+  background: #121214;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.statCardClickable {
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.statCardClickable:hover {
+  transform: translateY(-2px);
+  border-color: #4a4d56;
+}
+
+.statCardActive {
+  border-color: #e5b731 !important;
+  box-shadow: 0 0 0 1px #e5b731;
+}
+
+.tableResponsiveContainer {
+  width: 100%;
+  overflow-x: auto;
+  background: #141417;
+  border: 1px solid #282830;
+  border-radius: 12px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.attendanceTable {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+  min-width: 860px;
+}
+
+.attendanceTable thead {
+  background: #1b1b20;
+  border-bottom: 1px solid #282830;
+}
+
+.attendanceTable th {
+  padding: 12px 16px;
+  color: #8c8c98;
+  font-size: 11.5px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.attendanceTable td {
+  padding: 14px 16px;
+  border-bottom: 1px solid #202026;
+  color: #d1d1d6;
+  vertical-align: middle;
+}
+
+.attendanceTableRow:last-child td {
+  border-bottom: none;
+}
+
+.attendanceTableRow:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.tableIndexCell {
+  color: #63636e;
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  width: 40px;
+}
+
+.tableIdentityCell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tableStudentName {
+  font-weight: 700;
+  color: #ffffff;
+  font-size: 13.5px;
+}
+
+.tableBatchTag {
+  font-size: 11px;
+  font-weight: 600;
+  color: #a1a1aa;
+  background: #202026;
+  padding: 2px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.tableEmailText {
+  color: #a1a1aa;
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+}
+
+.tableNoteCell {
+  max-width: 250px;
+  font-size: 12px;
+}
+
+.tableNoteDisplay {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(229, 183, 49, 0.06);
+  border: 1px solid rgba(229, 183, 49, 0.18);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: #d1d1d6;
+}
+
+.tableNoteText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 170px;
+}
+
+.tableTimeText {
+  font-size: 12px;
+  color: #8c8c98;
+  white-space: nowrap;
+}

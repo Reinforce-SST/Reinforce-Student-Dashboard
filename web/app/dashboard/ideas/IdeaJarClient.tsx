@@ -8,6 +8,7 @@ import { useDebounce } from "@/lib/useDebounce";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import LoadingBar from "@/components/dashboard/LoadingBar";
 import PaginationBar from "@/components/dashboard/PaginationBar";
+import { appCache } from "@/lib/cache";
 import styles from "./IdeaJar.module.css";
 
 const TRACK_OPTIONS = [
@@ -42,11 +43,6 @@ function getTrackBadgeClass(track: string): string {
 export default function IdeaJarClient() {
   const { token } = useMember();
 
-  const [ideas, setIdeas] = useState<IdeaSummary[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearch = useDebounce(searchQuery, 400);
 
@@ -57,7 +53,24 @@ export default function IdeaJarClient() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(12);
 
-  const [pendingIdeas, setPendingIdeas] = useState<IdeaSummary[]>([]);
+  const queryParams = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  if (debouncedSearch.trim()) queryParams.set("search", debouncedSearch.trim());
+  if (selectedTrack && selectedTrack !== "all") queryParams.set("track", selectedTrack);
+  if (selectedDifficulty && selectedDifficulty !== "all") queryParams.set("difficulty", selectedDifficulty);
+  if (sortBy) queryParams.set("sort_by", sortBy);
+  const cacheKey = `ideas:list:${queryParams.toString()}`;
+
+  const cachedResult = appCache.get<{ items: IdeaSummary[]; has_more: boolean; total: number }>(cacheKey);
+
+  const [ideas, setIdeas] = useState<IdeaSummary[]>(() => cachedResult?.data?.items || []);
+  const [total, setTotal] = useState(() => cachedResult?.data?.total ?? cachedResult?.data?.items?.length ?? 0);
+  const [loading, setLoading] = useState(() => !cachedResult?.data);
+  const [error, setError] = useState("");
+
+  const cachedPending = appCache.get<{ items: IdeaSummary[] }>("ideas:my");
+  const [pendingIdeas, setPendingIdeas] = useState<IdeaSummary[]>(() =>
+    cachedPending?.data?.items ? cachedPending.data.items.filter((item) => !item.is_verified) : []
+  );
 
   // Drawing from the jar: the server picks one approved idea at random.
   const [drawn, setDrawn] = useState<IdeaDetail | null>(null);
@@ -103,7 +116,8 @@ export default function IdeaJarClient() {
     }
 
     let active = true;
-    setLoading(true);
+    const isCached = appCache.has(cacheKey);
+    if (!isCached) setLoading(true);
     setError("");
 
     api.listIdeas(
@@ -121,7 +135,9 @@ export default function IdeaJarClient() {
       })
       .catch((err) => {
         if (!active) return;
-        setError(err instanceof Error ? err.message : "Ideas could not be loaded.");
+        if (ideas.length === 0) {
+          setError(err instanceof Error ? err.message : "Ideas could not be loaded.");
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -130,7 +146,7 @@ export default function IdeaJarClient() {
     return () => {
       active = false;
     };
-  }, [debouncedSearch, selectedTrack, selectedDifficulty, sortBy, page, pageSize]);
+  }, [debouncedSearch, selectedTrack, selectedDifficulty, sortBy, page, pageSize, cacheKey]);
 
   // Handle upvoting
   const handleVote = async (ideaId: string) => {

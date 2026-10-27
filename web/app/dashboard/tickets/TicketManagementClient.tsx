@@ -11,6 +11,7 @@ import { api, ticketFields, type ApiTicketDetail, type IdeaDetail, type TicketSu
 import { loadAllSpgs } from "@/lib/memberData";
 import type { SPGRecord } from "@/lib/spgData";
 import { useDebounce } from "@/lib/useDebounce";
+import { appCache } from "@/lib/cache";
 import styles from "./TicketManagement.module.css";
 
 export type TicketCategory =
@@ -153,9 +154,17 @@ export default function TicketManagementClient() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const [tickets, setTickets] = useState<TicketItem[]>([]);
-  const [selectedTicketId, setSelectedTicketId] = useState("");
-  const [loadingTickets, setLoadingTickets] = useState(true);
+  const initialTickets = useMemo(() => {
+    const entry = appCache.get<{ total: number; items: TicketSummary[] }>("tickets:my");
+    if (entry?.data?.items) {
+      return entry.data.items.slice(0, 100).map((item) => toTicketItem(item));
+    }
+    return [];
+  }, []);
+
+  const [tickets, setTickets] = useState<TicketItem[]>(initialTickets);
+  const [selectedTicketId, setSelectedTicketId] = useState<string>(() => initialTickets[0]?.id || "");
+  const [loadingTickets, setLoadingTickets] = useState(() => initialTickets.length === 0);
   const [ticketError, setTicketError] = useState("");
   const [submitError, setSubmitError] = useState("");
   const [retryCount, setRetryCount] = useState(0);
@@ -174,14 +183,19 @@ export default function TicketManagementClient() {
     api.myTickets(token)
       .then((items) => {
         if (!active) return;
-        setTickets(items.map((item) => toTicketItem(item)));
-        setSelectedTicketId((current) => items.some((item) => item.id === current) ? current : items[0]?.id || "");
+        const mapped = items.map((item) => toTicketItem(item));
+        setTickets(mapped);
+        setSelectedTicketId((current) => mapped.some((item) => item.id === current) ? current : mapped[0]?.id || "");
         setTicketError("");
       })
       .catch(() => {
         if (!active) return;
-        setTickets([]);
-        setTicketError("Your tickets could not be loaded. Try again.");
+        setTickets((curr) => {
+          if (curr.length === 0) {
+            setTicketError("Your tickets could not be loaded. Try again.");
+          }
+          return curr;
+        });
       })
       .finally(() => { if (active) setLoadingTickets(false); });
     return () => { active = false; };
@@ -1318,12 +1332,16 @@ export default function TicketManagementClient() {
                             <span className={styles.leaderEmail}>{spgLeader.email || spgLeader.id}</span>
                             <div className={styles.leaderBadges}>
                               {spgLeader.is_member ? (
-                                <span className={`${styles.candidateBadge} ${styles.candidateBadgeMember}`}>✓ Club Member</span>
+                                <span className={`${styles.candidateBadge} ${styles.candidateBadgeMember}`}>Club Member</span>
                               ) : (
-                                <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Membership pending</span>
+                                <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Open Member</span>
                               )}
                               {spgLeader.is_admin && <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Admin</span>}
-                              {spgLeader.tier && spgLeader.tier !== "beginner" && <span className={styles.candidateBadge}>{spgLeader.tier}</span>}
+                              {spgLeader.tier && (
+                                <span className={styles.candidateBadge}>
+                                  {spgLeader.tier === "advanced" ? "Advanced" : "General"}
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -1431,9 +1449,17 @@ export default function TicketManagementClient() {
                                     <div className={styles.candidateNameRow}>
                                       <span className={styles.candidateName}>{m.full_name}</span>
                                       <div className={styles.candidateBadges}>
-                                        {m.is_member && <span className={`${styles.candidateBadge} ${styles.candidateBadgeMember}`}>Member</span>}
+                                        {m.is_member ? (
+                                          <span className={`${styles.candidateBadge} ${styles.candidateBadgeMember}`}>Member</span>
+                                        ) : (
+                                          <span className={styles.candidateBadge}>Open</span>
+                                        )}
                                         {m.is_admin && <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Admin</span>}
-                                        {m.tier && m.tier !== "beginner" && <span className={styles.candidateBadge}>{m.tier}</span>}
+                                        {m.tier && (
+                                          <span className={styles.candidateBadge}>
+                                            {m.tier === "advanced" ? "Advanced" : "General"}
+                                          </span>
+                                        )}
                                       </div>
                                     </div>
                                     <span className={styles.candidateEmail}>{m.email || m.id}</span>
@@ -1557,9 +1583,17 @@ export default function TicketManagementClient() {
                                     <div className={styles.candidateNameRow}>
                                       <span className={styles.candidateName}>{m.full_name}</span>
                                       <div className={styles.candidateBadges}>
-                                        {m.is_member && <span className={`${styles.candidateBadge} ${styles.candidateBadgeMember}`}>Member</span>}
+                                        {m.is_member ? (
+                                          <span className={`${styles.candidateBadge} ${styles.candidateBadgeMember}`}>Member</span>
+                                        ) : (
+                                          <span className={styles.candidateBadge}>Open</span>
+                                        )}
                                         {m.is_admin && <span className={`${styles.candidateBadge} ${styles.candidateBadgeAdmin}`}>Admin</span>}
-                                        {m.tier && m.tier !== "beginner" && <span className={styles.candidateBadge}>{m.tier}</span>}
+                                        {m.tier && (
+                                          <span className={styles.candidateBadge}>
+                                            {m.tier === "advanced" ? "Advanced" : "General"}
+                                          </span>
+                                        )}
                                       </div>
                                     </div>
                                     <span className={styles.candidateEmail}>{m.email || m.id}</span>
