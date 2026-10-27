@@ -1221,6 +1221,28 @@ export const api = {
   getEventRegistrations: (token: string, eventId: string) =>
     request<EventRegistration[]>(`/events/${encodeURIComponent(eventId)}/registrations`, token),
 
+  adminDownloadAttendanceCsv: async (
+    token: string,
+    eventId: string,
+    status?: string
+  ): Promise<Blob> => {
+    const query = status && status !== "all" ? `?status=${encodeURIComponent(status)}` : "";
+    const res = await fetch(`${BASE}/events/${encodeURIComponent(eventId)}/registrations/csv${query}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) {
+      let detail = `Failed to download CSV (${res.status})`;
+      try {
+        const err = await res.json();
+        if (err.detail) detail = err.detail;
+      } catch {}
+      throw new ApiError(detail, res.status);
+    }
+    return res.blob();
+  },
+
   adminGetEventRegistrations: (token: string, eventId: string) =>
     request<EventRegistration[]>(`/events/${encodeURIComponent(eventId)}/registrations`, token),
 

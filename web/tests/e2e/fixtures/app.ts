@@ -331,6 +331,19 @@ async function handleApi(route: Route, world: World) {
     return ok(world.registrations.find(item => item.id === registrationId) ?? fixture.eventRegistration);
   }
   // Registrations come back as a bare array.
+  if (/^\/events\/[^/]+\/registrations\/csv$/.test(path)) {
+    const csvHeader = "S.No,Name,Email,User ID,Attendance Status,Attendance Note,Checked In At\r\n";
+    const csvRows = world.registrations.map((r, i) =>
+      `${i + 1},"${(r.user_profile as any)?.full_name || r.user_id}","${(r.user_profile as any)?.email || ""}","${r.user_id}","${r.status}","${r.attendance_note || ""}","${r.checked_in_at || ""}"`
+    ).join("\r\n");
+    return new Response("\uFEFF" + csvHeader + csvRows, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": 'attachment; filename="attendance.csv"',
+      },
+    });
+  }
   if (/^\/events\/[^/]+\/registrations$/.test(path)) return ok(world.registrations);
   // Mirrors submit_attendance_roll_call: only a registered or already checked-in
   // registration can be checked in. Anyone else — waitlisted, absent — comes

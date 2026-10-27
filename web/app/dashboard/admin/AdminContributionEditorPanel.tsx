@@ -8,6 +8,7 @@ import type {
   ContributionTrack,
 } from "@/lib/contributionData";
 import ConfirmModal from "@/components/dashboard/ConfirmModal";
+import { useConfirmDialog } from "@/components/dashboard/useConfirmDialog";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import styles from "./AdminContributionEditor.module.css";
 
@@ -65,6 +66,7 @@ export default function AdminContributionEditorPanel({ token }: { token: string 
 
   // Loading & feedback
   const [loading, setLoading] = useState(true);
+  const { confirm, DialogComponent } = useConfirmDialog();
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
@@ -418,11 +420,14 @@ export default function AdminContributionEditorPanel({ token }: { token: string 
     }
   };
 
-  const handleSubTabChange = (targetPanel: "event" | "spg" | "misc") => {
+  const handleSubTabChange = async (targetPanel: "event" | "spg" | "misc") => {
     if (stagedCount > 0) {
-      const confirmDiscard = window.confirm(
-        `You have ${stagedCount} unsaved contribution change(s). Switching panels will discard them. Discard and proceed?`
-      );
+      const confirmDiscard = await confirm({
+        title: "Discard Unsaved Changes",
+        message: `You have ${stagedCount} unsaved contribution change(s). Switching panels will discard them. Discard and proceed?`,
+        confirmLabel: "Discard Changes",
+        variant: "danger",
+      });
       if (!confirmDiscard) return;
       setStagedEdits({});
     }
@@ -1064,6 +1069,7 @@ export default function AdminContributionEditorPanel({ token }: { token: string 
           onCancel={() => setShowRevokeConfirm(false)}
         />
       )}
+      {DialogComponent}
     </div>
   );
 }

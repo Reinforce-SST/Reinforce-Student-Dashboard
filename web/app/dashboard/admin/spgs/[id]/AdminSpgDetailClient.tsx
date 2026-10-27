@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import MemberIcon from "@/components/dashboard/MemberIcon";
+import { useConfirmDialog } from "@/components/dashboard/useConfirmDialog";
 import { useMember } from "@/lib/useMember";
 import { api } from "@/lib/api";
 import {
@@ -18,6 +19,7 @@ import styles from "./AdminSpgDetail.module.css";
 
 export default function AdminSpgDetailClient({ spgId }: { spgId: string }) {
   const { token, profile } = useMember();
+  const { confirm, alert, DialogComponent } = useConfirmDialog();
   const [spg, setSpg] = useState<SPGRecord | null>(null);
   const [reports, setReports] = useState<SPGReportRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -160,9 +162,12 @@ export default function AdminSpgDetailClient({ spgId }: { spgId: string }) {
   const handleStatusTransition = async (action: "pause" | "resume" | "disband") => {
     if (!token || !spg) return;
     if (action === "disband") {
-      const confirmDisband = window.confirm(
-        `Are you sure you want to disband "${spg.name}"? This action marks the team as permanently disbanded.`
-      );
+      const confirmDisband = await confirm({
+        title: "Disband Project Cluster",
+        message: `Are you sure you want to disband "${spg.name}"? This action marks the team as permanently disbanded.`,
+        confirmLabel: "Disband SPG",
+        variant: "danger",
+      });
       if (!confirmDisband) return;
     }
 
@@ -222,10 +227,19 @@ export default function AdminSpgDetailClient({ spgId }: { spgId: string }) {
   const handleRemoveMember = async (uid: string) => {
     if (!token || !spg) return;
     if (uid === spg.lead_id) {
-      alert("Cannot remove the team lead. Designate a new lead before removing this member.");
+      await alert({
+        title: "Cannot Remove Team Lead",
+        message: "Cannot remove the team lead. Designate a new lead before removing this member.",
+        variant: "danger",
+      });
       return;
     }
-    const confirmRemove = window.confirm(`Remove member ${membersMap[uid]?.full_name || uid} from this SPG?`);
+    const confirmRemove = await confirm({
+      title: "Remove Team Member",
+      message: `Remove member ${membersMap[uid]?.full_name || uid} from this SPG?`,
+      confirmLabel: "Remove Member",
+      variant: "danger",
+    });
     if (!confirmRemove) return;
 
     setManagingTeam(true);
@@ -243,7 +257,12 @@ export default function AdminSpgDetailClient({ spgId }: { spgId: string }) {
   // 6. Promote to Lead
   const handleChangeLead = async (uid: string) => {
     if (!token || !spg) return;
-    const confirmLead = window.confirm(`Assign ${membersMap[uid]?.full_name || uid} as the project team lead?`);
+    const confirmLead = await confirm({
+      title: "Reassign Team Lead",
+      message: `Assign ${membersMap[uid]?.full_name || uid} as the project team lead?`,
+      confirmLabel: "Assign Lead",
+      variant: "brand",
+    });
     if (!confirmLead) return;
 
     setManagingTeam(true);
@@ -914,6 +933,7 @@ export default function AdminSpgDetailClient({ spgId }: { spgId: string }) {
           </div>
         </aside>
       </div>
+      {DialogComponent}
     </div>
   );
 }
