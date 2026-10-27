@@ -51,13 +51,19 @@ export function useQuery<T>(
   const [isStale, setIsStale] = useState<boolean>(initialStale);
 
   const fetcherRef = useRef(fetcher);
-  fetcherRef.current = fetcher;
-
   const optionsRef = useRef(options);
-  optionsRef.current = options;
-
   const activeKeyRef = useRef(key);
-  activeKeyRef.current = key;
+
+  // Refs are only read from effects/callbacks below (after commit), never
+  // during render, so syncing them here instead of inline keeps this hook
+  // out of react-hooks/refs while still always reading the latest values.
+  // Declared before the "re-sync" effect so it commits first in the same
+  // pass: that effect calls executeFetch, which reads these refs.
+  useEffect(() => {
+    fetcherRef.current = fetcher;
+    optionsRef.current = options;
+    activeKeyRef.current = key;
+  });
 
   const executeFetch = useCallback(
     async (forceNetwork = false): Promise<T | undefined> => {
