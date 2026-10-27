@@ -127,6 +127,7 @@ export default function Header({
           aria-label={`View profile for ${displayName}`}
         >
           <div className={styles.userText}>
+            <span className={styles.userName}>{displayName}</span>
             <span className={styles.userTrack}>
               {profile?.is_admin
                 ? "ADMIN"
