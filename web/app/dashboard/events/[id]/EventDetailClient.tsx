@@ -59,7 +59,7 @@ function renderMarkdown(md?: string | null) {
   }
 
   const normalized = md
-    .replace(/([^\n#])\s*(#{1,6}\s+)/g, "$1\n\n$2")
+    .replace(/([^\n#])\s*(#{1,6}(?:\s+|[^\s#a-zA-Z0-9_\/:]))/g, "$1\n\n$2")
     .replace(/([^\n])\s*(\d+\.\s+\*\*)/g, "$1\n$2")
     .replace(/([^\n])\s*([*-]\s+\*\*)/g, "$1\n$2");
 
@@ -100,26 +100,26 @@ function renderMarkdown(md?: string | null) {
       continue;
     }
 
-    const headingMatch = rawLine.match(/^(#{1,6})\s+(.*)$/);
-    if (headingMatch) {
+    const headingMatch = rawLine.match(/^(#{1,6})\s*(.*)$/);
+    if (headingMatch && headingMatch[2].trim()) {
       flushList();
       const level = headingMatch[1].length;
-      const title = headingMatch[2];
+      const title = headingMatch[2].replace(/\s+#+$/, "").trim();
       if (level === 1) {
         elements.push(
-          <h1 key={`h1-${i}`} className={styles.mdHeading}>
+          <h1 key={`h1-${i}`} className={styles.mdHeading1}>
             {formatInline(title)}
           </h1>
         );
       } else if (level === 2) {
         elements.push(
-          <h2 key={`h2-${i}`} className={styles.mdHeading}>
+          <h2 key={`h2-${i}`} className={styles.mdHeading2}>
             {formatInline(title)}
           </h2>
         );
       } else {
         elements.push(
-          <h3 key={`h3-${i}`} className={styles.mdHeading}>
+          <h3 key={`h3-${i}`} className={styles.mdHeading3}>
             {formatInline(title)}
           </h3>
         );
