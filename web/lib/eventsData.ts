@@ -13,6 +13,37 @@ export function getEventGraduationBatches(now = new Date()): number[] {
   const firstBatch = year + (month >= 7 ? 1 : 0);
   return Array.from({ length: 4 }, (_, index) => firstBatch + index);
 }
+
+export function formatEventDuration(durationMinutes: number | null | undefined): string {
+  if (
+    durationMinutes === null ||
+    durationMinutes === undefined ||
+    !Number.isFinite(durationMinutes) ||
+    durationMinutes <= 0
+  ) {
+    return "Not specified";
+  }
+
+  const totalMinutes = Math.round(durationMinutes);
+  const days = Math.floor(totalMinutes / 1440);
+
+  if (days >= 1) {
+    return `${days} ${days === 1 ? "day" : "days"}`;
+  }
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours > 0 && minutes > 0) {
+    return `${hours} ${hours === 1 ? "hour" : "hours"} ${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+  }
+
+  if (hours > 0) {
+    return `${hours} ${hours === 1 ? "hour" : "hours"}`;
+  }
+
+  return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+}
 export type EventFormat = "online" | "offline" | "hybrid";
 export type EventStatus =
   | "draft"

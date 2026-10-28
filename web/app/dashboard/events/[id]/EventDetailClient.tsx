@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import MemberPicker, { type PickedMember } from "@/components/dashboard/MemberPicker";
 import { type EventDocument, type LearningResource } from "@/lib/api";
-import { getEventGraduationBatches } from "@/lib/eventsData";
+import { formatEventDuration, getEventGraduationBatches } from "@/lib/eventsData";
 import EventAttendeesPanel from "./EventAttendeesPanel";
 import EventAttendancePanel from "./EventAttendancePanel";
 import styles from "./EventDetail.module.css";
@@ -660,7 +660,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                 <div className={styles.specContent}>
                   <span className={styles.specLabel}>Estimated Duration</span>
                   <span className={styles.specValue}>
-                    {durationMinutes ? `${durationMinutes} Minutes` : "Not specified"}
+                    {formatEventDuration(durationMinutes)}
                   </span>
                 </div>
               </div>
