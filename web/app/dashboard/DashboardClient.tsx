@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMember } from "@/lib/useMember";
@@ -82,10 +82,37 @@ export default function DashboardClient() {
   const [monthOffset, setMonthOffset] = useState(0);
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [slideIndex, setSlideIndex] = useState(0);
+  const [slideDirection, setSlideDirection] = useState<"next" | "prev">("next");
   const [isPaused, setIsPaused] = useState(false);
+  const [tiltDirection, setTiltDirection] = useState<"left" | "right" | null>(null);
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartX = useRef<number | null>(null);
+  const dragStartY = useRef<number | null>(null);
+  const hasDragged = useRef(false);
   const [registeredEventIds, setRegisteredEventIds] = useState<Set<string>>(new Set());
   const [rsvpLoadingId, setRsvpLoadingId] = useState<string | null>(null);
   const [registeredCountOverrides, setRegisteredCountOverrides] = useState<Record<string, number>>({});
+
+  const goToNext = () => {
+    if (slides.length <= 1) return;
+    setSlideDirection("next");
+    setSlideIndex((idx) => (idx + 1) % slides.length);
+  };
+
+  const goToPrev = () => {
+    if (slides.length <= 1) return;
+    setSlideDirection("prev");
+    setSlideIndex((idx) => (idx - 1 + slides.length) % slides.length);
+  };
+
+  const goToIndex = (i: number) => {
+    if (slides.length <= 1) return;
+    const current = slideIndex % slides.length;
+    if (i === current) return;
+    setSlideDirection(i > current ? "next" : "prev");
+    setSlideIndex(i);
+  };
 
   useEffect(() => {
     let active = true;
@@ -151,152 +178,144 @@ export default function DashboardClient() {
     (spg.lead_id === profile.id || spg.member_ids.includes(profile.id || "")));
   const { banners: legacyBanners, upcoming } = getDashboardEvents(events, now);
 
-  const isBannerFutureOrOngoing = (b: BannerDocument) => {
+  const isBannerActive = (b: BannerDocument) => {
     if (b.status === "archived") return false;
-    const start = new Date(b.schedule.start_time).getTime();
-    if (!Number.isFinite(start)) return false;
-    const end = b.schedule.end_time
-      ? new Date(b.schedule.end_time).getTime()
-      : start + (b.schedule.duration_minutes ? b.schedule.duration_minutes * 60_000 : 86_400_000);
-    return Number.isFinite(end) && end >= nowMs;
+    if (b.schedule?.end_time) {
+      const end = new Date(b.schedule.end_time).getTime();
+      if (Number.isFinite(end) && end < nowMs) return false;
+    }
+    return true;
   };
-
-  const activeDedicatedBanners = dedicatedBanners.filter(isBannerFutureOrOngoing);
-  const bannerCandidates = activeDedicatedBanners.length > 0
-    ? []
-    : (legacyBanners.length > 0
-        ? legacyBanners
-        : (upcoming.length > 0 ? upcoming.slice(0, 3) : []));
-
-  const sourceBanners = activeDedicatedBanners.length > 0
+  const activeDedicatedBanners = dedicatedBanners.filter(isBannerActive);
+  const dedicatedSource = activeDedicatedBanners.length > 0
     ? activeDedicatedBanners
-    : (bannerCandidates.length === 0 && dedicatedBanners.length > 0
-        ? dedicatedBanners
-        : []);
+    : dedicatedBanners.filter((b) => b.status !== "archived");
 
-  const slides: FeaturedBanner[] = sourceBanners.length > 0
-    ? sourceBanners.map((b) => {
-        const d = new Date(b.schedule.start_time);
-        const dateStr = formatBannerDate(d);
+  const dedicatedSlides: FeaturedBanner[] = dedicatedSource.map((b) => {
+    const d = new Date(b.schedule.start_time);
+    const dateStr = formatBannerDate(d);
 
-        const matchedEvent = events.find((e) =>
-          e.id === b.id ||
-          e.slug === b.id ||
-          (b.banner_cta_url && (b.banner_cta_url.includes(e.id) || (e.slug && b.banner_cta_url.includes(e.slug)))) ||
-          e.title.toLowerCase().trim() === b.title.toLowerCase().trim()
-        );
+    const matchedEvent = events.find((e) =>
+      e.id === b.id ||
+      e.slug === b.id ||
+      (b.banner_cta_url && (b.banner_cta_url.includes(e.id) || (e.slug && b.banner_cta_url.includes(e.slug)))) ||
+      e.title.toLowerCase().trim() === b.title.toLowerCase().trim()
+    );
 
-        const eventId = matchedEvent ? matchedEvent.id : (
-          (b.banner_cta_url && b.banner_cta_url.includes("/events/"))
-            ? b.banner_cta_url.split("/events/")[1].split("?")[0].replace(/\/$/, "")
-            : ""
-        );
+    const eventId = matchedEvent ? matchedEvent.id : (
+      (b.banner_cta_url && b.banner_cta_url.includes("/events/"))
+        ? b.banner_cta_url.split("/events/")[1].split("?")[0].replace(/\/$/, "")
+        : ""
+    );
 
-        const venue = matchedEvent?.venue_info?.room ||
-          matchedEvent?.venue_info?.venue_name ||
-          (matchedEvent?.format === "online" || b.description?.toLowerCase().includes("online") ? "ONLINE" : "CLASSROOM");
+    const venue = matchedEvent?.venue_info?.room ||
+      matchedEvent?.venue_info?.venue_name ||
+      (matchedEvent?.format === "online" || b.description?.toLowerCase().includes("online") ? "ONLINE" : "CLASSROOM");
 
-        const registeredCount = matchedEvent?.stats?.registered_count ?? 0;
+    const registeredCount = matchedEvent?.stats?.registered_count ?? 0;
 
-        const categoryBadge = (b.banner_badge_text && b.banner_badge_text.toUpperCase() !== "FEATURED")
-          ? b.banner_badge_text.toUpperCase()
-          : (matchedEvent?.event_type ? matchedEvent.event_type.replace(/[-_]/g, " ").toUpperCase() : "CONTEST");
+    const categoryBadge = (b.banner_badge_text && b.banner_badge_text.toUpperCase() !== "FEATURED")
+      ? b.banner_badge_text.toUpperCase()
+      : (matchedEvent?.event_type ? matchedEvent.event_type.replace(/[-_]/g, " ").toUpperCase() : "CONTEST");
 
-        const formatBadge = matchedEvent
-          ? (matchedEvent.format === "in_person" || matchedEvent.format === "offline" ? "CAMPUS" : (matchedEvent.format || "CAMPUS").toUpperCase())
-          : "CAMPUS";
+    const formatBadge = matchedEvent
+      ? (matchedEvent.format === "in_person" || matchedEvent.format === "offline" ? "CAMPUS" : (matchedEvent.format || "CAMPUS").toUpperCase())
+      : "CAMPUS";
 
-        const startMs = new Date(b.schedule.start_time).getTime();
-        const endMs = b.schedule.end_time
-          ? new Date(b.schedule.end_time).getTime()
-          : (Number.isFinite(startMs) ? startMs + (b.schedule.duration_minutes ? b.schedule.duration_minutes * 60_000 : 86_400_000) : null);
+    const startMs = new Date(b.schedule.start_time).getTime();
+    const endMs = b.schedule.end_time
+      ? new Date(b.schedule.end_time).getTime()
+      : (Number.isFinite(startMs) ? startMs + (b.schedule.duration_minutes ? b.schedule.duration_minutes * 60_000 : 86_400_000) : null);
 
-        const isEnded = matchedEvent
-          ? (matchedEvent.status === "ended" || matchedEvent.status === "completed" || (endMs !== null && endMs < nowMs))
-          : (b.status === "archived" || (endMs !== null && endMs < nowMs));
+    const isEnded = matchedEvent
+      ? (matchedEvent.status === "ended" || matchedEvent.status === "completed" || (endMs !== null && endMs < nowMs))
+      : (b.status === "archived" || (endMs !== null && endMs < nowMs));
 
-        const isOngoing = !isEnded && Number.isFinite(startMs) && startMs <= nowMs && (endMs !== null ? endMs >= nowMs : true);
+    const isOngoing = !isEnded && Number.isFinite(startMs) && startMs <= nowMs && (endMs !== null ? endMs >= nowMs : true);
 
-        const statusTag = isEnded
-          ? "EVENT ENDED"
-          : isOngoing
-          ? "HAPPENING NOW"
-          : (matchedEvent?.status === "registration_closed" ? "REGISTRATION CLOSED" : "REGISTRATION OPEN");
+    const statusTag = isEnded
+      ? "EVENT ENDED"
+      : isOngoing
+      ? "HAPPENING NOW"
+      : (matchedEvent?.status === "registration_closed" ? "REGISTRATION CLOSED" : "REGISTRATION OPEN");
 
-        const detailsLink = matchedEvent
-          ? `/dashboard/events/${matchedEvent.slug || matchedEvent.id}`
-          : (b.banner_cta_url?.trim() || "/dashboard/events");
+    const detailsLink = matchedEvent
+      ? `/dashboard/events/${matchedEvent.slug || matchedEvent.id}`
+      : (b.banner_cta_url?.trim() || "/dashboard/events");
 
-        return {
-          id: b.id,
-          eventId,
-          categoryBadge,
-          formatBadge,
-          featuredBadge: "FEATURED",
-          title: b.title,
-          description: b.description,
-          dateStr,
-          venue,
-          registeredCount,
-          detailsLink,
-          statusTag,
-          imageSrc: b.banner_url || "/banners/reinforce-placeholder.png",
-        };
-      })
-    : bannerCandidates.map((event) => {
-        const d = eventDate(event);
-        const dateStr = formatBannerDate(d);
-        const venue = event.venue_info?.room ||
-          event.venue_info?.venue_name ||
-          (event.format === "online" ? "ONLINE" : "CLASSROOM");
-        const registeredCount = event.stats?.registered_count ?? 0;
+    return {
+      id: b.id,
+      eventId,
+      categoryBadge,
+      formatBadge,
+      featuredBadge: "FEATURED",
+      title: b.title,
+      description: b.description,
+      dateStr,
+      venue,
+      registeredCount,
+      detailsLink,
+      statusTag,
+      imageSrc: b.banner_url || "/banners/reinforce-placeholder.png",
+    };
+  });
 
-        const categoryBadge = event.event_type
-          ? event.event_type.replace(/[-_]/g, " ").toUpperCase()
-          : "EVENT";
-        const formatBadge = event.format === "in_person" || event.format === "offline"
-          ? "CAMPUS"
-          : (event.format || "HYBRID").toUpperCase();
-        const featuredBadge = (event.banner_badge_text?.trim().toUpperCase() === "FEATURED" || !event.banner_badge_text?.trim())
-          ? "FEATURED"
-          : event.banner_badge_text.trim().toUpperCase();
+  const fallbackEventSlides: FeaturedBanner[] = (legacyBanners.length > 0 ? legacyBanners : upcoming.slice(0, 3)).map((event) => {
+    const d = eventDate(event);
+    const dateStr = formatBannerDate(d);
+    const venue = event.venue_info?.room ||
+      event.venue_info?.venue_name ||
+      (event.format === "online" ? "ONLINE" : "CLASSROOM");
+    const registeredCount = event.stats?.registered_count ?? 0;
 
-        const startMs = new Date(event.schedule.start_time).getTime();
-        const endMs = event.schedule.end_time
-          ? new Date(event.schedule.end_time).getTime()
-          : (Number.isFinite(startMs) ? startMs + (event.schedule.duration_minutes ? event.schedule.duration_minutes * 60_000 : 86_400_000) : null);
-        const deadlineMs = event.schedule.registration_deadline
-          ? new Date(event.schedule.registration_deadline).getTime()
-          : null;
+    const categoryBadge = event.event_type
+      ? event.event_type.replace(/[-_]/g, " ").toUpperCase()
+      : "EVENT";
+    const formatBadge = event.format === "in_person" || event.format === "offline"
+      ? "CAMPUS"
+      : (event.format || "HYBRID").toUpperCase();
+    const featuredBadge = (event.banner_badge_text?.trim().toUpperCase() === "FEATURED" || !event.banner_badge_text?.trim())
+      ? "FEATURED"
+      : event.banner_badge_text.trim().toUpperCase();
 
-        const isEnded = event.status === "ended" || event.status === "completed" || (endMs !== null && endMs < nowMs);
-        const isOngoing = !isEnded && Number.isFinite(startMs) && startMs <= nowMs && (endMs !== null ? endMs >= nowMs : true);
-        const isRegClosed = !isEnded && (event.status === "registration_closed" || (deadlineMs !== null && deadlineMs < nowMs));
+    const startMs = new Date(event.schedule.start_time).getTime();
+    const endMs = event.schedule.end_time
+      ? new Date(event.schedule.end_time).getTime()
+      : (Number.isFinite(startMs) ? startMs + (event.schedule.duration_minutes ? event.schedule.duration_minutes * 60_000 : 86_400_000) : null);
+    const deadlineMs = event.schedule.registration_deadline
+      ? new Date(event.schedule.registration_deadline).getTime()
+      : null;
 
-        const statusTag = isEnded
-          ? "EVENT ENDED"
-          : isOngoing
-          ? "HAPPENING NOW"
-          : isRegClosed
-          ? "REGISTRATION CLOSED"
-          : "OPEN · TEAMS OK";
+    const isEnded = event.status === "ended" || event.status === "completed" || (endMs !== null && endMs < nowMs);
+    const isOngoing = !isEnded && Number.isFinite(startMs) && startMs <= nowMs && (endMs !== null ? endMs >= nowMs : true);
+    const isRegClosed = !isEnded && (event.status === "registration_closed" || (deadlineMs !== null && deadlineMs < nowMs));
 
-        return {
-          id: event.id,
-          eventId: event.id,
-          categoryBadge,
-          formatBadge,
-          featuredBadge,
-          title: event.title,
-          description: event.description,
-          dateStr,
-          venue,
-          registeredCount,
-          detailsLink: `/dashboard/events/${event.slug || event.id}`,
-          statusTag,
-          imageSrc: event.banner_url || "/banners/reinforce-placeholder.png",
-        };
-      });
+    const statusTag = isEnded
+      ? "EVENT ENDED"
+      : isOngoing
+      ? "HAPPENING NOW"
+      : isRegClosed
+      ? "REGISTRATION CLOSED"
+      : "OPEN · TEAMS OK";
+
+    return {
+      id: event.id,
+      eventId: event.id,
+      categoryBadge,
+      formatBadge,
+      featuredBadge,
+      title: event.title,
+      description: event.description,
+      dateStr,
+      venue,
+      registeredCount,
+      detailsLink: `/dashboard/events/${event.slug || event.id}`,
+      statusTag,
+      imageSrc: event.banner_url || "/banners/reinforce-placeholder.png",
+    };
+  });
+
+  const slides: FeaturedBanner[] = dedicatedSlides.length > 0 ? dedicatedSlides : fallbackEventSlides;
   const activeSlide = slides.length > 0 ? slides[slideIndex % slides.length] : null;
 
   useEffect(() => {
@@ -366,7 +385,10 @@ export default function DashboardClient() {
 
   useEffect(() => {
     if (isPaused || slides.length < 2) return;
-    const timer = window.setInterval(() => setSlideIndex((index) => (index + 1) % slides.length), 8000);
+    const timer = window.setInterval(() => {
+      setSlideDirection("next");
+      setSlideIndex((index) => (index + 1) % slides.length);
+    }, 8000);
     return () => window.clearInterval(timer);
   }, [isPaused, slides.length]);
 
@@ -447,9 +469,131 @@ export default function DashboardClient() {
         className={styles.heroBanner}
         aria-label="Featured club announcement"
         onMouseEnter={() => setIsPaused(true)}
-        onMouseLeave={() => setIsPaused(false)}
+        onMouseLeave={() => {
+          setIsPaused(false);
+          setTiltDirection(null);
+        }}
+        onMouseMove={(e) => {
+          if (slides.length <= 1 || isDragging) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const ratio = (e.clientX - rect.left) / rect.width;
+          if (ratio < 0.2) {
+            setTiltDirection("left");
+          } else if (ratio > 0.8) {
+            setTiltDirection("right");
+          } else {
+            setTiltDirection(null);
+          }
+        }}
+        onPointerDown={(e) => {
+          if (e.pointerType !== "touch" || slides.length <= 1) return;
+          dragStartX.current = e.clientX;
+          dragStartY.current = e.clientY;
+          hasDragged.current = false;
+          setIsDragging(true);
+          setIsPaused(true);
+          try {
+            (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          } catch {}
+        }}
+        onPointerMove={(e) => {
+          if (e.pointerType !== "touch" || dragStartX.current === null) return;
+          const deltaX = e.clientX - dragStartX.current;
+          const deltaY = dragStartY.current !== null ? Math.abs(e.clientY - dragStartY.current) : 0;
+          if (!hasDragged.current && Math.abs(deltaX) > 8) {
+            if (Math.abs(deltaX) >= deltaY) {
+              hasDragged.current = true;
+            }
+          }
+          if (hasDragged.current) {
+            setDragOffset(deltaX);
+          }
+        }}
+        onPointerUp={(e) => {
+          if (e.pointerType !== "touch") return;
+          try {
+            if ((e.currentTarget as HTMLElement).hasPointerCapture(e.pointerId)) {
+              (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+            }
+          } catch {}
+          if (dragStartX.current !== null && hasDragged.current) {
+            const delta = e.clientX - dragStartX.current;
+            if (delta < -35 && slides.length > 1) {
+              goToNext();
+            } else if (delta > 35 && slides.length > 1) {
+              goToPrev();
+            }
+          }
+          dragStartX.current = null;
+          dragStartY.current = null;
+          setDragOffset(0);
+          setIsDragging(false);
+          setIsPaused(false);
+          setTiltDirection(null);
+        }}
+        onPointerCancel={(e) => {
+          if (e.pointerType !== "touch") return;
+          try {
+            if ((e.currentTarget as HTMLElement).hasPointerCapture(e.pointerId)) {
+              (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+            }
+          } catch {}
+          dragStartX.current = null;
+          dragStartY.current = null;
+          setDragOffset(0);
+          setIsDragging(false);
+          setIsPaused(false);
+          setTiltDirection(null);
+        }}
       >
-        <div className={styles.bannerSlide} key={activeSlide.id}>
+        {slides.length > 1 && (
+          <>
+            <button
+              type="button"
+              className={styles.peekTriggerLeft}
+              onClick={(e) => {
+                e.stopPropagation();
+                goToPrev();
+              }}
+              aria-label="Previous banner"
+            >
+              <span className={styles.peekArrow}>
+                <MemberIcon name="chevron-left" size={26} />
+              </span>
+            </button>
+            <button
+              type="button"
+              className={styles.peekTriggerRight}
+              onClick={(e) => {
+                e.stopPropagation();
+                goToNext();
+              }}
+              aria-label="Next banner"
+            >
+              <span className={styles.peekArrow}>
+                <MemberIcon name="chevron-right" size={26} />
+              </span>
+            </button>
+          </>
+        )}
+
+        <div
+          className={`${styles.bannerSlide} ${
+            slideDirection === "next"
+              ? styles.bannerSlideAnimateNext
+              : styles.bannerSlideAnimatePrev
+          } ${
+            isDragging
+              ? styles.bannerSlideDragging
+              : tiltDirection === "left"
+              ? styles.bannerSlideTiltLeft
+              : tiltDirection === "right"
+              ? styles.bannerSlideTiltRight
+              : ""
+          }`}
+          style={isDragging ? { transform: `translateX(${dragOffset}px)` } : undefined}
+          key={`${activeSlide.id}-${slideIndex}`}
+        >
           <div className={styles.heroContent}>
             <div className={styles.heroTopSection}>
               <div className={styles.heroTopRow}>
@@ -474,7 +618,10 @@ export default function DashboardClient() {
                   return (
                     <button
                       type="button"
-                      onClick={() => !isEnded && handleBannerRsvp(activeSlide)}
+                      onClick={() => {
+                        if (hasDragged.current) return;
+                        if (!isEnded) handleBannerRsvp(activeSlide);
+                      }}
                       disabled={isRsvpBusy || (isEnded && !isRegistered)}
                       className={`${styles.ticketButton} ${isRegistered ? styles.ticketButtonRegistered : ""}`}
                       title={isEnded ? "This event has ended" : (isRegistered ? "Click to cancel registration" : "RSVP for this event")}
@@ -483,7 +630,13 @@ export default function DashboardClient() {
                     </button>
                   );
                 })()}
-                <Link href={activeSlide.detailsLink} className={styles.heroSecondaryLink}>
+                <Link
+                  href={activeSlide.detailsLink}
+                  className={styles.heroSecondaryLink}
+                  onClick={(e) => {
+                    if (hasDragged.current) e.preventDefault();
+                  }}
+                >
                   View details →
                 </Link>
                 {activeSlide.statusTag && (
@@ -492,35 +645,26 @@ export default function DashboardClient() {
               </div>
 
               <div className={styles.heroProgressRow}>
-                <div className={styles.heroProgressBarTrack}>
-                  <div
-                    className={styles.heroProgressBarFill}
-                    style={{
-                      width: `${((slideIndex + 1) / Math.max(1, slides.length)) * 100}%`,
-                    }}
-                  />
-                </div>
-                <span className={styles.heroSlideCounter}>
-                  {String(slideIndex + 1).padStart(2, "0")} / {String(slides.length).padStart(2, "0")}
-                </span>
+                <div className={styles.heroDesignLine} />
                 {slides.length > 1 && (
-                  <div className={styles.heroNavBtns}>
-                    <button
-                      type="button"
-                      onClick={() => setSlideIndex((index) => (index - 1 + slides.length) % slides.length)}
-                      aria-label="Previous featured event"
-                    >
-                      <MemberIcon name="chevron-left" size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSlideIndex((index) => (index + 1) % slides.length)}
-                      aria-label="Next featured event"
-                    >
-                      <MemberIcon name="chevron-right" size={14} />
-                    </button>
+                  <div className={styles.heroDots} role="tablist" aria-label="Banner slides">
+                    {slides.map((_, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        className={`${styles.heroDot} ${i === (slideIndex % slides.length) ? styles.heroDotActive : ""}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          goToIndex(i);
+                        }}
+                        aria-label={`Go to slide ${i + 1}`}
+                      />
+                    ))}
                   </div>
                 )}
+                <span className={styles.heroSlideCounter}>
+                  {String((slideIndex % slides.length) + 1).padStart(2, "0")} / {String(slides.length).padStart(2, "0")}
+                </span>
               </div>
             </div>
           </div>
@@ -529,6 +673,7 @@ export default function DashboardClient() {
             <img
               src={activeSlide.imageSrc}
               alt={activeSlide.title}
+              draggable={false}
               className={styles.heroPosterImg}
               onError={(event) => {
                 const image = event.currentTarget;
