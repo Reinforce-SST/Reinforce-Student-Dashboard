@@ -634,9 +634,11 @@ def cancel_registration(
     now_timestamp = now_iso()
 
     def cancel_and_promote(transaction):
-        lead_docs = list(transaction.get(regs_ref.where("user_id", "==", user_uid)))
+        all_user_regs = _registrations_for_user(
+            regs_ref, user_uid, transaction=transaction
+        )
         active_leads = [
-            doc for doc in lead_docs if _active_registration(doc.to_dict() or {})
+            doc for doc in all_user_regs if _active_registration(doc.to_dict() or {})
         ]
         if not active_leads:
             raise HTTPException(
@@ -648,8 +650,9 @@ def cancel_registration(
         reg_data = reg_doc.to_dict() or {}
         prev_status = reg_data.get("status")
         event_ref = db.collection(EVENTS_COLLECTION).document(event_id)
-        fresh = event_ref.get(transaction=transaction).to_dict() or {}
-        fresh_event = EventDocument.model_validate({**fresh, "id": event_id})
+        event_snap = event_ref.get(transaction=transaction)
+        fresh = event_snap.to_dict() or {}
+        fresh_event = _doc_to_event_document(event_snap)
         current_count = int((fresh.get("stats") or {}).get("registered_count", 0))
 
         waitlist = []
@@ -657,13 +660,21 @@ def cancel_registration(
             RegistrationStatus.REGISTERED.value,
             RegistrationStatus.CHECKED_IN.value,
         }:
-            waitlist = list(
+            waitlist_docs = list(
                 transaction.get(
                     regs_ref.where("status", "==", RegistrationStatus.WAITLISTED.value)
-                    .order_by("registered_at")
-                    .limit(1)
                 )
             )
+            waitlist = sorted(
+                waitlist_docs,
+                key=lambda d: (d.to_dict() or {}).get("registered_at") or "",
+            )[:1]
+
+        spg_ref = None
+        spg_snap = None
+        if reg_data.get("spg_id"):
+            spg_ref = db.collection(SPGS_COLLECTION).document(reg_data["spg_id"])
+            spg_snap = spg_ref.get(transaction=transaction)
 
         transaction.update(
             reg_doc.reference,
@@ -672,9 +683,9 @@ def cancel_registration(
                 "updated_at": now_timestamp,
             },
         )
-        if reg_data.get("spg_id"):
+        if spg_ref and spg_snap and spg_snap.exists:
             transaction.update(
-                db.collection(SPGS_COLLECTION).document(reg_data["spg_id"]),
+                spg_ref,
                 {"status": "disbanded", "updated_at": now_timestamp},
             )
 
