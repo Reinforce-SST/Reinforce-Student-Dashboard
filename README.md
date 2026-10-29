@@ -75,7 +75,7 @@ npm ci
 npm run dev                           # http://localhost:3000
 ```
 
-The API docs are at <http://localhost:8080/docs>. To verify a change, run
+The API docs are at <http://localhost:8080/docs> (requires `DOCS_ENABLED=true` in `server/.env`). To verify a change, run
 `uv run --locked pytest -q` in `server/` and `npm test && npm run lint && npm run build`
 in `web/`. Local tests use fixtures; they do not exercise Discord or production
 Firestore.

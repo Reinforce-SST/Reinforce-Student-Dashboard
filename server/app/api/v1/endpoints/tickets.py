@@ -8,7 +8,7 @@ import hashlib
 import json
 import logging
 import secrets
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import urllib.error
 import urllib.request
 import uuid
@@ -87,17 +87,21 @@ def _extract_creator_uid(data: Dict[str, Any]) -> str:
             return str(created_by["uid"])
         discord_id = created_by.get("discord_id")
         if discord_id:
-            profiles = (
-                db.collection(USERS_COLLECTION)
-                .where("discord_id", "==", str(discord_id))
-                .limit(1)
-                .get()
-            )
-            if profiles:
-                profile = profiles[0].to_dict() or {}
-                return str(
-                    profile.get("id") or profile.get("firebase_uid") or profiles[0].id
+            candidates = [str(discord_id)]
+            if str(discord_id).isdigit():
+                candidates.append(int(discord_id))
+            for candidate in candidates:
+                profiles = (
+                    db.collection(USERS_COLLECTION)
+                    .where("discord_id", "==", candidate)
+                    .limit(1)
+                    .get()
                 )
+                if profiles:
+                    profile = profiles[0].to_dict() or {}
+                    return str(
+                        profile.get("id") or profile.get("firebase_uid") or profiles[0].id
+                    )
             return str(discord_id)
     return str(created_by or "")
 
@@ -130,39 +134,61 @@ def _to_discord_meta(data: Dict[str, Any]) -> Optional[DiscordMeta]:
     return None
 
 
+_user_info_cache: Dict[Tuple[int, str], Dict[str, Optional[str]]] = {}
+
+
 def _get_user_info(uid: Optional[str]) -> Dict[str, Optional[str]]:
     if not uid:
         return {"name": None, "email": None, "avatar_url": None}
+    cache_key = (id(db), str(uid))
+    if cache_key in _user_info_cache:
+        return _user_info_cache[cache_key]
     try:
         user_doc = db.collection(USERS_COLLECTION).document(uid).get()
         if user_doc and user_doc.exists:
             u_data = user_doc.to_dict() or {}
-            return {
+            info = {
                 "name": u_data.get("full_name") or u_data.get("name"),
                 "email": u_data.get("email"),
                 "avatar_url": u_data.get("avatar_url") or u_data.get("photo_url"),
             }
+            _user_info_cache[cache_key] = info
+            return info
     except Exception as exc:
         logger.debug("Failed to fetch user info for uid %s: %s", uid, exc)
-    return {"name": None, "email": None, "avatar_url": None}
+    info = {"name": None, "email": None, "avatar_url": None}
+    _user_info_cache[cache_key] = info
+    return info
 
 
 def _to_ticket_summary(doc_id: str, data: Dict[str, Any]) -> TicketSummary:
     discord_meta = _to_discord_meta(data)
+    creator_uid = _extract_creator_uid(data)
+    assigned_uid = _extract_assigned_uid(data)
     legacy_creator = data.get("created_by") if isinstance(data.get("created_by"), dict) else {}
-    created_by_name = (
-        data.get("created_by_name")
-        or legacy_creator.get("username")
-        or legacy_creator.get("name")
-    )
+
+    # Prefer verified/linked member's proper name if creator_uid resolves to a registered user
+    created_by_name = None
+    if creator_uid:
+        creator_info = _get_user_info(creator_uid)
+        if creator_info.get("name"):
+            created_by_name = creator_info["name"]
+
+    if not created_by_name:
+        created_by_name = (
+            data.get("created_by_name")
+            or legacy_creator.get("name")
+            or legacy_creator.get("username")
+        )
+
     return TicketSummary(
         id=doc_id,
         category=data.get("category") or TicketCategory.MISC,
         title=data.get("title") or "Untitled Ticket",
         status=data.get("status") or TicketStatus.OPEN,
         priority=data.get("priority") or TicketPriority.MEDIUM,
-        created_by_uid=_extract_creator_uid(data),
-        assigned_to_uid=_extract_assigned_uid(data),
+        created_by_uid=creator_uid,
+        assigned_to_uid=assigned_uid,
         spg_id=data.get("spg_id"),
         created_at=iso_str(data.get("created_at")),
         updated_at=iso_str(data.get("updated_at")),
@@ -184,12 +210,12 @@ def _to_ticket_detail(doc_id: str, data: Dict[str, Any]) -> TicketDetail:
         "close_reason": data.get("close_reason"),
         "closed_at": iso_str(data.get("closed_at")),
         "discord_meta": _to_discord_meta(data),
-        "created_by_name": summary.created_by_name or creator_info["name"],
-        "created_by_email": data.get("created_by_email") or creator_info["email"],
-        "created_by_avatar": data.get("created_by_avatar") or creator_info["avatar_url"],
-        "assigned_to_name": summary.assigned_to_name or assigned_info["name"],
-        "assigned_to_email": data.get("assigned_to_email") or assigned_info["email"],
-        "assigned_to_avatar": data.get("assigned_to_avatar") or assigned_info["avatar_url"],
+        "created_by_name": creator_info["name"] or summary.created_by_name or data.get("created_by_name"),
+        "created_by_email": creator_info["email"] or data.get("created_by_email"),
+        "created_by_avatar": creator_info["avatar_url"] or data.get("created_by_avatar"),
+        "assigned_to_name": assigned_info["name"] or summary.assigned_to_name,
+        "assigned_to_email": assigned_info["email"] or data.get("assigned_to_email"),
+        "assigned_to_avatar": assigned_info["avatar_url"] or data.get("assigned_to_avatar"),
     })
     return TicketDetail(**detail_data)
 
