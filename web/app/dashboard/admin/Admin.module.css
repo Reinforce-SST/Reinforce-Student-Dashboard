@@ -1486,3 +1486,266 @@
   background: rgba(229, 183, 49, 0.15);
   color: #f0c54a;
 }
+
+/* =========================================================================
+   OVERHAULED EVENT SETUP & EXACT DASHBOARD HERO PREVIEW
+   ========================================================================= */
+
+.boxCard {
+  background: #18181b;
+  border: 1px solid #282830;
+  border-radius: 14px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.boxCard:focus-within {
+  border-color: #383842;
+}
+
+.boxHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  border-bottom: 1px solid #26262e;
+  padding-bottom: 12px;
+}
+
+.boxTitle {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.boxBadge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #e5b731;
+  background: rgba(229, 183, 49, 0.12);
+  border: 1px solid rgba(229, 183, 49, 0.25);
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.boxSubtitle {
+  font-size: 12.5px;
+  color: #8e8e93;
+  margin-top: 3px;
+}
+
+/* Exact Dashboard Hero Banner Replica for 1:1 Student Live Preview */
+.exactHeroBanner {
+  position: relative;
+  width: 100%;
+  background: #e5b731;
+  color: #111113;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.45);
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.85fr);
+  align-items: stretch;
+  padding: 22px 24px;
+  gap: 22px;
+  min-height: 250px;
+}
+
+@media (max-width: 900px) {
+  .exactHeroBanner {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+}
+
+.exactHeroContent {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.exactHeroTopRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.exactHeroBadges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.exactCategoryBadge {
+  display: inline-flex;
+  align-items: center;
+  background: #111113;
+  color: #ffffff;
+  border-radius: 5px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+  line-height: 1.15;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.exactFormatBadge {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(17, 17, 19, 0.06);
+  border: 1.5px solid rgba(17, 17, 19, 0.4);
+  color: #111113;
+  border-radius: 5px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  line-height: 1.15;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.exactFeaturedLabel {
+  color: rgba(17, 17, 19, 0.7);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.exactHeroTitle {
+  margin: 0 0 8px;
+  color: #111113;
+  font-size: clamp(1.2rem, 1.8vw, 1.65rem);
+  font-weight: 850;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+  max-width: 600px;
+}
+
+.exactHeroDesc {
+  margin: 0 0 12px;
+  color: rgba(17, 17, 19, 0.88);
+  font-size: 13px;
+  line-height: 1.45;
+  max-width: 560px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.exactHeroMetaLine {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(17, 17, 19, 0.85);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.exactHeroActionRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: auto;
+}
+
+.exactHeroPrimaryBtn {
+  background: #111113;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 12.5px;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  cursor: default;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+.exactHeroSecondaryLink {
+  color: #111113;
+  font-size: 12.5px;
+  font-weight: 750;
+  text-decoration: underline;
+  cursor: default;
+}
+
+.exactHeroPosterFrame {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  background: #111113;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 9;
+  min-height: 180px;
+}
+
+.exactHeroPosterImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Preset Buttons for Quick Intake Questions */
+.presetBtnGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.presetBtn {
+  background: #212124;
+  border: 1px solid #31343a;
+  color: #d4d4d8;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.15s ease;
+}
+
+.presetBtn:hover {
+  border-color: #e5b731;
+  color: #e5b731;
+  background: rgba(229, 183, 49, 0.08);
+}
+

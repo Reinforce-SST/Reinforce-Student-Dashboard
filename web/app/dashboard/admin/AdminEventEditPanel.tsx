@@ -114,6 +114,9 @@ export default function AdminEventEditPanel({
   const [bannerUrl, setBannerUrl] = useState("");
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [bannerFilePreview, setBannerFilePreview] = useState<string | null>(null);
+  const [bannerBadgeText, setBannerBadgeText] = useState("");
+  const [bannerCtaText, setBannerCtaText] = useState("RSVP Now");
+  const [bannerCtaUrl, setBannerCtaUrl] = useState("");
 
   // Advanced Hackathon Operations State
   const [customFields, setCustomFields] = useState<CustomFieldSchema[]>([]);
@@ -201,6 +204,9 @@ export default function AdminEventEditPanel({
         setSelectedResourceIds(ev.resources?.learning_resource_ids || []);
 
         setBannerUrl(ev.banner_url || "");
+        setBannerBadgeText(ev.banner_badge_text || "");
+        setBannerCtaText(ev.banner_cta_text || "RSVP Now");
+        setBannerCtaUrl(ev.banner_cta_url || "");
         setBannerFile(null);
         setBannerFilePreview(null);
 
@@ -398,6 +404,9 @@ export default function AdminEventEditPanel({
           learning_resource_ids: selectedResourceIds,
         },
         banner_url: imageUrl || undefined,
+        banner_badge_text: bannerBadgeText.trim() || undefined,
+        banner_cta_text: bannerCtaText.trim() || undefined,
+        banner_cta_url: bannerCtaUrl.trim() || undefined,
         status,
         custom_registration_fields: customFields,
         event_tracks: eventTracks,
@@ -646,7 +655,194 @@ export default function AdminEventEditPanel({
               Loading event detailsâ€¦
             </div>
           ) : (
-            <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+            <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+              {/* Box 1: Event Banner & Live Hero Display (TOP SECTION) */}
+              <div className={styles.boxCard}>
+                <div className={styles.boxHeader}>
+                  <div>
+                    <h3 className={styles.boxTitle}>
+                      <MemberIcon name="image" size={18} />
+                      1. Event Banner & Student Dashboard Hero Display
+                    </h3>
+                    <div className={styles.boxSubtitle}>
+                      Upload or update the 16:9 poster and preview exactly how this featured event appears on the student dashboard hero slider.
+                    </div>
+                  </div>
+                  <span className={styles.boxBadge}>TOP HERO DISPLAY</span>
+                </div>
+
+                {/* 1:1 Exact Dashboard Hero Banner Live Preview */}
+                <div>
+                  <div style={{ fontSize: "11px", fontWeight: "700", color: "#e5b731", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "8px" }}>
+                    Live Student Overview Banner Preview (Exact Replica)
+                  </div>
+
+                  <div className={styles.exactHeroBanner}>
+                    <div className={styles.exactHeroContent}>
+                      <div className={styles.exactHeroTopRow}>
+                        <div className={styles.exactHeroBadges}>
+                          <span className={styles.exactCategoryBadge}>
+                            {bannerBadgeText.trim() || (eventType ? eventType.toUpperCase() : "EVENT")}
+                          </span>
+                          <span className={styles.exactFormatBadge}>
+                            {format === "offline" ? "OFFLINE (CAMPUS)" : format === "online" ? "ONLINE" : "HYBRID"}
+                          </span>
+                        </div>
+                        <span className={styles.exactFeaturedLabel}>FEATURED</span>
+                      </div>
+
+                      <div>
+                        <h2 className={styles.exactHeroTitle}>
+                          {title.trim() || "Event Title"}
+                        </h2>
+                        <p className={styles.exactHeroDesc}>
+                          {description.trim() || "Event description overview..."}
+                        </p>
+                      </div>
+
+                      <div className={styles.exactHeroMetaLine}>
+                        <MemberIcon name="calendar" size={13} />
+                        <span>
+                          {[
+                            formatEventDisplayDate(startDateTime),
+                            venueName.trim() ? `${venueName.trim()}${room.trim() ? ` • ${room.trim()}` : ""}` : "",
+                            pointsReward !== "" && Number(pointsReward) > 0 ? `${pointsReward} Merit Pts` : "",
+                          ].filter(Boolean).join(" • ") || "Event details to be announced"}
+                        </span>
+                      </div>
+
+                      <div className={styles.exactHeroActionRow}>
+                        <button type="button" className={styles.exactHeroPrimaryBtn}>
+                          {bannerCtaText.trim() || "RSVP Now"}
+                        </button>
+                        <span className={styles.exactHeroSecondaryLink}>View details →</span>
+                      </div>
+                    </div>
+
+                    <div className={styles.exactHeroPosterFrame}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={bannerFilePreview || bannerUrl.trim() || "/banners/reinforce-placeholder.png"}
+                        alt="Live Event Banner"
+                        className={styles.exactHeroPosterImg}
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = "/banners/reinforce-placeholder.png";
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Upload Controls & Hero Customization */}
+                <div className={styles.formRow}>
+                  <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>
+                      <span>Upload Poster Image</span>
+                      <span className={styles.formLabelHint}>PNG, JPG, WebP up to 5MB (16:9 recommended)</span>
+                    </label>
+                    {bannerFilePreview || bannerUrl ? (
+                      <div className={styles.imagePreviewBox}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={bannerFilePreview || bannerUrl}
+                          alt="Poster Preview"
+                          className={styles.imagePreviewImg}
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = "/banners/reinforce-placeholder.png";
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBannerFilePreview(null);
+                            setBannerFile(null);
+                            setBannerUrl("");
+                            if (fileInputRef.current) fileInputRef.current.value = "";
+                          }}
+                          className={styles.removeImageBtn}
+                        >
+                          <MemberIcon name="trash" size={13} /> Remove Image
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        className={styles.uploadDropzone}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <span className={styles.uploadIcon}>
+                          <MemberIcon name="image" size={32} />
+                        </span>
+                        <span className={styles.uploadTextPrimary}>Click to upload event banner / poster</span>
+                        <span className={styles.uploadTextSecondary}>16:9 ratio recommended (e.g. 1200×675px)</span>
+                      </div>
+                    )}
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileChange}
+                      accept="image/png,image/jpeg,image/webp"
+                      className={styles.fileInputHidden}
+                    />
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                    <div className={styles.formGroup}>
+                      <label className={styles.formLabel}>Or Remote Image URL</label>
+                      <input
+                        type="text"
+                        value={bannerUrl}
+                        onChange={(e) => {
+                          setBannerUrl(e.target.value);
+                          setBannerFile(null);
+                          setBannerFilePreview(null);
+                        }}
+                        placeholder="/banners/reinforce-placeholder.png or https://..."
+                        className={styles.formInput}
+                      />
+                    </div>
+
+                    <div className={styles.formRow}>
+                      <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>
+                          <span>Hero Badge Label</span>
+                          <span className={styles.formLabelHint}>Overrides default</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={bannerBadgeText}
+                          onChange={(e) => setBannerBadgeText(e.target.value)}
+                          placeholder="e.g. MASTERCLASS, HACKATHON"
+                          className={styles.formInput}
+                        />
+                      </div>
+                      <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Hero CTA Button Text</label>
+                        <input
+                          type="text"
+                          value={bannerCtaText}
+                          onChange={(e) => setBannerCtaText(e.target.value)}
+                          placeholder="RSVP Now / Register"
+                          className={styles.formInput}
+                        />
+                      </div>
+                    </div>
+
+                    <div className={styles.formGroup}>
+                      <label className={styles.formLabel}>
+                        <span>Hero Button Destination URL</span>
+                        <span className={styles.formLabelHint}>Default points to /dashboard/events/[slug]</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={bannerCtaUrl}
+                        onChange={(e) => setBannerCtaUrl(e.target.value)}
+                        placeholder="/dashboard/events/my-event"
+                        className={styles.formInput}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
               {/* Section 1: General Info */}
               <div className={styles.formSectionHeading}>1. General Information & Status</div>
               <div className={styles.formRow}>
@@ -1041,64 +1237,7 @@ export default function AdminEventEditPanel({
                 </div>
               </fieldset>
 
-              {/* Banner Image */}
-              <div className={styles.formGroup}>
-                <label className={styles.formLabel}>
-                  <span>Event Cover Banner Image</span>
-                  <span className={styles.formLabelHint}>PNG, JPG, WebP up to 5MB</span>
-                </label>
 
-                {bannerFilePreview || bannerUrl ? (
-                  <div className={styles.imagePreviewBox}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={bannerFilePreview || bannerUrl}
-                      alt="Banner Preview"
-                      className={styles.imagePreviewImg}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setBannerFilePreview(null);
-                        setBannerFile(null);
-                        setBannerUrl("");
-                        if (fileInputRef.current) fileInputRef.current.value = "";
-                      }}
-                      className={styles.removeImageBtn}
-                    >
-                      <MemberIcon name="trash" size={13} /> Remove Image
-                    </button>
-                  </div>
-                ) : (
-                  <div
-                    className={styles.uploadDropzone}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <span className={styles.uploadIcon}>
-                      <MemberIcon name="image" size={32} />
-                    </span>
-                    <span className={styles.uploadTextPrimary}>Click to upload new event cover banner</span>
-                    <span className={styles.uploadTextSecondary}>16:9 or 22:9 recommended (1200Ã—630px)</span>
-                  </div>
-                )}
-
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileChange}
-                  accept="image/png,image/jpeg,image/webp"
-                  className={styles.fileInputHidden}
-                />
-
-                <input
-                  type="text"
-                  value={bannerUrl}
-                  onChange={(e) => setBannerUrl(e.target.value)}
-                  placeholder="Or enter image URL directly: https://..."
-                  className={styles.formInput}
-                  style={{ marginTop: "8px" }}
-                />
-              </div>
 
               {/* Section 6: Custom Registration Intake Fields */}
               <div className={styles.formSectionHeading}>6. Custom Registration Intake Fields</div>
