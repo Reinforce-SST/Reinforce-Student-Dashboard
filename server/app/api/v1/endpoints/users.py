@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, 
 from firebase_admin import auth, firestore
 from google.api_core.exceptions import AlreadyExists
 
-from app.api.security import get_admin_user, get_current_user
+from app.api.security import get_admin_user, get_current_user, get_optional_current_user
 from app.services.discord_link import consume_link, unlink_member
 from app.services.firebase import db, upload_file_to_storage
 from app.services.images import ImageRejected, read_image
@@ -166,11 +166,26 @@ def _get_all_users_raw() -> List[Dict[str, Any]]:
     return items
 
 
+def _resolve_social_links(data: Dict[str, Any]) -> SocialLinks:
+    social_raw = dict(data.get("social_links") or {})
+    discord_username = data.get("discord_username")
+    discord_id = data.get("discord_id")
+    current_discord = str(social_raw.get("discord") or "").strip()
+
+    # If current value is missing or a raw numeric snowflake ID, prefer real username
+    if discord_username and (not current_discord or current_discord.isdigit()):
+        social_raw["discord"] = str(discord_username).strip()
+    elif not current_discord and (discord_username or discord_id):
+        discord_val = discord_username or discord_id
+        if discord_val:
+            social_raw["discord"] = str(discord_val).strip()
+    return SocialLinks(**social_raw) if isinstance(social_raw, dict) else SocialLinks()
+
+
 def _to_user_me(uid: str, data: Dict[str, Any]) -> UserMeResponse:
     live = _get_user_live_points(uid)
     points = live if live is not None else _normalize_points(data.get("points"))
-    social_raw = data.get("social_links") or {}
-    social_links = SocialLinks(**social_raw) if isinstance(social_raw, dict) else SocialLinks()
+    social_links = _resolve_social_links(data)
 
     raw_tier = data.get("tier")
     tier = _normalize_tier(raw_tier)
@@ -193,6 +208,7 @@ def _to_user_me(uid: str, data: Dict[str, Any]) -> UserMeResponse:
         full_name=data.get("full_name") or "Club Member",
         avatar_url=data.get("avatar_url"),
         discord_id=data.get("discord_id"),
+        discord_username=data.get("discord_username"),
         discord_link_version=data.get("discord_link_version"),
         is_admin=bool(data.get("is_admin", False)),
         is_member=bool(data.get("is_member", False)),
@@ -224,8 +240,7 @@ def _to_user_public(
         points = live if live is not None else _normalize_points(data.get("points"))
     else:
         points = _normalize_points(data.get("points"))
-    social_raw = data.get("social_links") or {}
-    social_links = SocialLinks(**social_raw) if isinstance(social_raw, dict) else SocialLinks()
+    social_links = _resolve_social_links(data)
 
     raw_tier = data.get("tier")
     tier = _normalize_tier(raw_tier)
@@ -280,6 +295,14 @@ def _get_or_create_user(user_token: dict) -> UserMeResponse:
         if resolved_batch is not None and resolved_batch != data.get("batch_year"):
             updates["batch_year"] = resolved_batch
             data["batch_year"] = resolved_batch
+        # Backfill social_links.discord if missing for verified members with discord_id or discord_username
+        is_verified = bool(data.get("is_verified") and data.get("discord_link_version") == 1)
+        discord_val = data.get("discord_username") or data.get("discord_id")
+        current_socials = dict(data.get("social_links") or {})
+        if (is_verified or data.get("discord_id")) and discord_val and not current_socials.get("discord"):
+            current_socials["discord"] = str(discord_val).strip()
+            updates["social_links"] = current_socials
+            data["social_links"] = current_socials
         doc_ref.set(updates, merge=True)
         data["last_login"] = now
         data["updated_at"] = now
@@ -409,17 +432,18 @@ def verify_discord(
             if not bot_response_data.get("role_assigned"):
                 bot_response_data = {"status": "bot_warning", "detail": "Your account is linked, but the Discord role is pending. Run /auth again to retry."}
 
-            bot_discord_user = bot_response_data.get("discord_username")
+            bot_discord_user = bot_response_data.get("discord_username") or bot_response_data.get("username")
             if bot_discord_user and isinstance(bot_discord_user, str) and bot_discord_user.strip():
                 clean_bot_user = bot_discord_user.strip()
                 current_socials = dict(member.get("social_links") or {})
-                if current_socials.get("discord") != clean_bot_user:
-                    current_socials["discord"] = clean_bot_user
-                    db.collection(USERS_COLLECTION).document(uid).set({
-                        "social_links": current_socials,
-                        "updated_at": now_iso(),
-                    }, merge=True)
-                    member["social_links"] = current_socials
+                current_socials["discord"] = clean_bot_user
+                db.collection(USERS_COLLECTION).document(uid).set({
+                    "discord_username": clean_bot_user,
+                    "social_links": current_socials,
+                    "updated_at": now_iso(),
+                }, merge=True)
+                member["discord_username"] = clean_bot_user
+                member["social_links"] = current_socials
         except urllib.error.HTTPError as e:
             error_detail = e.read().decode("utf-8")
             try:
@@ -637,9 +661,26 @@ def get_leaderboard(
 
 
 @router.get("/{id_or_email}", response_model=UserPublicResponse, summary="Get public member profile")
-def get_user_profile(id_or_email: str) -> UserPublicResponse:
-    """Fetch public member profile by UID, email, or linked Discord ID."""
+def get_user_profile(
+    id_or_email: str,
+    user: Optional[dict] = Depends(get_optional_current_user),
+) -> UserPublicResponse:
+    """Fetch public member profile by UID, or by email/linked Discord ID when signed in.
+
+    Resolving a bare string to "member exists" via a 200/404 split is an email
+    enumeration oracle against an anonymous caller, so the email and Discord-ID
+    fallbacks only run for an authenticated request.
+    """
     clean_target = id_or_email.strip()
+
+    # Discord linking also writes users/{email} and users/{discord_id} alias
+    # docs (see AGENTS.md), so an email- or Discord-ID-shaped target can resolve
+    # straight through the plain doc lookup below for any already-linked
+    # member, bypassing the email/Discord-ID gate further down. A real Firebase
+    # UID is never "@"-shaped and never purely numeric, so refuse both shapes
+    # up front for an anonymous caller before touching Firestore at all.
+    if ("@" in clean_target or clean_target.isdigit()) and user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member profile not found")
 
     # 1. Try UID direct lookup or compatibility alias
     doc = db.collection(USERS_COLLECTION).document(clean_target).get()
@@ -651,6 +692,9 @@ def get_user_profile(id_or_email: str) -> UserPublicResponse:
             if canonical.exists:
                 return _to_user_public(canonical.id, canonical.to_dict() or {}, allow_fetch=True)
         return _to_user_public(doc.id, data, allow_fetch=True)
+
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member profile not found")
 
     # 2. Try email query
     query_email = (
@@ -695,6 +739,7 @@ def list_users(
     is_member: Optional[bool] = Query(None, description="Filter by club member status"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    user: Optional[dict] = Depends(get_optional_current_user),
 ) -> UserListResponse:
     """Search and browse member directory with filters."""
     docs = _get_all_users_raw()
@@ -729,7 +774,10 @@ def list_users(
         if search:
             s = search.lower().strip()
             name_match = s in public_user.full_name.lower()
-            email_match = s in (data.get("email") or "").lower()
+            # Matching the hidden email field for an anonymous caller turns this
+            # into an email-enumeration oracle (the response itself omits email,
+            # but presence in the result set confirms a guessed address exists).
+            email_match = user is not None and s in (data.get("email") or "").lower()
             id_match = s in public_user.id.lower()
             skill_match = any(s in sk.lower() for sk in public_user.skills)
             bio_match = s in (public_user.bio or "").lower()

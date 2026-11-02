@@ -60,6 +60,15 @@ class TicketTests(unittest.TestCase):
         my_tickets = tickets.list_my_tickets(USER)
         self.assertIn("own_report", [item.id for item in my_tickets.items])
 
+    def test_discord_ticket_uses_verified_member_full_name(self):
+        self.db.store["users/uid-1"]["full_name"] = "Proper Member Name"
+        self.ticket("own_verified", category="support", owner=DID)
+        detail = tickets.get_ticket("own_verified", USER)
+        self.assertEqual(detail.created_by_name, "Proper Member Name")
+        my_tickets = tickets.list_my_tickets(USER)
+        matched = next(t for t in my_tickets.items if t.id == "own_verified")
+        self.assertEqual(matched.created_by_name, "Proper Member Name")
+
     def test_one_sided_link_cannot_list_or_open_old_ticket(self):
         self.ticket("own")
         self.db.store["users/" + USER["uid"]]["email"] = "other@sst.scaler.com"

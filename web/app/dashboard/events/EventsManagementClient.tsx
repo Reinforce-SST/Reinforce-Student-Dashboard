@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMember } from "@/lib/useMember";
 import { loadAllEvents } from "@/lib/memberData";
+import { appCache } from "@/lib/cache";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import PaginationBar from "@/components/dashboard/PaginationBar";
 import LoadingBar from "@/components/dashboard/LoadingBar";
@@ -22,21 +23,95 @@ export type CalendarEventItem = {
   time: string;
   location: string;
   statusText: string;
-  statusType: "registered" | "slots" | "available" | "limited" | "full" | "ended";
+  statusType: "registered" | "slots" | "available" | "limited" | "full" | "ended" | "ongoing";
   registrationOpen: boolean;
   isEnded: boolean;
+  isOngoing: boolean;
   startDate: Date;
   bannerUrl?: string | null;
 };
+
+function mapEventToCalendarItem(ev: any, now = Date.now()): CalendarEventItem {
+  const start = new Date(ev.schedule.start_time);
+  const startMs = start.getTime();
+  const endMs = ev.schedule.end_time
+    ? new Date(ev.schedule.end_time).getTime()
+    : (Number.isFinite(startMs)
+        ? startMs + (ev.schedule.duration_minutes ? ev.schedule.duration_minutes * 60_000 : 7_200_000)
+        : null);
+
+  const isCompleted = ev.status === "completed" || (endMs !== null && endMs <= now);
+  const isOngoing = !isCompleted && ev.status !== "archived" && ev.status !== "draft" &&
+    (ev.status === "ongoing" || (Number.isFinite(startMs) && startMs <= now && (endMs !== null ? endMs > now : true)));
+  const isEnded = isCompleted;
+
+  const monthStr = start.toLocaleString("en-US", { month: "short" }).toUpperCase();
+  const dayNum = start.getDate();
+  const yearNum = start.getFullYear();
+  const timeStr = start.toLocaleString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+
+  const rawType = (ev.event_type || "event").toLowerCase();
+  const registrationOpen = !isEnded && !isOngoing &&
+    (ev.status === "published") &&
+    (!ev.schedule.registration_deadline || new Date(ev.schedule.registration_deadline).getTime() >= now);
+  const loc =
+    ev.venue_info?.room ||
+    ev.venue_info?.venue_name ||
+    (ev.format === "online" ? "Online" : "Venue to be announced");
+
+  const statusText = isEnded
+    ? "ENDED"
+    : isOngoing
+    ? "ONGOING"
+    : registrationOpen
+    ? "OPEN"
+    : "REGISTRATION CLOSED";
+
+  return {
+    id: ev.id,
+    slug: ev.slug || ev.id,
+    month: monthStr,
+    day: dayNum,
+    year: yearNum,
+    title: ev.title,
+    type: rawType,
+    typeLabel: (ev.event_type || "EVENT").toUpperCase(),
+    time: timeStr,
+    location: loc,
+    statusText,
+    statusType: isEnded ? "ended" : isOngoing ? "ongoing" : "available",
+    registrationOpen,
+    isEnded,
+    isOngoing,
+    startDate: start,
+    bannerUrl: ev.banner_url || null,
+  };
+}
 
 export default function EventsManagementClient() {
   const router = useRouter();
   const { token, profile } = useMember();
   const isAdmin = Boolean(profile?.is_admin);
   const [activeTab, setActiveTab] = useState<"ALL" | "WORKSHOPS" | "HACKATHONS" | "MEETUPS">("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "ONGOING" | "UPCOMING" | "COMPLETED">("ALL");
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
-  const [events, setEvents] = useState<CalendarEventItem[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  const [events, setEvents] = useState<CalendarEventItem[]>(() => {
+    const cached = appCache.get<any[]>("events:all");
+    if (!cached?.data) return [];
+    const now = Date.now();
+    return cached.data
+      .filter((ev: any) =>
+        !ev.event_type?.toLowerCase().includes("banner") &&
+        ["published", "registration_closed", "ongoing", "completed"].includes(ev.status)
+      )
+      .map((ev: any) => mapEventToCalendarItem(ev, now));
+  });
+  const [loading, setLoading] = useState(() => !appCache.has("events:all"));
   const [loadError, setLoadError] = useState("");
 
   // Current calendar month view (default to current date)
@@ -54,6 +129,9 @@ export default function EventsManagementClient() {
     let active = true;
     async function fetchEvents() {
       try {
+        if (!appCache.has("events:all")) {
+          setLoading(true);
+        }
         const allFetched = await loadAllEvents(token);
         if (!active) return;
         setLoadError("");
@@ -119,6 +197,9 @@ export default function EventsManagementClient() {
 
           // Sort upcoming events first (ascending by start date), followed by ended events (descending by start date)
           mapped.sort((a, b) => {
+            if (a.isOngoing !== b.isOngoing) {
+              return a.isOngoing ? -1 : 1;
+            }
             if (a.isEnded !== b.isEnded) {
               return a.isEnded ? 1 : -1;
             }
@@ -133,13 +214,20 @@ export default function EventsManagementClient() {
           setEvents([]);
         }
       } catch {
-        if (active) setLoadError("Events could not be loaded. Please refresh.");
+        if (!active) return;
+        if (!appCache.has("events:all")) {
+          setLoadError("Events could not be loaded. Try again in a moment.");
+          setEvents([]);
+        }
       } finally {
         if (active) setLoading(false);
       }
     }
 
-    fetchEvents();
+    if (token) {
+      void fetchEvents();
+    }
+
     return () => {
       active = false;
     };
@@ -152,12 +240,21 @@ export default function EventsManagementClient() {
   };
 
   // Filter events by tab and selected day
-  const filteredEvents = useMemo(() => {
+  const tabFilteredEvents = useMemo(() => {
     return events.filter((ev) => {
-      // Tab filter
       if (activeTab === "WORKSHOPS" && !ev.type.includes("workshop")) return false;
       if (activeTab === "HACKATHONS" && !ev.type.includes("hackathon")) return false;
       if (activeTab === "MEETUPS" && !ev.type.includes("meetup") && !ev.type.includes("ama") && !ev.type.includes("fireside")) return false;
+      return true;
+    });
+  }, [events, activeTab]);
+
+  const filteredEvents = useMemo(() => {
+    return tabFilteredEvents.filter((ev) => {
+      // Status filter
+      if (statusFilter === "ONGOING" && !ev.isOngoing) return false;
+      if (statusFilter === "UPCOMING" && (ev.isOngoing || ev.isEnded)) return false;
+      if (statusFilter === "COMPLETED" && !ev.isEnded) return false;
 
       // Day filter if selected
       if (selectedDay !== null) {
@@ -171,7 +268,7 @@ export default function EventsManagementClient() {
 
       return true;
     });
-  }, [events, activeTab, selectedDay, currentCalendarDate]);
+  }, [tabFilteredEvents, statusFilter, selectedDay, currentCalendarDate]);
 
   const paginatedEvents = useMemo(() => {
     const start = (page - 1) * pageSize;
@@ -242,6 +339,42 @@ export default function EventsManagementClient() {
             </button>
           ))}
         </div>
+
+        {/* Status / Category Filter Sub-Tabs */}
+        <div className={styles.statusFilterTabs} role="group" aria-label="Filter events by status">
+          {(["ALL", "ONGOING", "UPCOMING", "COMPLETED"] as const).map((status) => {
+            const count =
+              status === "ALL"
+                ? tabFilteredEvents.length
+                : status === "ONGOING"
+                ? tabFilteredEvents.filter((e) => e.isOngoing).length
+                : status === "UPCOMING"
+                ? tabFilteredEvents.filter((e) => !e.isOngoing && !e.isEnded).length
+                : tabFilteredEvents.filter((e) => e.isEnded).length;
+
+            return (
+              <button
+                key={status}
+                type="button"
+                onClick={() => {
+                  setStatusFilter(status);
+                  setPage(1);
+                }}
+                className={`${styles.statusTabBtn} ${statusFilter === status ? styles.statusTabActive : ""}`}
+              >
+                {status === "ONGOING" && <span className={styles.liveDot} />}
+                {status === "ALL"
+                  ? "All"
+                  : status === "ONGOING"
+                  ? "Ongoing"
+                  : status === "UPCOMING"
+                  ? "Upcoming"
+                  : "Completed"}
+                <span className={styles.statusTabCount}>{count}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Main 2-Column Content */}
@@ -304,13 +437,16 @@ export default function EventsManagementClient() {
             </div>
           ) : (
             (() => {
-              const upcomingList = paginatedEvents.filter((e) => !e.isEnded);
+              const ongoingList = paginatedEvents.filter((e) => e.isOngoing);
+              const upcomingList = paginatedEvents.filter((e) => !e.isOngoing && !e.isEnded);
               const endedList = paginatedEvents.filter((e) => e.isEnded);
 
               const renderEventCard = (ev: CalendarEventItem) => (
                 <article
                   key={ev.id}
-                  className={`${styles.eventCard} ${ev.isEnded ? styles.eventCardEnded : ""}`}
+                  className={`${styles.eventCard} ${
+                    ev.isOngoing ? styles.eventCardOngoing : ev.isEnded ? styles.eventCardEnded : ""
+                  }`}
                 >
                   <Link
                     href={`/dashboard/events/${ev.slug}`}
@@ -349,12 +485,23 @@ export default function EventsManagementClient() {
                       <span className={styles.statusHeader}>STATUS</span>
                       <span
                         className={`${styles.statusValue} ${
-                          ev.isEnded
+                          ev.isOngoing
+                            ? styles.statusOngoing
+                            : ev.isEnded
                             ? styles.statusEnded
                             : styles.statusAvailable
                         }`}
                       >
-                        {ev.isEnded ? "â€¢ ENDED" : ev.statusText}
+                        {ev.isOngoing ? (
+                          <>
+                            <span className={styles.liveDot} />
+                            ONGOING
+                          </>
+                        ) : ev.isEnded ? (
+                          "â€¢ ENDED"
+                        ) : (
+                          ev.statusText
+                        )}
                       </span>
                     </div>
 
@@ -362,13 +509,15 @@ export default function EventsManagementClient() {
                       type="button"
                       onClick={(e) => handleToggleRsvp(ev.slug, e)}
                       className={`${styles.actionBtn} ${
-                        ev.isEnded
+                        ev.isOngoing
+                          ? styles.btnOngoing
+                          : ev.isEnded
                           ? styles.btnEnded
                           : styles.btnRsvp
                       }`}
                       aria-label={`Open ${ev.title}`}
                     >
-                      {ev.isEnded ? "VIEW RECAP" : ev.registrationOpen ? "RSVP NOW" : "VIEW EVENT"}
+                      {ev.isOngoing ? "JOIN NOW" : ev.isEnded ? "VIEW DETAILS" : ev.registrationOpen ? "RSVP NOW" : "VIEW DETAILS"}
                     </button>
                   </div>
                 </article>
@@ -376,8 +525,41 @@ export default function EventsManagementClient() {
 
               return (
                 <>
+                  {/* Ongoing Events List */}
+                  {ongoingList.length > 0 && (
+                    <>
+                      {statusFilter === "ALL" && (
+                        <div className={styles.eventsSectionDivider} style={{ marginTop: 0 }}>
+                          <div className={styles.dividerLine} />
+                          <div className={`${styles.dividerBadge} ${styles.dividerOngoing}`}>
+                            <span className={styles.liveDot} />
+                            <span>Ongoing / Happening Now</span>
+                            <span className={styles.dividerCount}>{ongoingList.length}</span>
+                          </div>
+                          <div className={styles.dividerLine} />
+                        </div>
+                      )}
+                      {ongoingList.map(renderEventCard)}
+                    </>
+                  )}
+
                   {/* Upcoming Events List */}
-                  {upcomingList.map(renderEventCard)}
+                  {upcomingList.length > 0 && (
+                    <>
+                      {statusFilter === "ALL" && ongoingList.length > 0 && (
+                        <div className={styles.eventsSectionDivider}>
+                          <div className={styles.dividerLine} />
+                          <div className={`${styles.dividerBadge} ${styles.dividerUpcoming}`}>
+                            <MemberIcon name="calendar" size={13} />
+                            <span>Upcoming Schedule</span>
+                            <span className={styles.dividerCount}>{upcomingList.length}</span>
+                          </div>
+                          <div className={styles.dividerLine} />
+                        </div>
+                      )}
+                      {upcomingList.map(renderEventCard)}
+                    </>
+                  )}
 
                   {/* Past / Ended Events Separator */}
                   {endedList.length > 0 && (
@@ -488,16 +670,25 @@ export default function EventsManagementClient() {
             <h2 className={styles.statsTitle}>EVENT STATISTICS</h2>
 
             <div className={styles.statsRowsList}>
+              {events.some((e) => e.isOngoing) && (
+                <div className={styles.statRow}>
+                  <span className={styles.statRowLabel}>Ongoing / Live</span>
+                  <span className={`${styles.statRowValue} ${styles.valGreen}`}>
+                    {events.filter((e) => e.isOngoing).length}
+                  </span>
+                </div>
+              )}
+
               <div className={styles.statRow}>
                 <span className={styles.statRowLabel}>Upcoming Events</span>
                 <span className={`${styles.statRowValue} ${styles.valGold}`}>
-                  {events.filter((e) => !e.isEnded).length}
+                  {events.filter((e) => !e.isEnded && !e.isOngoing).length}
                 </span>
               </div>
 
               <div className={styles.statRow}>
                 <span className={styles.statRowLabel}>Past / Completed</span>
-                <span className={`${styles.statRowValue} ${styles.valGreen}`}>
+                <span className={`${styles.statRowValue} ${styles.valBlue}`}>
                   {events.filter((e) => e.isEnded).length}
                 </span>
               </div>

@@ -57,7 +57,7 @@ Required if **any** of these are true:
 
 ## 2. Branches
 
-Branch off `main`. Name it `type/short-description`:
+Branch off `staging` (or `main` for critical production hotfixes). Name it `type/short-description`:
 
 ```
 feat/events-page

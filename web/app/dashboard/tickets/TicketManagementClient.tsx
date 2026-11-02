@@ -11,6 +11,7 @@ import { api, ticketFields, type ApiTicketDetail, type IdeaDetail, type TicketSu
 import { loadAllSpgs } from "@/lib/memberData";
 import type { SPGRecord } from "@/lib/spgData";
 import { useDebounce } from "@/lib/useDebounce";
+import { appCache } from "@/lib/cache";
 import styles from "./TicketManagement.module.css";
 
 export type TicketCategory =
@@ -153,9 +154,17 @@ export default function TicketManagementClient() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const [tickets, setTickets] = useState<TicketItem[]>([]);
-  const [selectedTicketId, setSelectedTicketId] = useState("");
-  const [loadingTickets, setLoadingTickets] = useState(true);
+  const initialTickets = useMemo(() => {
+    const entry = appCache.get<{ total: number; items: TicketSummary[] }>("tickets:my");
+    if (entry?.data?.items) {
+      return entry.data.items.slice(0, 100).map((item) => toTicketItem(item));
+    }
+    return [];
+  }, []);
+
+  const [tickets, setTickets] = useState<TicketItem[]>(initialTickets);
+  const [selectedTicketId, setSelectedTicketId] = useState<string>(() => initialTickets[0]?.id || "");
+  const [loadingTickets, setLoadingTickets] = useState(() => initialTickets.length === 0);
   const [ticketError, setTicketError] = useState("");
   const [submitError, setSubmitError] = useState("");
   const [retryCount, setRetryCount] = useState(0);
@@ -174,14 +183,19 @@ export default function TicketManagementClient() {
     api.myTickets(token)
       .then((items) => {
         if (!active) return;
-        setTickets(items.map((item) => toTicketItem(item)));
-        setSelectedTicketId((current) => items.some((item) => item.id === current) ? current : items[0]?.id || "");
+        const mapped = items.map((item) => toTicketItem(item));
+        setTickets(mapped);
+        setSelectedTicketId((current) => mapped.some((item) => item.id === current) ? current : mapped[0]?.id || "");
         setTicketError("");
       })
       .catch(() => {
         if (!active) return;
-        setTickets([]);
-        setTicketError("Your tickets could not be loaded. Try again.");
+        setTickets((curr) => {
+          if (curr.length === 0) {
+            setTicketError("Your tickets could not be loaded. Try again.");
+          }
+          return curr;
+        });
       })
       .finally(() => { if (active) setLoadingTickets(false); });
     return () => { active = false; };

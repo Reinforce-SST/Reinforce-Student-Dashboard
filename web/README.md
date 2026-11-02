@@ -33,13 +33,13 @@ npm run build
 | `app/page.tsx` | Public club site |
 | `app/auth/` | Google sign-in and Discord link redemption |
 | `app/dashboard/` | Member activity, SPGs, tickets, events, articles, ideas, leaderboard |
-| `app/dashboard/admin/` | Authorized member, event, ticket, idea, article and merit tools |
+| `app/dashboard/search/` | Universal search across events, members, projects, tickets, and ideas |
+| `app/dashboard/admin/` | Authorized member, event, banner, ticket, idea, article and merit tools |
 | `lib/api.ts` | Typed HTTP calls to the FastAPI service |
 
-The admin banner form can publish a short badge, button label, and button
-destination with the event. Leaving them blank keeps the existing hero
-defaults. Custom destinations accept site paths or HTTPS URLs. Deploy the API
-before admins use these fields.
+The admin console supports dedicated hero banners (`/dashboard/admin/banners`)
+as well as event-linked banner configurations. Banners support custom badge text,
+CTA button labels, and custom destinations (internal site paths or HTTPS URLs).
 
 The admin SPG tab reviews registration details, accepts a proposition PDF for
 project groups, and approves the request through the ticket API. Approval

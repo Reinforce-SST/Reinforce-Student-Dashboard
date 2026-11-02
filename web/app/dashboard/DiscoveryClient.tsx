@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, type ArticleKind, type ArticleSummary } from "@/lib/api";
 import { useDebounce } from "@/lib/useDebounce";
+import { appCache } from "@/lib/cache";
 import styles from "./Discovery.module.css";
 
 /**
@@ -25,9 +26,19 @@ export default function DiscoveryClient() {
   const debouncedQuery = useDebounce(query, 400);
   const [kind, setKind] = useState<ArticleKind | "all">("all");
   const [page, setPage] = useState(1);
-  const [items, setItems] = useState<ArticleSummary[]>([]);
-  const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
+
+  const cacheKey = `articles:list:${new URLSearchParams({
+    page: String(page),
+    page_size: "20",
+    ...(debouncedQuery.trim() ? { search: debouncedQuery.trim() } : {}),
+    ...(kind !== "all" ? { kind } : {}),
+  }).toString()}`;
+
+  const cached = appCache.get<{ items: ArticleSummary[]; has_more: boolean; total: number }>(cacheKey);
+
+  const [items, setItems] = useState<ArticleSummary[]>(() => cached?.data?.items || []);
+  const [hasMore, setHasMore] = useState(() => Boolean(cached?.data?.has_more));
+  const [loading, setLoading] = useState(() => !cached?.data);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
 
@@ -37,7 +48,8 @@ export default function DiscoveryClient() {
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
+    const isCached = appCache.has(cacheKey);
+    if (!isCached) setLoading(true);
     api.listArticles(debouncedQuery, page, kind === "all" ? undefined : kind)
       .then((result) => {
         if (!active) return;
@@ -45,10 +57,10 @@ export default function DiscoveryClient() {
         setHasMore(result.has_more);
         setError("");
       })
-      .catch(() => { if (active) setError("Articles could not be loaded."); })
+      .catch(() => { if (active && items.length === 0) setError("Articles could not be loaded."); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [debouncedQuery, page, kind, revision]);
+  }, [debouncedQuery, page, kind, revision, cacheKey]);
 
   const emptyLabel = kind === "research_paper" ? "No research papers found." : "No published articles found.";
 

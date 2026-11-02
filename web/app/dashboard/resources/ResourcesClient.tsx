@@ -13,6 +13,7 @@ import {
   typeLabel,
 } from "@/lib/learningResources";
 import { useDebounce } from "@/lib/useDebounce";
+import { appCache } from "@/lib/cache";
 import styles from "../Discovery.module.css";
 
 /**
@@ -24,24 +25,32 @@ export default function ResourcesClient() {
   const [type, setType] = useState<ResourceType | "">("");
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebounce(query, 400);
-  const [items, setItems] = useState<LearningResource[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  const qs = new URLSearchParams();
+  if (type) qs.set("type", type);
+  if (debouncedQuery.trim()) qs.set("q", debouncedQuery.trim());
+  const cacheKey = `resources:list:${qs.toString() || "all"}`;
+  const cached = appCache.get<{ resources: LearningResource[]; total: number }>(cacheKey);
+
+  const [items, setItems] = useState<LearningResource[]>(() => cached?.data?.resources || []);
+  const [loading, setLoading] = useState(() => !cached?.data);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
+    const isCached = appCache.has(cacheKey);
+    if (!isCached) setLoading(true);
     api.listLearningResources({ type: type || undefined, q: debouncedQuery.trim() || undefined })
       .then((result) => {
         if (!active) return;
         setItems(result.resources);
         setError("");
       })
-      .catch(() => { if (active) setError("Learning resources could not be loaded."); })
+      .catch(() => { if (active && items.length === 0) setError("Learning resources could not be loaded."); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [type, debouncedQuery, revision]);
+  }, [type, debouncedQuery, revision, cacheKey]);
 
   const ancestors = resourceFolderAncestors(folderId);
   const folders = resourceFolders(items).filter((folder) => folder.parentId === folderId);

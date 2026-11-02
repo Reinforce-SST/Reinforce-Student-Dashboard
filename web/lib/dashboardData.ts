@@ -3,14 +3,15 @@ import type { EventSummaryItem } from "./api";
 const visibleStatuses = new Set(["published", "registration_closed", "ongoing"]);
 
 export function getDashboardEvents(events: EventSummaryItem[], now: Date) {
+  const nowMs = now.getTime();
   const visible = events.filter((event) => {
     if (!visibleStatuses.has(event.status)) return false;
     const start = new Date(event.schedule.start_time).getTime();
     if (!Number.isFinite(start)) return false;
-    if (start >= now.getTime()) return true;
-    if (event.status !== "ongoing") return false;
-    const end = event.schedule.end_time ? new Date(event.schedule.end_time).getTime() : null;
-    return end === null || (Number.isFinite(end) && end >= now.getTime());
+    const end = event.schedule.end_time
+      ? new Date(event.schedule.end_time).getTime()
+      : start + (event.schedule.duration_minutes ? event.schedule.duration_minutes * 60_000 : 7_200_000);
+    return Number.isFinite(end) ? end >= nowMs : true;
   }).sort((a, b) => new Date(a.schedule.start_time).getTime() - new Date(b.schedule.start_time).getTime());
 
   return {

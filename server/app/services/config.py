@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     vercel_team_slugs: str = "reinforce3,aryan-mishra-s-projects1"
     yuvi_bot_url: str = "http://localhost:8001/internal/verify-success"
     bot_internal_secret: str = ""
+    # Closed by default: Swagger/ReDoc/openapi.json hand an anonymous caller the
+    # full route map. Set DOCS_ENABLED=true locally to turn them back on.
+    docs_enabled: bool = False
 
     model_config = SettingsConfigDict(
         env_file=[str(BASE_DIR / ".env"), ".env"], extra="ignore"

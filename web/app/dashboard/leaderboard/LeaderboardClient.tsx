@@ -10,6 +10,7 @@ import { useMember } from "@/lib/useMember";
 import { useDebounce } from "@/lib/useDebounce";
 
 import { api, type StudentProfile, type TrackPoints } from "@/lib/api";
+import { appCache } from "@/lib/cache";
 import { type LeaderboardEntry } from "@/lib/leaderboardData";
 import styles from "./Leaderboard.module.css";
 
@@ -61,9 +62,12 @@ export default function LeaderboardClient() {
   const [pageSize, setPageSize] = useState(20);
   const [totalCount, setTotalCount] = useState(0);
 
+  const currentCacheKey = `leaderboard:${viewMode}:${selectedTrack}:${selectedTier}:${debouncedSearch.trim()}:${page}:${pageSize}`;
+  const initialCached = appCache.get<{ items: StudentProfile[]; total: number }>(currentCacheKey);
+
   const [selectedMember, setSelectedMember] = useState<StudentProfile | null>(null);
-  const [members, setMembers] = useState<StudentProfile[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [members, setMembers] = useState<StudentProfile[]>(() => initialCached?.data?.items || []);
+  const [loading, setLoading] = useState(() => !initialCached);
   const [error, setError] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
 
@@ -88,19 +92,39 @@ export default function LeaderboardClient() {
       }
     }
 
+    const cacheKey = `leaderboard:${viewMode}:${selectedTrack}:${selectedTier}:${debouncedSearch.trim()}:${page}:${pageSize}`;
+    const cached = appCache.get<{ items: StudentProfile[]; total: number }>(cacheKey);
+    const force = reloadTick > 0;
+
     let active = true;
-    setLoading(true);
+    if (!cached || force) {
+      setLoading(true);
+    } else {
+      setMembers(cached.data.items);
+      setTotalCount(cached.data.total);
+      setLoading(false);
+    }
     setError(null);
+
     Promise.allSettled([
-      api.browseUsers(token, {
-        search: debouncedSearch.trim() || undefined,
-        track: viewMode === "LEADERBOARD" && selectedTrack !== "total" ? selectedTrack : undefined,
-        tier: selectedTier === "advanced" || selectedTier === "beginner" ? selectedTier : undefined,
-        is_member: selectedTier === "open" ? false : undefined,
-        page,
-        page_size: pageSize,
-      }),
-      api.getContributionLeaderboard(token, 100),
+      appCache.fetch(
+        `browseUsers:${debouncedSearch.trim()}:${viewMode}:${selectedTrack}:${selectedTier}:${page}:${pageSize}`,
+        () =>
+          api.browseUsers(token, {
+            search: debouncedSearch.trim() || undefined,
+            track: viewMode === "LEADERBOARD" && selectedTrack !== "total" ? selectedTrack : undefined,
+            tier: selectedTier === "advanced" || selectedTier === "beginner" ? selectedTier : undefined,
+            is_member: selectedTier === "open" ? false : undefined,
+            page,
+            page_size: pageSize,
+          }),
+        { ttl: 2 * 60 * 1000, tags: ["leaderboard", "users"], force }
+      ),
+      appCache.fetch(
+        "leaderboard:contributions:100",
+        () => api.getContributionLeaderboard(token, 100),
+        { ttl: 2 * 60 * 1000, tags: ["leaderboard"], force }
+      ),
     ])
       .then(async ([usersResult, contribResult]) => {
         if (!active) return;
@@ -126,9 +150,12 @@ export default function LeaderboardClient() {
               return m;
             });
           }
+          const total = usersResult.value.total ?? items.length;
+          appCache.set(cacheKey, { items, total }, { ttl: 2 * 60 * 1000, tags: ["leaderboard", "users"] });
           setMembers(items);
-          setTotalCount(usersResult.value.total ?? items.length);
-        } else {
+          setTotalCount(total);
+          setLoading(false);
+        } else if (!cached) {
           try {
             const fallback = await api.leaderboard(token, selectedTrack === "total" ? "total" : selectedTrack, 50);
             if (active && fallback?.entries && fallback.entries.length > 0) {

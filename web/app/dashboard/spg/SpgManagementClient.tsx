@@ -11,6 +11,7 @@ import { useDebounce } from "@/lib/useDebounce";
 import { loadAllSpgs } from "@/lib/memberData";
 import { type SPGRecord } from "@/lib/spgData";
 import { api } from "@/lib/api";
+import { appCache } from "@/lib/cache";
 import styles from "./SpgManagement.module.css";
 
 export default function SpgManagementClient() {
@@ -53,8 +54,12 @@ export default function SpgManagementClient() {
   const debouncedSearch = useDebounce(searchQuery, 300);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(12);
-  const [spgs, setSpgs] = useState<SPGRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  const spgParams = selectedTrack !== "all" ? { track: selectedTrack } : {};
+  const cachedSpgs = appCache.get<SPGRecord[]>(`spgs:all:${JSON.stringify(spgParams)}`);
+
+  const [spgs, setSpgs] = useState<SPGRecord[]>(() => cachedSpgs?.data || []);
+  const [loading, setLoading] = useState(() => !cachedSpgs);
   const [loadError, setLoadError] = useState("");
   const [membersMap, setMembersMap] = useState<Record<string, { full_name: string; avatar_url?: string | null }>>({});
   const [failedAvatars, setFailedAvatars] = useState<Set<string>>(new Set());
@@ -67,14 +72,20 @@ export default function SpgManagementClient() {
   // Fetch SPGs from Backend API
   const fetchSpgs = useCallback(async () => {
     if (!token) return;
-    try {
+    const currentParams = selectedTrack !== "all" ? { track: selectedTrack } : {};
+    const hasCache = Boolean(appCache.get(`spgs:all:${JSON.stringify(currentParams)}`));
+    if (!hasCache) {
       setLoading(true);
-      setLoadError("");
+    }
+    setLoadError("");
+    try {
       const items = await loadAllSpgs(token, selectedTrack !== "all" ? selectedTrack : undefined);
       setSpgs(items);
     } catch {
-      setSpgs([]);
-      setLoadError("Project groups could not be loaded. Try again.");
+      if (!hasCache) {
+        setSpgs([]);
+        setLoadError("Project groups could not be loaded. Try again.");
+      }
     } finally {
       setLoading(false);
     }

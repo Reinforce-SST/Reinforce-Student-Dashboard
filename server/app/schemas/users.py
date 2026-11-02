@@ -160,6 +160,7 @@ class UserMeResponse(BaseModel):
     full_name: str
     avatar_url: Optional[str] = None
     discord_id: Optional[str] = None
+    discord_username: Optional[str] = None
     discord_link_version: Optional[int] = None
     is_admin: bool = False
     is_member: bool = False
