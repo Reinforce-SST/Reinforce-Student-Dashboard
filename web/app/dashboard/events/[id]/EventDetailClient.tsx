@@ -1,15 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { useMember } from "@/lib/useMember";
 import { api } from "@/lib/api";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import MemberPicker, { type PickedMember } from "@/components/dashboard/MemberPicker";
-import { type EventDocument, type LearningResource } from "@/lib/api";
+import { type EventDocument, type LearningResource, type EventRegistration } from "@/lib/api";
+import type { EventSubmissionPayload, TimelineItemSchema } from "@/types/event-matrix";
 import { formatEventDuration, getEventGraduationBatches } from "@/lib/eventsData";
 import EventAttendeesPanel from "./EventAttendeesPanel";
 import EventAttendancePanel from "./EventAttendancePanel";
+import EventTimelineSection from "./EventTimelineSection";
+import RsvpIntakeModal from "./RsvpIntakeModal";
+import ProjectSubmissionModal from "./ProjectSubmissionModal";
+import EditResponsesModal from "./EditResponsesModal";
 import styles from "./EventDetail.module.css";
 
 function formatInline(text: string): React.ReactNode[] {
@@ -162,9 +167,10 @@ function renderMarkdown(md?: string | null) {
 export default function EventDetailClient({ event }: { event: EventDocument }) {
   const { token, profile } = useMember();
   const isAdmin = Boolean(profile?.is_admin);
-  const [activeTab, setActiveTab] = useState<"overview" | "attendees" | "attendance">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "timeline" | "attendees" | "attendance">("overview");
 
   const [isRegistered, setIsRegistered] = useState(false);
+  const [myRegistration, setMyRegistration] = useState<EventRegistration | null>(null);
   const [registrationStatus, setRegistrationStatus] = useState("");
   const [registrationLoading, setRegistrationLoading] = useState(true);
   const [registrationBusy, setRegistrationBusy] = useState(false);
@@ -180,6 +186,47 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
   const [linkedResourcesError, setLinkedResourcesError] = useState(false);
   const linkedResourceIdsKey = (event.resources?.learning_resource_ids ?? []).join("|");
 
+  // Modals & Interactive States
+  const [showRsvpModal, setShowRsvpModal] = useState(false);
+  const [showSubmissionModal, setShowSubmissionModal] = useState(false);
+  const [showEditResponsesModal, setShowEditResponsesModal] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [switchingTrack, setSwitchingTrack] = useState(false);
+  const [currentTime, setCurrentTime] = useState<number>(0);
+
+  useEffect(() => {
+    setCurrentTime(Date.now());
+    const interval = setInterval(() => setCurrentTime(Date.now()), 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Active Milestone computation
+  const activeTimelineStage = useMemo(() => {
+    if (!event.timeline || event.timeline.length === 0 || !currentTime) return null;
+    const now = currentTime;
+    const sorted = [...event.timeline].sort(
+      (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+    );
+    // 1. Current in-progress milestone
+    const current = sorted.find((m) => {
+      if (m.status_override === "live") return true;
+      const s = new Date(m.start_time).getTime();
+      const e = m.end_time ? new Date(m.end_time).getTime() : s + 3600000;
+      return now >= s && now <= e;
+    });
+    if (current) return { item: current, isCurrent: true };
+
+    // 2. Next upcoming milestone
+    const upcoming = sorted.find((m) => {
+      if (m.status_override === "upcoming") return true;
+      const s = new Date(m.start_time).getTime();
+      return s > now;
+    });
+    if (upcoming) return { item: upcoming, isCurrent: false };
+
+    return null;
+  }, [event.timeline, currentTime]);
+
   useEffect(() => {
     const deadline = event.schedule?.registration_deadline;
     const check = () => setDeadlinePassed(Boolean(deadline && Date.parse(deadline) <= Date.now()));
@@ -189,10 +236,12 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
   }, [event.schedule?.registration_deadline]);
 
   useEffect(() => {
+    if (!token || !event?.id) return;
     let active = true;
     api.myEventRegistration(token, event.id).then((result) => {
       if (active) {
         setIsRegistered(result.is_registered);
+        setMyRegistration(result.registration);
         setRegistrationStatus(result.registration?.status || "");
       }
     }).catch(() => { if (active) setRegistrationError("Registration status could not be loaded."); })
@@ -219,37 +268,97 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
 
   const handleToggleRsvp = async () => {
     if (registrationBusy || registrationLoading) return;
-    setRegistrationBusy(true);
     setRegistrationError("");
-    try {
-      if (isRegistered) {
+
+    if (isRegistered) {
+      setRegistrationBusy(true);
+      try {
         await api.cancelEventRegistration(token, event.id);
         setIsRegistered(false);
+        setMyRegistration(null);
         setRegistrationStatus("");
-      } else {
-        const memberUids = teammates.map((member) => member.id);
-        if (event.participation?.mode === "team" && !teamName.trim()) {
-          setRegistrationError("Enter a team name before registering.");
-          return;
-        }
-        // The team counts you; the server enforces the same rule.
-        if (event.participation?.mode === "team" && memberUids.length + 1 < minTeamSize) {
-          setRegistrationError(`This event needs teams of at least ${minTeamSize}. Add ${minTeamSize - 1 - memberUids.length} more ${minTeamSize - 1 - memberUids.length === 1 ? "teammate" : "teammates"}.`);
-          return;
-        }
-        const result = await api.registerForEvent(token, event.id, event.participation?.mode === "team"
-          ? { team_name: teamName.trim(), member_uids: memberUids } : {});
-        setIsRegistered(true);
-        setRegistrationStatus(result.status);
+        const refreshed = await api.getEvent(event.id, token);
+        setRegisteredCount(refreshed.stats?.registered_count ?? Math.max(0, registeredCount - 1));
+      } catch (err) {
+        setRegistrationError(err instanceof Error ? err.message : "Failed to cancel registration.");
+      } finally {
+        setRegistrationBusy(false);
       }
+      return;
+    }
+
+    const hasCustomFields = (event.custom_registration_fields?.length ?? 0) > 0;
+    const hasTracks = (event.event_tracks?.length ?? 0) > 0;
+
+    // If event has custom intake questions or tracks, open the modal for detailed intake answers
+    if (hasCustomFields || hasTracks) {
+      setShowRsvpModal(true);
+      return;
+    }
+
+    setRegistrationBusy(true);
+    try {
+      const memberUids = teammates.map((member) => member.id);
+      if (event.participation?.mode === "team" && !teamName.trim()) {
+        setRegistrationError("Enter a team name before registering.");
+        return;
+      }
+      // The team counts you; the server enforces the same rule.
+      if (event.participation?.mode === "team" && memberUids.length + 1 < minTeamSize) {
+        setRegistrationError(`This event needs teams of at least ${minTeamSize}. Add ${minTeamSize - 1 - memberUids.length} more ${minTeamSize - 1 - memberUids.length === 1 ? "teammate" : "teammates"}.`);
+        return;
+      }
+      const result: any = await api.registerForEvent(
+        token,
+        event.id,
+        event.participation?.mode === "team" ? { team_name: teamName.trim(), member_uids: memberUids } : {}
+      );
+      setIsRegistered(true);
+      setRegistrationStatus(result.status || "registered");
+      setMyRegistration(result);
+      api.myEventRegistration(token, event.id).then((fresh) => {
+        if (fresh.is_registered && fresh.registration) {
+          setMyRegistration(fresh.registration);
+        }
+      });
       const refreshed = await api.getEvent(event.id, token);
-      setRegisteredCount(refreshed.stats?.registered_count ?? registeredCount);
+      setRegisteredCount(refreshed.stats?.registered_count ?? registeredCount + 1);
     } catch (err) {
       // Server messages name members by account ID; show the teammate's name.
-      const message = err instanceof Error ? err.message : "Registration could not be updated.";
+      const message = err instanceof Error ? err.message : "Registration could not be completed.";
       setRegistrationError(teammates.reduce((text, member) => text.split(member.id).join(member.full_name), message));
     } finally {
       setRegistrationBusy(false);
+    }
+  };
+
+  const handleSwitchTrack = async (newTrackId: string) => {
+    if (!token || switchingTrack) return;
+    let currentReg = myRegistration;
+    if (!currentReg?.id) {
+      try {
+        const fresh = await api.myEventRegistration(token, event.id);
+        if (fresh.registration) {
+          currentReg = fresh.registration;
+          setMyRegistration(fresh.registration);
+        }
+      } catch {
+        // continue
+      }
+    }
+    if (!currentReg?.id) {
+      setRegistrationError("Could not locate registration record to switch tracks.");
+      return;
+    }
+    setSwitchingTrack(true);
+    setRegistrationError("");
+    try {
+      const res = await api.updateRegistrationTrack(token, event.id, currentReg.id, newTrackId);
+      setMyRegistration((prev) => (prev ? { ...prev, selected_track_id: res.selected_track_id } : prev));
+    } catch (err) {
+      setRegistrationError(err instanceof Error ? err.message : "Failed to switch track.");
+    } finally {
+      setSwitchingTrack(false);
     }
   };
 
@@ -297,7 +406,10 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
   const legacyDefaultYears = eligibleYears?.length === 4 && [1, 2, 3, 4].every((year) => eligibleYears.includes(year));
   const displayedBatches = legacyDefaultYears ? getEventGraduationBatches() : eligibleYears;
   const fillPercent = capacity ? Math.min(100, Math.round((registeredCount / capacity) * 100)) : 0;
-  const registrationOpen = (event.status === "published" || event.status === "ongoing") && !deadlinePassed;
+  const isDraftMode = event.status === "draft";
+  const registrationOpen =
+    ((event.status === "published" || event.status === "ongoing") || (isAdmin && isDraftMode)) &&
+    !deadlinePassed;
 
   return (
     <div className={styles.pageContainer}>
@@ -308,7 +420,13 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
         </Link>
 
         <div className={styles.statusChipsRow}>
-          <span className={styles.formatChip}>{(event.format || "ONLINE").toUpperCase()}</span>
+          {isDraftMode ? (
+            <span className={styles.draftStatusChip}>
+              🔒 DRAFT MODE (ADMIN ONLY)
+            </span>
+          ) : (
+            <span className={styles.formatChip}>{(event.format || "ONLINE").toUpperCase()}</span>
+          )}
           <span className={getTrackChipClass(event.track || "misc")}>
             {(event.track || "GENERAL").toUpperCase()} TRACK
           </span>
@@ -335,7 +453,25 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
           <div className={styles.heroSidePanel}>
             <div className={styles.heroTopMeta}>
               <h1 className={styles.eventTitle}>{event.title}</h1>
+              {activeTimelineStage && (
+                <div className={styles.activeMilestonePill}>
+                  <span className={styles.pulseDot} />
+                  <span>
+                    <strong>{activeTimelineStage.isCurrent ? "Active Stage:" : "Next Stage:"}</strong>{" "}
+                    {activeTimelineStage.item.title}
+                  </span>
+                </div>
+              )}
             </div>
+
+            {isDraftMode && (
+              <div className={styles.draftModeAlertBanner}>
+                <MemberIcon name="shield" size={14} />
+                <span>
+                  <strong>Admin Draft Mode:</strong> This event is invisible to regular members. Admins can test registration, matrix operations, and deliverables workflows.
+                </span>
+              </div>
+            )}
 
             {event.description && (
               <p className={styles.eventSubtitle}>{event.description}</p>
@@ -356,7 +492,15 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                 ) : (
                   <>
                     <MemberIcon name="plus" size={16} />
-                    {!registrationOpen ? "Registration Closed" : event.participation?.mode === "team" ? "Register Team (RSVP)" : "RSVP for Event"}
+                    {!registrationOpen
+                      ? "Registration Closed"
+                      : isDraftMode
+                      ? event.participation?.mode === "team"
+                        ? "Test Register Team (Draft)"
+                        : "Test RSVP (Draft)"
+                      : event.participation?.mode === "team"
+                      ? "Register Team (RSVP)"
+                      : "RSVP for Event"}
                   </>
                 )}
               </button>
@@ -386,6 +530,8 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                       : "✓ Registered"
                     : !registrationOpen
                     ? "Closed"
+                    : isDraftMode
+                    ? "Draft (Admin Test)"
                     : "RSVP Open"}
                 </span>
               </div>
@@ -401,7 +547,85 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                   Open Meeting
                 </a>
               )}
+
+              {(isAdmin || event.can_access_matrix) && (
+                <Link
+                  href={`/dashboard/events/${encodeURIComponent(event.slug || event.id)}/matrix`}
+                  className={styles.heroMatrixLink}
+                  title="Open live Event Matrix in a dedicated view"
+                >
+                  <MemberIcon name="table" size={15} />
+                  Open Event Matrix ↗
+                </Link>
+              )}
             </div>
+
+            {/* Registered attendee metadata: Team Invite Code, Track Switcher, Roster Lock */}
+            {isRegistered && (
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", marginTop: "10px" }}>
+                {myRegistration?.invite_code && (
+                  <div className={styles.teamInvitePill}>
+                    <span>Team Code:</span>
+                    <span className={styles.inviteCodeMono}>{myRegistration.invite_code}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (myRegistration?.invite_code) {
+                          navigator.clipboard.writeText(myRegistration.invite_code);
+                          setCopiedCode(true);
+                          setTimeout(() => setCopiedCode(false), 2000);
+                        }
+                      }}
+                      className={styles.copyCodeBtn}
+                      title="Copy team invite code"
+                    >
+                      <MemberIcon name="tag" size={11} />
+                      {copiedCode ? "Copied!" : "Copy"}
+                    </button>
+                  </div>
+                )}
+
+                {event.team_settings?.lock_rosters_at && (
+                  <div className={styles.rosterLockWarning}>
+                    <MemberIcon name="clock" size={12} />
+                    <span>
+                      {currentTime > 0 && currentTime >= new Date(event.team_settings.lock_rosters_at).getTime()
+                        ? "🔒 Rosters Locked"
+                        : `Rosters lock ${new Date(event.team_settings.lock_rosters_at).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`}
+                    </span>
+                  </div>
+                )}
+
+                {event.event_tracks && event.event_tracks.length > 0 && (
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                    <span style={{ fontSize: "12px", color: "#8c8c98" }}>Track:</span>
+                    <select
+                      value={myRegistration?.selected_track_id || ""}
+                      onChange={(e) => handleSwitchTrack(e.target.value)}
+                      disabled={switchingTrack}
+                      style={{
+                        background: "#18181c",
+                        border: "1px solid #31343a",
+                        color: "#e5b731",
+                        borderRadius: "6px",
+                        padding: "4px 8px",
+                        fontSize: "12px",
+                        fontWeight: "600",
+                        outline: "none",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <option value="">-- No Track --</option>
+                      {event.event_tracks.map((tr) => (
+                        <option key={tr.track_id} value={tr.track_id}>
+                          {tr.name} {tr.max_teams ? `(Cap: ${tr.max_teams})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
 
             {event.participation?.mode === "team" && registrationOpen && !isRegistered && (
               <div className={styles.teamInputBlock}>
@@ -453,6 +677,18 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
 
         <button
           type="button"
+          className={`${styles.eventTabBtn} ${activeTab === "timeline" ? styles.eventTabBtnActive : ""}`}
+          onClick={() => setActiveTab("timeline")}
+        >
+          <MemberIcon name="clock" size={15} />
+          Timeline & Milestones
+          {event.timeline && event.timeline.length > 0 && (
+            <span className={styles.tabCountBadge}>{event.timeline.length}</span>
+          )}
+        </button>
+
+        <button
+          type="button"
           className={`${styles.eventTabBtn} ${activeTab === "attendees" ? styles.eventTabBtnActive : ""}`}
           onClick={() => setActiveTab("attendees")}
         >
@@ -471,6 +707,16 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
             Attendance Management (Admin)
           </button>
         )}
+
+        {(isAdmin || event.can_access_matrix) && (
+          <Link
+            href={`/dashboard/events/${encodeURIComponent(event.slug || event.id)}/matrix`}
+            className={styles.eventTabMatrixLink}
+          >
+            <MemberIcon name="table" size={15} />
+            Event Matrix ↗
+          </Link>
+        )}
       </div>
 
       {/* TAB 1: OVERVIEW & SPECIFICATIONS */}
@@ -478,6 +724,202 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
         <div className={styles.mainGrid}>
         {/* Left Main Column */}
         <div className={styles.contentColumn}>
+          {/* Project Deliverables Card (For Registered Attendees) */}
+          {isRegistered && (
+            <section className={styles.deliverablesCard} aria-label="Project Deliverables">
+              <div className={styles.deliverablesHeader}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                  <h2 className={styles.sectionTitle} style={{ margin: 0 }}>
+                    <MemberIcon name="articles" size={18} />
+                    Project Deliverables & Submission
+                  </h2>
+                  <span
+                    className={`${styles.deliverablesStatusTag} ${
+                      myRegistration?.submission
+                        ? styles.statusSubmitted
+                        : styles.statusPending
+                    }`}
+                  >
+                    {myRegistration?.submission
+                      ? "✓ Submitted"
+                      : "Submission Pending"}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowSubmissionModal(true)}
+                  className={styles.openSubmissionModalBtn}
+                >
+                  <MemberIcon name="plus" size={14} />
+                  {myRegistration?.submission
+                    ? "Update Deliverables"
+                    : "Submit Project Links"}
+                </button>
+              </div>
+
+              {myRegistration?.submission ? (
+                <div className={styles.deliverablesLinksList}>
+                  {myRegistration.submission.repo_url && (
+                    <a
+                      href={myRegistration.submission.repo_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={styles.deliverableLinkItem}
+                    >
+                      <span>💻</span>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        Repository
+                      </span>
+                    </a>
+                  )}
+                  {myRegistration.submission.slides_url && (
+                    <a
+                      href={myRegistration.submission.slides_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={styles.deliverableLinkItem}
+                    >
+                      <span>📊</span>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        Pitch Slides
+                      </span>
+                    </a>
+                  )}
+                  {myRegistration.submission.demo_url && (
+                    <a
+                      href={myRegistration.submission.demo_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={styles.deliverableLinkItem}
+                    >
+                      <span>🎥</span>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        Live Demo
+                      </span>
+                    </a>
+                  )}
+                  {myRegistration.submission.paper_link && (
+                    <a
+                      href={myRegistration.submission.paper_link}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={styles.deliverableLinkItem}
+                    >
+                      <span>📄</span>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        Paper / Writeup
+                      </span>
+                    </a>
+                  )}
+                  {myRegistration.submission.notes && (
+                    <p style={{ margin: "6px 0 0 0", fontSize: "12.5px", color: "#a1a1aa", gridColumn: "1 / -1" }}>
+                      <strong>Notes:</strong> {myRegistration.submission.notes}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p style={{ margin: 0, fontSize: "13px", color: "#8c8c98" }}>
+                  No deliverables submitted yet. Upload your repository, pitch slides, or demo before the submission deadline.
+                </p>
+              )}
+            </section>
+          )}
+
+          {/* Custom Intake Form Responses Card (For Registered Attendees) */}
+          {isRegistered && (
+            (event.custom_registration_fields?.length ?? 0) > 0 ||
+            Boolean(myRegistration?.custom_responses && Object.keys(myRegistration.custom_responses).length > 0)
+          ) && (
+            <section className={styles.intakeCard} aria-label="Registration Form Answers">
+              <div className={styles.intakeHeader}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                  <h2 className={styles.sectionTitle} style={{ margin: 0 }}>
+                    <MemberIcon name="tag" size={18} />
+                    Registration Form Responses
+                  </h2>
+                  <span
+                    className={styles.deliverablesStatusTag}
+                    style={{
+                      background: "rgba(229, 183, 49, 0.12)",
+                      color: "#e5b731",
+                      border: "1px solid rgba(229, 183, 49, 0.3)",
+                    }}
+                  >
+                    ✓ Intake Recorded
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowEditResponsesModal(true)}
+                  className={styles.editIntakeBtn}
+                  title="Edit your submitted answers for this event"
+                >
+                  <MemberIcon name="edit" size={13} />
+                  Edit Responses
+                </button>
+              </div>
+
+              <div className={styles.intakeGrid}>
+                {event.custom_registration_fields?.map((cf) => {
+                  const val =
+                    cf.applies_to === "team"
+                      ? myRegistration?.custom_responses?.[cf.field_id]
+                      : myRegistration?.member_responses?.[profile?.id || ""]?.[cf.field_id] ??
+                        myRegistration?.custom_responses?.[cf.field_id];
+
+                  const hasVal = val !== undefined && val !== null && val !== "";
+
+                  return (
+                    <div key={cf.field_id} className={styles.intakeFieldBox}>
+                      <div className={styles.intakeFieldHeader}>
+                        <span className={styles.intakeFieldLabel}>{cf.label}</span>
+                        <span
+                          className={styles.intakeFieldScope}
+                          style={{
+                            background:
+                              cf.applies_to === "team"
+                                ? "rgba(229, 183, 49, 0.12)"
+                                : "rgba(56, 189, 248, 0.12)",
+                            color: cf.applies_to === "team" ? "#e5b731" : "#38bdf8",
+                            border: `1px solid ${
+                              cf.applies_to === "team"
+                                ? "rgba(229, 183, 49, 0.3)"
+                                : "rgba(56, 189, 248, 0.3)"
+                            }`,
+                          }}
+                        >
+                          {cf.applies_to === "team" ? "Team" : "Individual"}
+                        </span>
+                      </div>
+
+                      <div className={styles.intakeFieldValue}>
+                        {!hasVal ? (
+                          <span className={styles.intakeFieldValueEmpty}>Not provided</span>
+                        ) : cf.field_type === "boolean" ? (
+                          <span>{val ? "✓ Yes, Confirmed" : "✗ No"}</span>
+                        ) : cf.field_type === "url" ? (
+                          <a
+                            href={String(val)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className={styles.intakeFieldLink}
+                          >
+                            <span>🔗</span>
+                            <span>{String(val)}</span>
+                          </a>
+                        ) : (
+                          <span>{String(val)}</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
           {/* Detailed Overview */}
           <section className={styles.sectionCard} aria-label="Event Detailed Overview">
             <h2 className={styles.sectionTitle}>
@@ -728,14 +1170,27 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
       </div>
       )}
 
-      {/* TAB 2: REGISTERED ATTENDEES & SPGS */}
+      {/* TAB 2: TIMELINE & MILESTONES */}
+      {activeTab === "timeline" && (
+        <section className={styles.sectionCard} aria-label="Event Timeline">
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
+            <h2 className={styles.sectionTitle}>
+              <MemberIcon name="clock" size={18} />
+              Event Milestone Schedule & Deadlines
+            </h2>
+          </div>
+          <EventTimelineSection timeline={event.timeline || []} />
+        </section>
+      )}
+
+      {/* TAB 3: REGISTERED ATTENDEES & SPGS */}
       {activeTab === "attendees" && (
         <section className={styles.sectionCard} aria-label="Registered Attendees">
           <EventAttendeesPanel eventId={event.id} token={token} />
         </section>
       )}
 
-      {/* TAB 3: ADMIN ATTENDANCE MANAGEMENT */}
+      {/* TAB 4: ADMIN ATTENDANCE MANAGEMENT */}
       {activeTab === "attendance" && isAdmin && (
         <section className={styles.sectionCard} aria-label="Attendance Console">
           <EventAttendancePanel
@@ -745,6 +1200,87 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
           />
         </section>
       )}
+
+      {/* Dynamic RSVP Intake Modal */}
+      <RsvpIntakeModal
+        isOpen={showRsvpModal}
+        onClose={() => setShowRsvpModal(false)}
+        event={event}
+        token={token}
+        currentUserId={profile?.id || ""}
+        initialTeamName={teamName}
+        initialTeammates={teammates}
+        onSuccess={(res: any) => {
+          setIsRegistered(true);
+          setRegistrationStatus(res?.status || "registered");
+          setMyRegistration(res?.registration || res);
+          api.myEventRegistration(token, event.id).then((fresh) => {
+            if (fresh.is_registered && fresh.registration) {
+              setMyRegistration(fresh.registration);
+            }
+          });
+          api.getEvent(event.id, token).then((refreshed) => {
+            setRegisteredCount(refreshed.stats?.registered_count ?? registeredCount + 1);
+          });
+        }}
+      />
+
+      {/* Project Deliverables Submission Modal */}
+      <ProjectSubmissionModal
+        isOpen={showSubmissionModal}
+        onClose={() => setShowSubmissionModal(false)}
+        eventId={event.id}
+        eventTitle={event.title}
+        timeline={event.timeline}
+        initialSubmission={myRegistration?.submission}
+        token={token}
+        onSuccess={(savedSubmission) => {
+          setMyRegistration((prev) => (prev ? { ...prev, submission: savedSubmission } : prev));
+        }}
+      />
+
+      {/* Edit Registration Responses Modal */}
+      <EditResponsesModal
+        isOpen={showEditResponsesModal}
+        onClose={() => setShowEditResponsesModal(false)}
+        event={event}
+        token={token}
+        currentUserId={profile?.id || ""}
+        initialResponses={
+          event.custom_registration_fields?.reduce((acc, cf) => {
+            const val =
+              cf.applies_to === "team"
+                ? myRegistration?.custom_responses?.[cf.field_id]
+                : myRegistration?.member_responses?.[profile?.id || ""]?.[cf.field_id] ??
+                  myRegistration?.custom_responses?.[cf.field_id];
+            if (val !== undefined && val !== null) {
+              acc[cf.field_id] = val;
+            }
+            return acc;
+          }, {} as Record<string, any>) || {}
+        }
+        onSuccess={(updatedUserResponses, updatedCustom) => {
+          setMyRegistration((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              custom_responses: { ...prev.custom_responses, ...updatedCustom },
+              member_responses: {
+                ...prev.member_responses,
+                [profile?.id || ""]: {
+                  ...(prev.member_responses?.[profile?.id || ""] || {}),
+                  ...updatedUserResponses,
+                },
+              },
+            };
+          });
+          api.myEventRegistration(token, event.id).then((fresh) => {
+            if (fresh.is_registered && fresh.registration) {
+              setMyRegistration(fresh.registration);
+            }
+          });
+        }}
+      />
     </div>
   );
 }

@@ -31,7 +31,7 @@ export type CalendarEventItem = {
   bannerUrl?: string | null;
 };
 
-function mapEventToCalendarItem(ev: any, now = Date.now()): CalendarEventItem {
+function mapEventToCalendarItem(ev: any, now = Date.now(), isAdmin = false): CalendarEventItem {
   const start = new Date(ev.schedule.start_time);
   const startMs = start.getTime();
   const endMs = ev.schedule.end_time
@@ -41,7 +41,8 @@ function mapEventToCalendarItem(ev: any, now = Date.now()): CalendarEventItem {
         : null);
 
   const isCompleted = ev.status === "completed" || (endMs !== null && endMs <= now);
-  const isOngoing = !isCompleted && ev.status !== "archived" && ev.status !== "draft" &&
+  const isDraft = ev.status === "draft";
+  const isOngoing = !isCompleted && !isDraft && ev.status !== "archived" &&
     (ev.status === "ongoing" || (Number.isFinite(startMs) && startMs <= now && (endMs !== null ? endMs > now : true)));
   const isEnded = isCompleted;
 
@@ -56,14 +57,16 @@ function mapEventToCalendarItem(ev: any, now = Date.now()): CalendarEventItem {
 
   const rawType = (ev.event_type || "event").toLowerCase();
   const registrationOpen = !isEnded && !isOngoing &&
-    (ev.status === "published") &&
+    (ev.status === "published" || (isAdmin && isDraft)) &&
     (!ev.schedule.registration_deadline || new Date(ev.schedule.registration_deadline).getTime() >= now);
   const loc =
     ev.venue_info?.room ||
     ev.venue_info?.venue_name ||
     (ev.format === "online" ? "Online" : "Venue to be announced");
 
-  const statusText = isEnded
+  const statusText = isDraft
+    ? "DRAFT (ADMIN)"
+    : isEnded
     ? "ENDED"
     : isOngoing
     ? "ONGOING"
@@ -83,7 +86,7 @@ function mapEventToCalendarItem(ev: any, now = Date.now()): CalendarEventItem {
     time: timeStr,
     location: loc,
     statusText,
-    statusType: isEnded ? "ended" : isOngoing ? "ongoing" : "available",
+    statusType: isDraft ? "limited" : isEnded ? "ended" : isOngoing ? "ongoing" : "available",
     registrationOpen,
     isEnded,
     isOngoing,
@@ -94,7 +97,8 @@ function mapEventToCalendarItem(ev: any, now = Date.now()): CalendarEventItem {
 
 export default function EventsManagementClient() {
   const router = useRouter();
-  const { token } = useMember();
+  const { token, profile } = useMember();
+  const isAdmin = Boolean(profile?.is_admin);
   const [activeTab, setActiveTab] = useState<"ALL" | "WORKSHOPS" | "HACKATHONS" | "MEETUPS">("ALL");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ONGOING" | "UPCOMING" | "COMPLETED">("ALL");
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
@@ -108,7 +112,7 @@ export default function EventsManagementClient() {
         !ev.event_type?.toLowerCase().includes("banner") &&
         ["published", "registration_closed", "ongoing", "completed"].includes(ev.status)
       )
-      .map((ev: any) => mapEventToCalendarItem(ev, now));
+      .map((ev: any) => mapEventToCalendarItem(ev, now, isAdmin));
   });
   const [loading, setLoading] = useState(() => !appCache.has("events:all"));
   const [loadError, setLoadError] = useState("");
@@ -138,12 +142,14 @@ export default function EventsManagementClient() {
         if (allFetched.length > 0) {
           const now = Date.now();
           const mapped: CalendarEventItem[] = allFetched
-            .filter((ev) =>
-              !ev.event_type?.toLowerCase().includes("banner") &&
-              ["published", "registration_closed", "ongoing", "completed"].includes(ev.status)
-            )
-            .map((ev) => mapEventToCalendarItem(ev, now));
+            .filter((ev) => {
+              if (ev.event_type?.toLowerCase().includes("banner")) return false;
+              if (isAdmin && ev.status === "draft") return true;
+              return ["published", "registration_closed", "ongoing", "completed"].includes(ev.status);
+            })
+            .map((ev) => mapEventToCalendarItem(ev, now, isAdmin));
 
+          // Sort upcoming events first (ascending by start date), followed by ended events (descending by start date)
           mapped.sort((a, b) => {
             if (a.isOngoing !== b.isOngoing) {
               return a.isOngoing ? -1 : 1;

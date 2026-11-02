@@ -7,14 +7,16 @@ and post-event feedback.
 Strictly follows zero user denormalization (pure UID references).
 """
 
+import csv
 from datetime import datetime, timezone
 import hashlib
 import io
+import secrets
 from typing import Any, Dict, List, Optional, Set
 import uuid
 
-import csv
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
+from fastapi.responses import JSONResponse, StreamingResponse
 from google.cloud import firestore
 
 from app.api.security import get_admin_user, get_current_user, get_optional_current_user
@@ -29,24 +31,40 @@ from app.schemas.contributions import (
     ContributionTrack,
 )
 from app.schemas.events import (
+    AssignAllColumnRequest,
+    BatchUpdateMatrixRequest,
+    CreateMatrixColumnRequest,
+    CustomFieldSchema,
     EventCreate,
     EventDocument,
     EventEligibility,
     EventListResponse,
+    EventMatrixResponse,
     EventParticipationConfig,
     EventRegisterRequest,
     EventResources,
     EventStats,
     EventStatus,
     EventStatusUpdate,
+    EventSubmissionRequest,
     EventSummary,
     EventTrack,
+    EventTrackSchema,
     EventUpdate,
     EventWinner,
     EventWinnersUpdateRequest,
     FeedbackDocument,
     FeedbackSubmitRequest,
     FeedbackSummaryResponse,
+    MATRIX_ADAPTERS,
+    MatrixAccessUpdateRequest,
+    MatrixAttendanceUpdateRequest,
+    MatrixCellUpdateItem,
+    MatrixColumnDef,
+    MatrixColumnType,
+    MatrixRowHydrated,
+    MatrixSchemaType,
+    MatrixSettingsUpdateRequest,
     MyRegistrationResponse,
     ManualRegistrationRequest,
     PointsRewardConfig,
@@ -57,6 +75,11 @@ from app.schemas.events import (
     RollCallResponse,
     SPGDecisionAction,
     SPGDecisionRequest,
+    TeamSettingsSchema,
+    TimelineItemSchema,
+    UpdateMatrixCellRequest,
+    UpdateMemberCustomResponsesRequest,
+    UpdateRegistrationTrackRequest,
     VenueInfo,
     current_graduation_batches,
     WinnerAwardRequest,
@@ -72,6 +95,7 @@ FEEDBACK_SUBCOLLECTION = "feedback"
 SPGS_COLLECTION = "spgs"
 USERS_COLLECTION = "users"
 CONTRIBUTIONS_COLLECTION = "contributions"
+IDEAS_COLLECTION = "ideas"
 
 
 # --- Helpers ---
@@ -381,6 +405,27 @@ def list_events(
     return EventListResponse(events=paged, total=total)
 
 
+def _check_matrix_access(
+    event_data: Dict[str, Any],
+    current_user: Optional[Dict[str, Any]],
+    require_edit: bool = False,
+) -> bool:
+    is_admin = is_admin_user(current_user)
+    if is_admin:
+        return True
+    if event_data.get("status") in {EventStatus.DRAFT.value, EventStatus.ARCHIVED.value}:
+        return False
+    if not current_user:
+        return bool(event_data.get("matrix_is_public") and not require_edit)
+    uid = get_user_uid(current_user)
+    is_volunteer = bool(uid and uid in (event_data.get("matrix_access_uids") or []))
+    if is_volunteer:
+        return True
+    if not require_edit and event_data.get("matrix_is_public"):
+        return True
+    return False
+
+
 @router.get("/{id_or_slug}", response_model=EventDocument)
 def get_event_detail(
     id_or_slug: str,
@@ -388,7 +433,13 @@ def get_event_detail(
 ):
     """Get full event details, schedule, eligibility, and resource links."""
     doc = _get_event_doc_or_404(id_or_slug)
-    event = _doc_to_event_document(doc)
+    raw_data = doc.to_dict() or {}
+    raw_data["id"] = doc.id
+    raw_data["can_access_matrix"] = _check_matrix_access(raw_data, current_user)
+    if not is_admin_user(current_user):
+        raw_data["matrix_access_uids"] = []
+
+    event = EventDocument.model_validate(raw_data)
     if event.status in {
         EventStatus.DRAFT.value,
         EventStatus.ARCHIVED.value,
@@ -458,10 +509,11 @@ def register_for_event(
         event.status != EventStatus.PUBLISHED.value
         and event.status != EventStatus.ONGOING.value
     ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Registration is not open for this event (status: {event.status})",
-        )
+        if not (event.status == EventStatus.DRAFT.value and is_admin_user(current_user)):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Registration is not open for this event (status: {event.status})",
+            )
     if event.schedule.registration_deadline and _parse_utc(
         event.schedule.registration_deadline
     ) < datetime.now(timezone.utc):
@@ -509,7 +561,76 @@ def register_for_event(
             profile,
         )
 
-    # 4. Reserve capacity and create the registration/SPG in one transaction.
+    # 4. Validate custom intake fields (individual vs team applies_to)
+    custom_fields = event.custom_registration_fields or []
+    cleaned_custom_responses: Dict[str, Any] = dict(payload.custom_responses or {})
+    cleaned_member_responses: Dict[str, Dict[str, Any]] = {
+        m_uid: dict(res) for m_uid, res in (payload.member_responses or {}).items()
+    }
+
+    for cf in custom_fields:
+        f_id = cf.field_id
+        if cf.applies_to == "team":
+            val = cleaned_custom_responses.get(f_id)
+            if cf.required and (val is None or (isinstance(val, str) and not val.strip())):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Field '{cf.label}' ({f_id}) is required.",
+                )
+            if val is not None and cf.field_type == "select" and cf.options:
+                if str(val) not in cf.options:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail=f"Value for '{cf.label}' must be one of: {', '.join(cf.options)}",
+                    )
+        else:
+            # Individual field
+            if event.participation.mode.value == "solo":
+                val = cleaned_custom_responses.get(f_id)
+                if val is None:
+                    val = cleaned_member_responses.get(user_uid, {}).get(f_id)
+                if cf.required and (val is None or (isinstance(val, str) and not val.strip())):
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail=f"Field '{cf.label}' ({f_id}) is required.",
+                    )
+                if val is not None and cf.field_type == "select" and cf.options:
+                    if str(val) not in cf.options:
+                        raise HTTPException(
+                            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail=f"Value for '{cf.label}' must be one of: {', '.join(cf.options)}",
+                        )
+                cleaned_custom_responses[f_id] = val
+                cleaned_member_responses.setdefault(user_uid, {})[f_id] = val
+            else:
+                for m_uid in member_uids:
+                    m_val = cleaned_member_responses.get(m_uid, {}).get(f_id)
+                    if m_val is None:
+                        m_val = cleaned_custom_responses.get(f_id)
+                    if cf.required and (m_val is None or (isinstance(m_val, str) and not m_val.strip())):
+                        raise HTTPException(
+                            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail=f"Individual field '{cf.label}' ({f_id}) is required for member {m_uid}.",
+                        )
+                    if m_val is not None and cf.field_type == "select" and cf.options:
+                        if str(m_val) not in cf.options:
+                            raise HTTPException(
+                                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail=f"Value for '{cf.label}' for member {m_uid} must be one of: {', '.join(cf.options)}",
+                            )
+                    cleaned_member_responses.setdefault(m_uid, {})[f_id] = m_val
+
+    # 5. Validate track choice
+    selected_track_id = payload.selected_track_id
+    if selected_track_id:
+        track_exists = any(t.track_id == selected_track_id for t in (event.event_tracks or []))
+        if not track_exists:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Track '{selected_track_id}' is not a valid track for this event.",
+            )
+
+    # 6. Reserve capacity and create the registration/SPG in one transaction.
     regs_ref = (
         db.collection(EVENTS_COLLECTION)
         .document(event_id)
@@ -527,10 +648,11 @@ def register_for_event(
             EventStatus.PUBLISHED.value,
             EventStatus.ONGOING.value,
         }:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Registration is not open for this event (status: {fresh_event.status})",
-            )
+            if not (fresh_event.status == EventStatus.DRAFT.value and is_admin_user(current_user)):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Registration is not open for this event (status: {fresh_event.status})",
+                )
         if fresh_event.schedule.registration_deadline and _parse_utc(
             fresh_event.schedule.registration_deadline
         ) < datetime.now(timezone.utc):
@@ -558,6 +680,27 @@ def register_for_event(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Event team-size rules changed; review the registration.",
                 )
+            if fresh_event.team_settings and fresh_event.team_settings.lock_rosters_at:
+                lock_dt = _parse_utc(str(fresh_event.team_settings.lock_rosters_at))
+                if lock_dt <= datetime.now(timezone.utc) and not is_admin_user(current_user):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Team registrations are locked for this event.",
+                    )
+
+        if selected_track_id:
+            fresh_track = next((t for t in (fresh_event.event_tracks or []) if t.track_id == selected_track_id), None)
+            if fresh_track and fresh_track.max_teams:
+                track_regs = list(
+                    transaction.get(regs_ref.where("selected_track_id", "==", selected_track_id))
+                )
+                active_track_teams = sum(1 for d in track_regs if _active_registration(d.to_dict() or {}))
+                if active_track_teams >= fresh_track.max_teams:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Track '{fresh_track.name}' has reached its maximum capacity of {fresh_track.max_teams} teams.",
+                    )
+
         for member_uid in member_uids:
             _check_member_eligibility(
                 fresh_event, member_uid, member_profiles[member_uid]
@@ -583,11 +726,18 @@ def register_for_event(
             else RegistrationStatus.WAITLISTED.value
         )
         spg_id = None
-        if fresh_event.participation.requires_event_spg and fits:
+        should_spawn_spg = (
+            fresh_event.participation.requires_event_spg
+            or (fresh_event.team_settings and fresh_event.team_settings.auto_convert_to_spg)
+        ) and fits
+        if should_spawn_spg and team_name:
             spg_id, spg_data = _event_spg_data(
                 fresh_event, event_id, user_uid, member_uids, team_name
             )
             transaction.set(db.collection(SPGS_COLLECTION).document(spg_id), spg_data)
+
+        invite_code = secrets.token_hex(3).upper() if team_name else None
+
         registration_data = {
             "id": reg_id,
             "event_id": event_id,
@@ -596,6 +746,11 @@ def register_for_event(
             "member_uids": member_uids,
             "spg_id": spg_id,
             "spg_status": None,
+            "custom_responses": cleaned_custom_responses,
+            "member_responses": cleaned_member_responses,
+            "selected_track_id": selected_track_id,
+            "invite_code": invite_code,
+            "submission": None,
             "status": reg_status,
             "checked_in_at": None,
             "checked_in_by": None,
@@ -653,6 +808,15 @@ def cancel_registration(
         event_snap = event_ref.get(transaction=transaction)
         fresh = event_snap.to_dict() or {}
         fresh_event = _doc_to_event_document(event_snap)
+
+        if reg_data.get("team_name") and fresh_event.team_settings and fresh_event.team_settings.lock_rosters_at:
+            lock_dt = _parse_utc(str(fresh_event.team_settings.lock_rosters_at))
+            if lock_dt <= datetime.now(timezone.utc) and not is_admin_user(current_user):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Team rosters are locked for this event. Cancellations and modifications are not permitted.",
+                )
+
         current_count = int((fresh.get("stats") or {}).get("registered_count", 0))
 
         waitlist = []
@@ -710,8 +874,10 @@ def cancel_registration(
                     "status": RegistrationStatus.REGISTERED.value,
                     "updated_at": now_timestamp,
                 }
-                if fresh_event.participation.requires_event_spg and not next_data.get(
-                    "spg_id"
+                if (
+                    fresh_event.participation.requires_event_spg
+                    and next_data.get("team_name")
+                    and not next_data.get("spg_id")
                 ):
                     spg_id, spg_data = _event_spg_data(
                         fresh_event,
@@ -921,6 +1087,11 @@ def create_event(
         "banner_badge_text": payload.banner_badge_text,
         "banner_cta_text": payload.banner_cta_text,
         "banner_cta_url": payload.banner_cta_url,
+        "custom_registration_fields": [f.model_dump() for f in (payload.custom_registration_fields or [])],
+        "event_tracks": [t.model_dump() for t in (payload.event_tracks or [])],
+        "allow_open_track_change": bool(payload.allow_open_track_change),
+        "team_settings": (payload.team_settings or TeamSettingsSchema()).model_dump(mode="json"),
+        "timeline": [t.model_dump(mode="json") for t in sorted(payload.timeline or [], key=lambda x: x.start_time)],
         "winners": None,
         "status": payload.status.value,
         "created_by": admin_uid,
@@ -995,6 +1166,8 @@ def update_event(
                 **(fresh.get("resources") or {}),
                 **event_update["resources"],
             }
+        if "timeline" in event_update and isinstance(event_update["timeline"], list):
+            event_update["timeline"] = sorted(event_update["timeline"], key=lambda x: x.get("start_time", ""))
         old_slug = fresh.get("slug")
         new_slug = event_update.get("slug", old_slug)
         old_reservation = None
@@ -1839,4 +2012,1198 @@ def get_event_feedback_summary(
         average_content=round(avg_content, 2),
         average_organization=round(avg_org, 2),
         feedbacks=fb_list,
+    )
+
+
+# --- Event Matrix Endpoints ---
+
+
+@router.get("/{id}/matrix", response_model=EventMatrixResponse)
+def get_event_matrix(
+    id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Retrieve hydrated Event Matrix (RSVP attendees, columns, and matrix cells)."""
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event_data = event_doc.to_dict() or {}
+
+    if not _check_matrix_access(event_data, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to view this event's matrix.",
+        )
+
+    is_admin = is_admin_user(current_user)
+    volunteer_uids: List[str] = event_data.get("matrix_access_uids") or []
+    raw_columns: List[Dict[str, Any]] = event_data.get("matrix_columns") or []
+    matrix_cells: Dict[str, Dict[str, Any]] = event_data.get("matrix_cells") or {}
+
+    has_edit_access = is_admin or (bool(current_user) and get_user_uid(current_user) in volunteer_uids)
+    matrix_is_public = bool(event_data.get("matrix_is_public", False))
+    matrix_is_pinned = bool(event_data.get("matrix_is_pinned", False))
+
+    # Automatic Default Column for Event Attendance Contribution
+    reward_config = event_data.get("points_reward") or {}
+    attendance_pts = reward_config.get("attendance_points", 0)
+    track = reward_config.get("track", "general")
+    event_title = event_data.get("title") or "Event"
+
+    has_attendance_col = any(c.get("column_id") == "col_attendance_points" for c in raw_columns)
+    if not has_attendance_col:
+        raw_columns.insert(
+            0,
+            {
+                "column_id": "col_attendance_points",
+                "title": "Attendance Points",
+                "column_type": MatrixColumnType.OBJECT.value,
+                "object_schema_type": MatrixSchemaType.CONTRIBUTION_ASSIGNMENT.value,
+            },
+        )
+
+    # Automatic Track Column
+    event_tracks = event_data.get("event_tracks") or []
+    track_name_map = {t.get("track_id"): t.get("name") for t in event_tracks if t.get("track_id")}
+    if event_tracks and not any(c.get("column_id") == "col_event_track" for c in raw_columns):
+        raw_columns.append(
+            {
+                "column_id": "col_event_track",
+                "title": "Track",
+                "column_type": MatrixColumnType.TEXT.value,
+            }
+        )
+
+    # Automatic Custom Intake Columns
+    custom_fields = event_data.get("custom_registration_fields") or []
+    for f in custom_fields:
+        f_id = f.get("field_id")
+        if f.get("sync_to_matrix", True) and f_id:
+            col_id = f"col_custom_{f_id}"
+            if not any(c.get("column_id") == col_id for c in raw_columns):
+                raw_columns.append(
+                    {
+                        "column_id": col_id,
+                        "title": f.get("label") or f_id,
+                        "column_type": MatrixColumnType.TEXT.value,
+                    }
+                )
+
+    columns = [MatrixColumnDef.model_validate(c) for c in raw_columns]
+
+    # Query all registrations for this event
+    regs = (
+        db.collection(EVENTS_COLLECTION)
+        .document(event_id)
+        .collection(REGISTRATIONS_SUBCOLLECTION)
+        .stream()
+    )
+
+    raw_regs: List[Dict[str, Any]] = []
+    all_uids: Set[str] = set()
+
+    for r in regs:
+        r_dict = r.to_dict() or {}
+        r_dict["id"] = r.id
+        raw_regs.append(r_dict)
+        if r_dict.get("user_id"):
+            all_uids.add(r_dict["user_id"])
+        for m in r_dict.get("member_uids") or []:
+            if m:
+                all_uids.add(m)
+
+    for v in volunteer_uids:
+        if v:
+            all_uids.add(v)
+
+    # Batch-fetch user profiles to eliminate N+1 reads
+    user_profiles: Dict[str, Dict[str, Any]] = {}
+    if all_uids:
+        user_refs = [db.collection(USERS_COLLECTION).document(uid) for uid in all_uids]
+        try:
+            user_snaps = db.get_all(user_refs)
+            for snap in user_snaps:
+                if snap.exists:
+                    udata = snap.to_dict() or {}
+                    user_profiles[snap.id] = {
+                        "id": snap.id,
+                        "full_name": udata.get("full_name") or "Club Member",
+                        "email": udata.get("email") or "",
+                        "avatar_url": udata.get("avatar_url"),
+                        "batch_year": udata.get("batch_year"),
+                    }
+        except Exception:
+            for uid in all_uids:
+                snap = db.collection(USERS_COLLECTION).document(uid).get()
+                if snap.exists:
+                    udata = snap.to_dict() or {}
+                    user_profiles[uid] = {
+                        "id": uid,
+                        "full_name": udata.get("full_name") or "Club Member",
+                        "email": udata.get("email") or "",
+                        "avatar_url": udata.get("avatar_url"),
+                        "batch_year": udata.get("batch_year"),
+                    }
+
+    # Fetch SPGs linked to this event
+    event_spgs_raw: List[Dict[str, Any]] = []
+    user_to_spg_map: Dict[str, Dict[str, Any]] = {}
+    try:
+        spg_docs = db.collection(SPGS_COLLECTION).where("event_id", "==", event_id).stream()
+        for doc in spg_docs:
+            s_data = doc.to_dict() or {}
+            s_data["id"] = doc.id
+            event_spgs_raw.append(s_data)
+            spg_id = doc.id
+            spg_name = s_data.get("name") or "SPG"
+            spg_status = s_data.get("status") or "active"
+            idea_id = s_data.get("idea_id")
+
+            lead_id = s_data.get("lead_id")
+            if lead_id:
+                user_to_spg_map[lead_id] = {
+                    "spg_id": spg_id,
+                    "spg_name": spg_name,
+                    "spg_status": spg_status,
+                    "role": "lead",
+                    "idea_id": idea_id,
+                }
+            for m_id in s_data.get("member_ids") or []:
+                if m_id and m_id not in user_to_spg_map:
+                    user_to_spg_map[m_id] = {
+                        "spg_id": spg_id,
+                        "spg_name": spg_name,
+                        "spg_status": spg_status,
+                        "role": "member",
+                        "idea_id": idea_id,
+                    }
+    except Exception:
+        pass
+
+    # Fetch Approved Ideas for Idea Jar assignments
+    approved_ideas_raw: List[Dict[str, Any]] = []
+    idea_by_id_map: Dict[str, Dict[str, Any]] = {}
+    try:
+        ideas_by_id: Dict[str, Any] = {}
+        for field in ("is_verified", "is_approved"):
+            for doc in db.collection(IDEAS_COLLECTION).where(field, "==", True).stream():
+                ideas_by_id[doc.id] = doc
+        if not ideas_by_id:
+            for doc in db.collection(IDEAS_COLLECTION).limit(50).stream():
+                ideas_by_id[doc.id] = doc
+        for i_id, doc in ideas_by_id.items():
+            idata = doc.to_dict() or {}
+            idea_obj = {
+                "id": i_id,
+                "title": idata.get("title") or "Idea",
+                "track": str(idata.get("track") or "misc"),
+                "description": idata.get("description") or "",
+            }
+            approved_ideas_raw.append(idea_obj)
+            idea_by_id_map[i_id] = idea_obj
+    except Exception:
+        pass
+
+    # Hydrate attendee rows
+    rows: List[MatrixRowHydrated] = []
+    seen_uids: Set[str] = set()
+
+    for r_dict in raw_regs:
+        if r_dict.get("status") == RegistrationStatus.CANCELLED.value:
+            continue
+        reg_status = r_dict.get("status", RegistrationStatus.REGISTERED.value)
+        team_name = r_dict.get("team_name")
+        member_list = r_dict.get("member_uids") or []
+        if r_dict.get("user_id") and r_dict["user_id"] not in member_list:
+            member_list = [r_dict["user_id"]] + member_list
+        if not member_list and r_dict.get("user_id"):
+            member_list = [r_dict["user_id"]]
+
+        for uid in member_list:
+            if not uid or uid in seen_uids:
+                continue
+            seen_uids.add(uid)
+            prof = user_profiles.get(uid, {})
+            u_cells = matrix_cells.get(uid) or {}
+            hydrated_cells: Dict[str, Any] = {}
+            for col in columns:
+                val = u_cells.get(col.column_id, None)
+                if col.column_id == "col_attendance_points" and val is None:
+                    if reg_status == RegistrationStatus.CHECKED_IN.value and attendance_pts > 0:
+                        val = {
+                            "schema_type": MatrixSchemaType.CONTRIBUTION_ASSIGNMENT.value,
+                            "category": ContributionCategory.PARTICIPATION.value,
+                            "track": track,
+                            "points": attendance_pts,
+                            "title": f"Event Attendance: {event_title}"[:200],
+                            "description": f"Standard attendance contribution for {event_title}",
+                        }
+                elif col.object_schema_type == MatrixSchemaType.SPG_ASSIGNMENT.value and val is None:
+                    spg_info = user_to_spg_map.get(uid)
+                    if not spg_info and team_name:
+                        matching = next((s for s in event_spgs_raw if (s.get("name") or "").lower() == team_name.lower()), None)
+                        if matching:
+                            spg_info = {
+                                "spg_id": matching["id"],
+                                "spg_name": matching.get("name") or team_name,
+                                "spg_status": matching.get("status") or "active",
+                                "role": "member",
+                                "idea_id": matching.get("idea_id"),
+                            }
+                        else:
+                            spg_info = {
+                                "spg_id": None,
+                                "spg_name": team_name,
+                                "spg_status": "registered",
+                                "role": "member",
+                                "idea_id": None,
+                            }
+                    if spg_info:
+                        val = {
+                            "schema_type": MatrixSchemaType.SPG_ASSIGNMENT.value,
+                            "spg_id": spg_info.get("spg_id"),
+                            "spg_name": spg_info.get("spg_name") or team_name or "Event SPG",
+                            "spg_status": spg_info.get("spg_status", "active"),
+                            "role": spg_info.get("role", "member"),
+                        }
+                elif col.object_schema_type == MatrixSchemaType.IDEA_JAR_ASSIGNMENT.value and val is None:
+                    spg_info = user_to_spg_map.get(uid)
+                    if spg_info and spg_info.get("idea_id"):
+                        idea = idea_by_id_map.get(spg_info["idea_id"])
+                        if idea:
+                            val = {
+                                "schema_type": MatrixSchemaType.IDEA_JAR_ASSIGNMENT.value,
+                                "idea_id": idea["id"],
+                                "idea_title": idea["title"],
+                                "track": idea.get("track", "general"),
+                                "spg_id": spg_info.get("spg_id"),
+                                "spg_name": spg_info.get("spg_name"),
+                            }
+                elif col.column_id == "col_event_track" and val is None:
+                    sel_id = r_dict.get("selected_track_id")
+                    val = track_name_map.get(sel_id, sel_id)
+                elif col.column_id.startswith("col_custom_") and val is None:
+                    target_f_id = col.column_id.replace("col_custom_", "", 1)
+                    f_def = next((cf for cf in custom_fields if cf.get("field_id") == target_f_id), None)
+                    if f_def and f_def.get("applies_to") == "individual":
+                        val = (r_dict.get("member_responses") or {}).get(uid, {}).get(target_f_id)
+                        if val is None:
+                            val = (r_dict.get("custom_responses") or {}).get(target_f_id)
+                    else:
+                        val = (r_dict.get("custom_responses") or {}).get(target_f_id)
+                elif col.object_schema_type == MatrixSchemaType.SUBMISSION.value and val is None:
+                    sub_data = r_dict.get("submission")
+                    if sub_data:
+                        val = {
+                            "schema_type": MatrixSchemaType.SUBMISSION.value,
+                            "repo_url": sub_data.get("repo_url"),
+                            "paper_link": sub_data.get("paper_link") or sub_data.get("demo_url") or sub_data.get("slides_url"),
+                            "score": None,
+                        }
+                hydrated_cells[col.column_id] = val
+
+            rows.append(
+                MatrixRowHydrated(
+                    user_id=uid,
+                    user_name=prof.get("full_name") or f"Member {uid[:6]}",
+                    email=prof.get("email") or "",
+                    avatar_url=prof.get("avatar_url"),
+                    batch_year=prof.get("batch_year"),
+                    team_name=team_name,
+                    rsvp_status=reg_status,
+                    attendance=reg_status,
+                    cells=hydrated_cells,
+                )
+            )
+
+    rows.sort(key=lambda r: r.user_name.lower())
+
+    volunteer_profiles = [
+        user_profiles[v] for v in volunteer_uids if v in user_profiles
+    ]
+
+    return EventMatrixResponse(
+        event_id=event_id,
+        event_title=event_data.get("title") or "Event",
+        is_admin=is_admin,
+        has_edit_access=has_edit_access,
+        matrix_is_public=matrix_is_public,
+        matrix_is_pinned=matrix_is_pinned,
+        volunteer_uids=volunteer_uids,
+        volunteer_profiles=volunteer_profiles,
+        event_spgs=event_spgs_raw,
+        approved_ideas=approved_ideas_raw,
+        columns=columns,
+        rows=rows,
+    )
+
+
+@router.post("/{id}/matrix/columns", response_model=MatrixColumnDef)
+def create_matrix_column(
+    id: str,
+    payload: CreateMatrixColumnRequest,
+    current_user: Dict[str, Any] = Depends(get_admin_user),
+):
+    """Add a new custom column to the event matrix (Admin only)."""
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event_data = event_doc.to_dict() or {}
+
+    if payload.column_type == MatrixColumnType.OBJECT and not payload.object_schema_type:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Object columns must specify an object_schema_type.",
+        )
+
+    column_id = f"col_{uuid.uuid4().hex[:8]}"
+    new_col = MatrixColumnDef(
+        column_id=column_id,
+        title=payload.title,
+        column_type=payload.column_type,
+        object_schema_type=payload.object_schema_type,
+    )
+
+    raw_columns = event_data.get("matrix_columns") or []
+    raw_columns.append(new_col.model_dump())
+
+    db.collection(EVENTS_COLLECTION).document(event_id).update(
+        {
+            "matrix_columns": raw_columns,
+            "updated_at": now_iso(),
+        }
+    )
+
+    return new_col
+
+
+@router.delete("/{id}/matrix/columns/{column_id}")
+def delete_matrix_column(
+    id: str,
+    column_id: str,
+    current_user: Dict[str, Any] = Depends(get_admin_user),
+):
+    """Remove a custom column and clean up associated cell values (Admin only)."""
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event_data = event_doc.to_dict() or {}
+
+    raw_columns: List[Dict[str, Any]] = event_data.get("matrix_columns") or []
+    updated_columns = [c for c in raw_columns if c.get("column_id") != column_id]
+    if len(updated_columns) == len(raw_columns):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Column '{column_id}' not found",
+        )
+
+    # Safely clean cell keys across all users in matrix_cells
+    raw_cells: Dict[str, Dict[str, Any]] = event_data.get("matrix_cells") or {}
+    cleaned_cells: Dict[str, Dict[str, Any]] = {}
+    for uid, ucells in raw_cells.items():
+        if isinstance(ucells, dict):
+            cleaned_cells[uid] = {k: v for k, v in ucells.items() if k != column_id}
+
+    db.collection(EVENTS_COLLECTION).document(event_id).update(
+        {
+            "matrix_columns": updated_columns,
+            "matrix_cells": cleaned_cells,
+            "updated_at": now_iso(),
+        }
+    )
+
+    return {"success": True, "deleted_column_id": column_id}
+
+
+def _validate_cell_value(col: Dict[str, Any], raw_value: Any) -> Any:
+    """Validate cell value according to column type (text, number, object)."""
+    if raw_value is None or raw_value == "":
+        return None
+    col_type = col.get("column_type")
+    if col_type == MatrixColumnType.TEXT.value:
+        return str(raw_value).strip()
+    elif col_type == MatrixColumnType.NUMBER.value:
+        try:
+            num = float(raw_value)
+            return int(num) if num.is_integer() else num
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Column '{col.get('title')}' requires a valid numeric value.",
+            ) from exc
+    elif col_type == MatrixColumnType.OBJECT.value:
+        schema_type = col.get("object_schema_type")
+        try:
+            st_enum = MatrixSchemaType(schema_type)
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown object schema type '{schema_type}'",
+            )
+        adapter = MATRIX_ADAPTERS.get(st_enum)
+        if not adapter:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"No validator for schema '{schema_type}'",
+            )
+        try:
+            validated_obj = adapter.validate_python(raw_value)
+            return validated_obj.model_dump()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Validation failed for schema '{schema_type}': {exc}",
+            ) from exc
+    return raw_value
+
+
+def _apply_matrix_attendance(
+    event_id: str,
+    event_data: Dict[str, Any],
+    payload: MatrixAttendanceUpdateRequest,
+    current_user: Dict[str, Any],
+) -> Dict[str, Any]:
+    regs_ref = (
+        db.collection(EVENTS_COLLECTION)
+        .document(event_id)
+        .collection(REGISTRATIONS_SUBCOLLECTION)
+    )
+
+    matched_doc = None
+    for q in (
+        regs_ref.where("user_id", "==", payload.user_id).limit(1),
+        regs_ref.where("member_uids", "array_contains", payload.user_id).limit(1),
+    ):
+        res = q.get()
+        if res:
+            matched_doc = res[0]
+            break
+
+    now_timestamp = now_iso()
+    admin_uid = get_user_uid(current_user)
+
+    if matched_doc:
+        update_fields: Dict[str, Any] = {
+            "status": payload.status.value,
+            "updated_at": now_timestamp,
+        }
+        if payload.attendance_note is not None:
+            update_fields["attendance_note"] = payload.attendance_note
+        if payload.status == RegistrationStatus.CHECKED_IN:
+            update_fields["checked_in_at"] = now_timestamp
+            update_fields["checked_in_by"] = admin_uid
+
+        regs_ref.document(matched_doc.id).update(update_fields)
+    else:
+        reg_id = f"reg_{uuid.uuid4().hex[:12]}"
+        new_reg = {
+            "id": reg_id,
+            "event_id": event_id,
+            "user_id": payload.user_id,
+            "member_uids": [payload.user_id],
+            "status": payload.status.value,
+            "registered_at": now_timestamp,
+            "updated_at": now_timestamp,
+            "checked_in_at": now_timestamp if payload.status == RegistrationStatus.CHECKED_IN else None,
+            "checked_in_by": admin_uid if payload.status == RegistrationStatus.CHECKED_IN else None,
+            "attendance_note": payload.attendance_note,
+        }
+        regs_ref.document(reg_id).set(new_reg)
+
+    if payload.award_points and payload.status == RegistrationStatus.CHECKED_IN:
+        reward_config = event_data.get("points_reward") or {}
+        attendance_pts = reward_config.get("attendance_points", 0)
+        track = reward_config.get("track", "general")
+        event_title = event_data.get("title", "Club Event")
+
+        if attendance_pts > 0:
+            try:
+                contribution_service.admin_award_points(
+                    user_uid=payload.user_id,
+                    award=AdminAwardUser(
+                        category=payload.category,
+                        track=_contribution_track(track),
+                        title=f"Event Attendance: {event_title}"[:200],
+                        description=f"Attended {event_title} on {now_timestamp[:10]}",
+                        points=attendance_pts,
+                        event_id=event_id,
+                        occurred_at=now_timestamp,
+                    ),
+                    admin_id=admin_uid,
+                )
+                _sync_user_points(db, payload.user_id)
+            except ContributionError:
+                pass
+
+    return {
+        "success": True,
+        "user_id": payload.user_id,
+        "status": payload.status.value,
+    }
+
+
+@router.patch("/{id}/matrix/cell")
+def update_matrix_cell(
+    id: str,
+    payload: UpdateMatrixCellRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Upsert a single cell value with schema validation (Admin & Volunteers)."""
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event_data = event_doc.to_dict() or {}
+
+    if not _check_matrix_access(event_data, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to edit this event's matrix.",
+        )
+
+    raw_columns: List[Dict[str, Any]] = event_data.get("matrix_columns") or []
+    col = next((c for c in raw_columns if c.get("column_id") == payload.column_id), None)
+    if not col:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Column '{payload.column_id}' not found on event",
+        )
+
+    validated_val = _validate_cell_value(col, payload.value)
+
+    matrix_cells = event_data.get("matrix_cells") or {}
+    user_cells = matrix_cells.setdefault(payload.user_id, {})
+    user_cells[payload.column_id] = validated_val
+
+    db.collection(EVENTS_COLLECTION).document(event_id).update(
+        {
+            "matrix_cells": matrix_cells,
+            "updated_at": now_iso(),
+        }
+    )
+
+    return {
+        "success": True,
+        "user_id": payload.user_id,
+        "column_id": payload.column_id,
+        "value": validated_val,
+    }
+
+
+@router.post("/{id}/matrix/batch")
+def batch_update_matrix(
+    id: str,
+    payload: BatchUpdateMatrixRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Batch apply matrix cell updates and attendance updates in one atomic request."""
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event_data = event_doc.to_dict() or {}
+
+    if not _check_matrix_access(event_data, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to edit this event's matrix.",
+        )
+
+    raw_columns: List[Dict[str, Any]] = event_data.get("matrix_columns") or []
+    col_map = {c.get("column_id"): c for c in raw_columns}
+
+    matrix_cells = event_data.get("matrix_cells") or {}
+    updated_cells_count = 0
+
+    for cell in payload.cells:
+        col = col_map.get(cell.column_id)
+        if not col:
+            continue
+        validated_val = _validate_cell_value(col, cell.value)
+        user_cells = matrix_cells.setdefault(cell.user_id, {})
+        user_cells[cell.column_id] = validated_val
+        updated_cells_count += 1
+
+    if updated_cells_count > 0:
+        db.collection(EVENTS_COLLECTION).document(event_id).update(
+            {
+                "matrix_cells": matrix_cells,
+                "updated_at": now_iso(),
+            }
+        )
+
+    updated_attendance_count = 0
+    for att in payload.attendance:
+        _apply_matrix_attendance(event_id, event_data, att, current_user)
+        updated_attendance_count += 1
+
+    return {
+        "success": True,
+        "updated_cells": updated_cells_count,
+        "updated_attendance": updated_attendance_count,
+    }
+
+
+@router.post("/{id}/matrix/columns/{column_id}/assign-all")
+def assign_all_matrix_column(
+    id: str,
+    column_id: str,
+    payload: AssignAllColumnRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Assign a value to all registered attendees for a specific column."""
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event_data = event_doc.to_dict() or {}
+
+    if not _check_matrix_access(event_data, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to edit this event's matrix.",
+        )
+
+    raw_columns: List[Dict[str, Any]] = event_data.get("matrix_columns") or []
+    col = next((c for c in raw_columns if c.get("column_id") == column_id), None)
+    if not col:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Column '{column_id}' not found on event",
+        )
+
+    validated_val = _validate_cell_value(col, payload.value)
+
+    regs_ref = (
+        db.collection(EVENTS_COLLECTION)
+        .document(event_id)
+        .collection(REGISTRATIONS_SUBCOLLECTION)
+    )
+    reg_docs = regs_ref.stream()
+
+    attendee_uids: Set[str] = set()
+    for doc in reg_docs:
+        d = doc.to_dict() or {}
+        uid = d.get("user_id")
+        if uid:
+            attendee_uids.add(uid)
+        for m_uid in d.get("member_uids") or []:
+            if m_uid:
+                attendee_uids.add(m_uid)
+
+    matrix_cells = event_data.get("matrix_cells") or {}
+    for uid in attendee_uids:
+        user_cells = matrix_cells.setdefault(uid, {})
+        user_cells[column_id] = validated_val
+
+    db.collection(EVENTS_COLLECTION).document(event_id).update(
+        {
+            "matrix_cells": matrix_cells,
+            "updated_at": now_iso(),
+        }
+    )
+
+    return {
+        "success": True,
+        "column_id": column_id,
+        "updated_count": len(attendee_uids),
+        "value": validated_val,
+    }
+
+
+@router.patch("/{id}/matrix/attendance")
+def update_matrix_attendance(
+    id: str,
+    payload: MatrixAttendanceUpdateRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Directly update attendee registration/attendance status from the matrix table."""
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event_data = event_doc.to_dict() or {}
+
+    if not _check_matrix_access(event_data, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to edit this event's attendance.",
+        )
+
+    return _apply_matrix_attendance(event_id, event_data, payload, current_user)
+
+
+@router.put("/{id}/matrix/access")
+def update_matrix_access(
+    id: str,
+    payload: MatrixAccessUpdateRequest,
+    current_user: Dict[str, Any] = Depends(get_admin_user),
+):
+    """Grant or revoke volunteer access to this event's matrix (Admin only)."""
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+
+    deduped_uids = list(dict.fromkeys(payload.volunteer_uids))
+
+    db.collection(EVENTS_COLLECTION).document(event_id).update(
+        {
+            "matrix_access_uids": deduped_uids,
+            "updated_at": now_iso(),
+        }
+    )
+
+    return {
+        "success": True,
+        "volunteer_uids": deduped_uids,
+    }
+
+
+@router.patch("/{id}/matrix/settings")
+def update_matrix_settings(
+    id: str,
+    payload: MatrixSettingsUpdateRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Update matrix settings such as public visibility and pinned status."""
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event_data = event_doc.to_dict() or {}
+
+    if not _check_matrix_access(event_data, current_user, require_edit=True):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to change this event's matrix settings.",
+        )
+
+    update_fields: Dict[str, Any] = {"updated_at": now_iso()}
+    if payload.matrix_is_public is not None:
+        update_fields["matrix_is_public"] = payload.matrix_is_public
+    if payload.matrix_is_pinned is not None:
+        update_fields["matrix_is_pinned"] = payload.matrix_is_pinned
+
+    db.collection(EVENTS_COLLECTION).document(event_id).update(update_fields)
+
+    return {
+        "success": True,
+        "matrix_is_public": update_fields.get("matrix_is_public", event_data.get("matrix_is_public", False)),
+        "matrix_is_pinned": update_fields.get("matrix_is_pinned", event_data.get("matrix_is_pinned", False)),
+    }
+
+
+# --- Advanced Hackathon Operations Endpoints ---
+
+
+@router.patch("/{id}/registrations/{reg_id}/track")
+def update_registration_track(
+    id: str,
+    reg_id: str,
+    payload: UpdateRegistrationTrackRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Switch track for a registration (Team lead or Admin only, enforcing max_teams in transaction)."""
+    user_uid = get_user_uid(current_user)
+    is_admin = is_admin_user(current_user)
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event_data = event_doc.to_dict() or {}
+    event = EventDocument.model_validate({**event_data, "id": event_id})
+
+    if event.status in {EventStatus.DRAFT.value, EventStatus.ARCHIVED.value} and not is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Event not found",
+        )
+
+    clean_track_id = payload.selected_track_id.strip() if payload.selected_track_id else None
+    target_track = None
+    if clean_track_id:
+        target_track = next((t for t in (event.event_tracks or []) if t.track_id == clean_track_id), None)
+        if not target_track:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Track '{clean_track_id}' not found in event tracks.",
+            )
+
+    regs_ref = (
+        db.collection(EVENTS_COLLECTION)
+        .document(event_id)
+        .collection(REGISTRATIONS_SUBCOLLECTION)
+    )
+    reg_ref = regs_ref.document(reg_id)
+    now_timestamp = now_iso()
+
+    def switch_track(transaction):
+        r_snap = reg_ref.get(transaction=transaction)
+        if not r_snap.exists:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registration not found")
+        r_data = r_snap.to_dict() or {}
+        
+        is_member = (
+            user_uid == r_data.get("user_id")
+            or user_uid in (r_data.get("member_uids") or [])
+        )
+        if not is_admin and not is_member:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only a registered team member or an admin can switch tracks.",
+            )
+
+        # Disallow track change only if the event explicitly blocks changes AND a track was already previously chosen
+        if not is_admin and not event.allow_open_track_change and r_data.get("selected_track_id"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Track changes are not permitted for this event.",
+            )
+
+        # Check deadline if not admin
+        if not is_admin and event.schedule.registration_deadline:
+            dl = _parse_utc(event.schedule.registration_deadline)
+            if datetime.now(timezone.utc) > dl:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Registration deadline has passed; tracks can no longer be changed.",
+                )
+
+        if target_track and target_track.max_teams:
+            track_regs = list(transaction.get(regs_ref.where("selected_track_id", "==", clean_track_id)))
+            active_track_teams = sum(1 for d in track_regs if d.id != reg_id and _active_registration(d.to_dict() or {}))
+            if active_track_teams >= target_track.max_teams:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Track '{target_track.name}' has reached its maximum capacity of {target_track.max_teams} teams.",
+                )
+
+        transaction.update(reg_ref, {"selected_track_id": clean_track_id, "updated_at": now_timestamp})
+
+    run_event_transaction(switch_track)
+    return {"success": True, "selected_track_id": clean_track_id or ""}
+
+
+@router.post("/{id}/my-registration/submission")
+def submit_event_project(
+    id: str,
+    payload: EventSubmissionRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Submit project deliverables (GitHub repo, slides, demo link, paper link, notes)."""
+    user_uid = get_user_uid(current_user)
+    is_admin = is_admin_user(current_user)
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event_data = event_doc.to_dict() or {}
+    event = EventDocument.model_validate({**event_data, "id": event_id})
+
+    if event.status in {EventStatus.DRAFT.value, EventStatus.ARCHIVED.value} and not is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Event not found",
+        )
+
+    # Check timeline for submission deadlines
+    now_dt = datetime.now(timezone.utc)
+    if not is_admin and event.timeline:
+        for t in event.timeline:
+            if t.is_submission_deadline:
+                deadline_dt = _parse_utc(t.end_time or t.start_time)
+                if now_dt > deadline_dt:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Submission deadline for '{t.title}' has expired.",
+                    )
+
+    regs_ref = (
+        db.collection(EVENTS_COLLECTION)
+        .document(event_id)
+        .collection(REGISTRATIONS_SUBCOLLECTION)
+    )
+    my_regs = list(regs_ref.where("user_id", "==", user_uid).get())
+    if not my_regs:
+        my_regs = list(regs_ref.where("member_uids", "array_contains", user_uid).get())
+
+    active_regs = [r for r in my_regs if _active_registration(r.to_dict() or {})]
+    if not active_regs:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="You do not have an active registration for this event.",
+        )
+
+    reg_doc = active_regs[0]
+    reg_data = reg_doc.to_dict() or {}
+    now_timestamp = now_iso()
+
+    sub_dict = {
+        "repo_url": payload.repo_url,
+        "slides_url": payload.slides_url,
+        "demo_url": payload.demo_url,
+        "paper_link": payload.paper_link,
+        "notes": payload.notes,
+        "submitted_at": now_timestamp,
+        "submitted_by": user_uid,
+    }
+
+    reg_doc.reference.update({
+        "submission": sub_dict,
+        "updated_at": now_timestamp,
+    })
+
+    # Auto-update matrix cell for submission column if one exists
+    raw_columns: List[Dict[str, Any]] = event_data.get("matrix_columns") or []
+    sub_col = next((c for c in raw_columns if c.get("object_schema_type") == MatrixSchemaType.SUBMISSION.value), None)
+    if sub_col:
+        sub_col_id = sub_col.get("column_id")
+        cell_val = {
+            "schema_type": MatrixSchemaType.SUBMISSION.value,
+            "repo_url": payload.repo_url,
+            "paper_link": payload.paper_link or payload.demo_url or payload.slides_url,
+            "score": None,
+        }
+        all_member_uids = reg_data.get("member_uids") or [reg_data.get("user_id")]
+        matrix_cells = event_data.get("matrix_cells") or {}
+        for m_uid in all_member_uids:
+            if m_uid:
+                matrix_cells.setdefault(m_uid, {})[sub_col_id] = cell_val
+        db.collection(EVENTS_COLLECTION).document(event_id).update({
+            "matrix_cells": matrix_cells,
+            "updated_at": now_timestamp,
+        })
+
+    return {"success": True, "submission": sub_dict}
+
+
+@router.patch("/{id}/my-registration/custom-responses")
+def update_member_custom_responses(
+    id: str,
+    payload: UpdateMemberCustomResponsesRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Update individual custom intake responses (e.g. Mess Vendor, T-Shirt) for the authenticated member."""
+    user_uid = get_user_uid(current_user)
+    is_admin = is_admin_user(current_user)
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event_data = event_doc.to_dict() or {}
+    event = EventDocument.model_validate({**event_data, "id": event_id})
+
+    if event.status in {EventStatus.DRAFT.value, EventStatus.ARCHIVED.value} and not is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Event not found",
+        )
+
+    regs_ref = (
+        db.collection(EVENTS_COLLECTION)
+        .document(event_id)
+        .collection(REGISTRATIONS_SUBCOLLECTION)
+    )
+    my_regs = list(regs_ref.where("user_id", "==", user_uid).get())
+    if not my_regs:
+        my_regs = list(regs_ref.where("member_uids", "array_contains", user_uid).get())
+
+    active_regs = [r for r in my_regs if _active_registration(r.to_dict() or {})]
+    if not active_regs:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="You do not have an active registration for this event.",
+        )
+
+    reg_doc = active_regs[0]
+    reg_data = reg_doc.to_dict() or {}
+    now_timestamp = now_iso()
+
+    custom_fields = event.custom_registration_fields or []
+    custom_responses = reg_data.get("custom_responses") or {}
+    member_responses = reg_data.get("member_responses") or {}
+    user_responses = member_responses.get(user_uid) or {}
+
+    for k, v in payload.responses.items():
+        f_def = next((f for f in custom_fields if f.field_id == k), None)
+        if f_def and f_def.field_type == "select" and f_def.options:
+            if v is not None and str(v) not in f_def.options:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Value for '{f_def.label}' must be one of: {', '.join(f_def.options)}",
+                )
+        user_responses[k] = v
+        # If field applies to team or this is a solo registration, also sync into custom_responses
+        if (f_def and f_def.applies_to == "team") or event.participation.mode.value == "solo":
+            custom_responses[k] = v
+
+    member_responses[user_uid] = user_responses
+    reg_doc.reference.update({
+        "member_responses": member_responses,
+        "custom_responses": custom_responses,
+        "updated_at": now_timestamp,
+    })
+
+    return {"success": True, "responses": user_responses, "custom_responses": custom_responses}
+
+
+def _sanitize_csv_cell(value: Any) -> str:
+    """Escape leading formula symbols to protect against CSV formula injection."""
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        import json
+        s = json.dumps(value)
+    else:
+        s = str(value)
+    if s and s[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + s
+    return s
+
+
+@router.get("/{id}/export/comprehensive")
+def export_comprehensive_event_data(
+    id: str,
+    format: str = Query("csv", pattern="^(csv|json)$"),
+    include_matrix: bool = True,
+    only_checked_in: bool = False,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Export complete participant rosters, custom intake responses, submissions, tracks, and matrix scores."""
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event_data = event_doc.to_dict() or {}
+
+    if not _check_matrix_access(event_data, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to export this event's operational data.",
+        )
+
+    event_title = event_data.get("title") or "Event"
+    event_tracks = event_data.get("event_tracks") or []
+    track_name_map = {t.get("track_id"): t.get("name") for t in event_tracks if t.get("track_id")}
+    custom_fields = event_data.get("custom_registration_fields") or []
+    matrix_cells = event_data.get("matrix_cells") or {}
+    raw_columns: List[Dict[str, Any]] = event_data.get("matrix_columns") or []
+
+    # Query registrations
+    regs = (
+        db.collection(EVENTS_COLLECTION)
+        .document(event_id)
+        .collection(REGISTRATIONS_SUBCOLLECTION)
+        .stream()
+    )
+
+    all_uids: Set[str] = set()
+    raw_regs: List[Dict[str, Any]] = []
+    for r in regs:
+        d = r.to_dict() or {}
+        d["id"] = r.id
+        if d.get("status") == RegistrationStatus.CANCELLED.value:
+            continue
+        if only_checked_in and d.get("status") != RegistrationStatus.CHECKED_IN.value:
+            continue
+        raw_regs.append(d)
+        if d.get("user_id"):
+            all_uids.add(d["user_id"])
+        for m in d.get("member_uids") or []:
+            if m:
+                all_uids.add(m)
+
+    # Batch resolve profiles
+    user_profiles: Dict[str, Dict[str, Any]] = {}
+    if all_uids:
+        user_refs = [db.collection(USERS_COLLECTION).document(uid) for uid in all_uids]
+        try:
+            for snap in db.get_all(user_refs):
+                if snap.exists:
+                    udata = snap.to_dict() or {}
+                    user_profiles[snap.id] = {
+                        "full_name": udata.get("full_name") or "Member",
+                        "email": udata.get("email") or "",
+                        "batch_year": udata.get("batch_year"),
+                    }
+        except Exception:
+            for uid in all_uids:
+                snap = db.collection(USERS_COLLECTION).document(uid).get()
+                if snap.exists:
+                    udata = snap.to_dict() or {}
+                    user_profiles[uid] = {
+                        "full_name": udata.get("full_name") or "Member",
+                        "email": udata.get("email") or "",
+                        "batch_year": udata.get("batch_year"),
+                    }
+
+    rows: List[Dict[str, Any]] = []
+    for r_dict in raw_regs:
+        reg_id = r_dict.get("id")
+        team_name = r_dict.get("team_name")
+        selected_track = track_name_map.get(r_dict.get("selected_track_id"), r_dict.get("selected_track_id") or "")
+        reg_status = r_dict.get("status") or "registered"
+        invite_code = r_dict.get("invite_code") or ""
+        sub = r_dict.get("submission") or {}
+        spg_id = r_dict.get("spg_id") or ""
+        custom_responses = r_dict.get("custom_responses") or {}
+        member_responses = r_dict.get("member_responses") or {}
+
+        member_list = r_dict.get("member_uids") or []
+        if r_dict.get("user_id") and r_dict["user_id"] not in member_list:
+            member_list = [r_dict["user_id"]] + member_list
+        if not member_list and r_dict.get("user_id"):
+            member_list = [r_dict["user_id"]]
+
+        for uid in member_list:
+            prof = user_profiles.get(uid, {})
+            u_cells = matrix_cells.get(uid) or {}
+
+            row: Dict[str, Any] = {
+                "reg_id": reg_id,
+                "team_name": team_name or "Solo",
+                "user_id": uid,
+                "user_name": prof.get("full_name") or f"Member {uid[:6]}",
+                "email": prof.get("email") or "",
+                "batch_year": prof.get("batch_year") or "",
+                "status": reg_status,
+                "selected_track": selected_track,
+                "invite_code": invite_code,
+                "spg_id": spg_id,
+                "submission_repo_url": sub.get("repo_url") or "",
+                "submission_slides_url": sub.get("slides_url") or "",
+                "submission_demo_url": sub.get("demo_url") or "",
+                "submission_paper_link": sub.get("paper_link") or "",
+                "submission_notes": sub.get("notes") or "",
+            }
+
+            for f in custom_fields:
+                f_id = f.get("field_id")
+                if f.get("applies_to") == "individual":
+                    f_val = member_responses.get(uid, {}).get(f_id)
+                    if f_val is None:
+                        f_val = custom_responses.get(f_id)
+                else:
+                    f_val = custom_responses.get(f_id)
+                row[f"custom_{f_id}"] = f_val if f_val is not None else ""
+
+            if include_matrix:
+                for col in raw_columns:
+                    c_id = col.get("column_id")
+                    c_val = u_cells.get(c_id)
+                    if isinstance(c_val, dict):
+                        if c_val.get("schema_type") == "submission":
+                            c_val = c_val.get("score")
+                        elif c_val.get("schema_type") == "feedback":
+                            c_val = f"{c_val.get('rating')} stars - {c_val.get('notes') or ''}"
+                        elif c_val.get("schema_type") == "role_assignment":
+                            c_val = c_val.get("role_title")
+                        elif c_val.get("schema_type") == "contribution_assignment":
+                            c_val = f"{c_val.get('points')} pts"
+                    row[f"matrix_{c_id}"] = c_val if c_val is not None else ""
+
+            rows.append(row)
+
+    if format == "json":
+        return JSONResponse(content={"event_id": event_id, "event_title": event_title, "rows": rows, "total": len(rows)})
+
+    output = io.StringIO()
+    if rows:
+        headers = list(rows[0].keys())
+        writer = csv.DictWriter(output, fieldnames=headers)
+        writer.writeheader()
+        for r in rows:
+            sanitized = {k: _sanitize_csv_cell(v) for k, v in r.items()}
+            writer.writerow(sanitized)
+    else:
+        writer = csv.writer(output)
+        writer.writerow(["reg_id", "team_name", "user_id", "user_name", "email", "status"])
+
+    output.seek(0)
+    filename = f"event-{event_id}-comprehensive.csv"
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-cache",
+        },
     )

@@ -68,6 +68,8 @@ export default function Header({
       ? "Admin SPG Inspector"
       : pathname.startsWith("/dashboard/spg/")
       ? "Project Hub"
+      : pathname.includes("/events/") && pathname.endsWith("/matrix")
+      ? "Event Matrix"
       : null;
   const pageTitle = dynamicAdminTitle || titles[pathname] || titles[`/dashboard/${section}`] || "Dashboard Overview";
   const mobileTitle = mobileTitles[section] || "Dashboard";

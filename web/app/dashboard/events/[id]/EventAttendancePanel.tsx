@@ -540,7 +540,7 @@ export default function EventAttendancePanel({
             title="Add a student directly by name even if not RSVPed"
           >
             <MemberIcon name="plus" size={14} />
-            {showAddSection ? "Close Walk-in Form" : "+ Add Student / Walk-in"}
+            {showAddSection ? "Close Walk-in Form" : "Add Student / Walk-in"}
           </button>
 
           <button
