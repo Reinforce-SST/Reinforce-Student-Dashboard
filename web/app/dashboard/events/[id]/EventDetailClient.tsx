@@ -287,20 +287,32 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
       return;
     }
 
-    // If event has custom fields, tracks, or requires team details, open the modal for a smooth experience
     const hasCustomFields = (event.custom_registration_fields?.length ?? 0) > 0;
     const hasTracks = (event.event_tracks?.length ?? 0) > 0;
-    const isTeam = event.participation?.mode === "team";
 
-    if (hasCustomFields || hasTracks || isTeam) {
+    // If event has custom intake questions or tracks, open the modal for detailed intake answers
+    if (hasCustomFields || hasTracks) {
       setShowRsvpModal(true);
       return;
     }
 
-    // Direct solo registration for basic events
     setRegistrationBusy(true);
     try {
-      const result: any = await api.registerForEvent(token, event.id, {});
+      const memberUids = teammates.map((member) => member.id);
+      if (event.participation?.mode === "team" && !teamName.trim()) {
+        setRegistrationError("Enter a team name before registering.");
+        return;
+      }
+      // The team counts you; the server enforces the same rule.
+      if (event.participation?.mode === "team" && memberUids.length + 1 < minTeamSize) {
+        setRegistrationError(`This event needs teams of at least ${minTeamSize}. Add ${minTeamSize - 1 - memberUids.length} more ${minTeamSize - 1 - memberUids.length === 1 ? "teammate" : "teammates"}.`);
+        return;
+      }
+      const result: any = await api.registerForEvent(
+        token,
+        event.id,
+        event.participation?.mode === "team" ? { team_name: teamName.trim(), member_uids: memberUids } : {}
+      );
       setIsRegistered(true);
       setRegistrationStatus(result.status || "registered");
       setMyRegistration(result);
@@ -312,7 +324,9 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
       const refreshed = await api.getEvent(event.id, token);
       setRegisteredCount(refreshed.stats?.registered_count ?? registeredCount + 1);
     } catch (err) {
-      setRegistrationError(err instanceof Error ? err.message : "Registration could not be completed.");
+      // Server messages name members by account ID; show the teammate's name.
+      const message = err instanceof Error ? err.message : "Registration could not be completed.";
+      setRegistrationError(teammates.reduce((text, member) => text.split(member.id).join(member.full_name), message));
     } finally {
       setRegistrationBusy(false);
     }

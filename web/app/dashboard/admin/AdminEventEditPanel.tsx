@@ -1161,8 +1161,10 @@ export default function AdminEventEditPanel({
               {participationMode === "team" && (
                 <div className={styles.formRowThree}>
                   <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Min Team Size</label>
+                    <label className={styles.formLabel} htmlFor="edit-min-team-size">Min Team Size</label>
                     <input
+                      id="edit-min-team-size"
+                      aria-label="Min Team Size"
                       type="number"
                       min={1}
                       max={10}
@@ -1172,8 +1174,10 @@ export default function AdminEventEditPanel({
                     />
                   </div>
                   <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Max Team Size</label>
+                    <label className={styles.formLabel} htmlFor="edit-max-team-size">Max Team Size</label>
                     <input
+                      id="edit-max-team-size"
+                      aria-label="Max Team Size"
                       type="number"
                       min={1}
                       max={10}

@@ -844,8 +844,10 @@ export default function AdminEventCreatePanel({
           </div>
 
           <div className={styles.formGroup}>
-            <label className={styles.formLabel}>Participation Mode</label>
+            <label className={styles.formLabel} htmlFor="create-participation-mode">Participation Mode</label>
             <select
+              id="create-participation-mode"
+              aria-label="Participation Mode"
               value={eventParticipationMode}
               onChange={(e) => {
                 const mode = e.target.value as "solo" | "team";
@@ -912,8 +914,10 @@ export default function AdminEventCreatePanel({
             />
           </div>
           <div className={styles.formGroup}>
-            <label className={styles.formLabel}>Min Team Size</label>
+            <label className={styles.formLabel} htmlFor="create-min-team-size">Min Team Size</label>
             <input
+              id="create-min-team-size"
+              aria-label="Min Team Size"
               type="number"
               value={eventMinTeamSize}
               onChange={(e) => setEventMinTeamSize(Number(e.target.value))}
@@ -923,8 +927,10 @@ export default function AdminEventCreatePanel({
             />
           </div>
           <div className={styles.formGroup}>
-            <label className={styles.formLabel}>Max Team Size</label>
+            <label className={styles.formLabel} htmlFor="create-max-team-size">Max Team Size</label>
             <input
+              id="create-max-team-size"
+              aria-label="Max Team Size"
               type="number"
               value={eventMaxTeamSize}
               onChange={(e) => setEventMaxTeamSize(Number(e.target.value))}
@@ -939,10 +945,11 @@ export default function AdminEventCreatePanel({
           <label className={styles.batchOption} style={{ marginTop: "4px" }}>
             <input
               type="checkbox"
+              aria-label="Form a project group (SPG) for each registered team"
               checked={eventFormsTeamSpg}
               onChange={(e) => setEventFormsTeamSpg(e.target.checked)}
             />
-            <span>Automatically form a Club Project Group (SPG) for each registered team</span>
+            <span>Form a project group (SPG) for each registered team</span>
           </label>
         )}
       </div>
