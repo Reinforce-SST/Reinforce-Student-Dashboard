@@ -14,6 +14,12 @@ import {
   resourceTrackForCategory,
 } from "@/lib/learningResources";
 import MemberIcon from "@/components/dashboard/MemberIcon";
+import type {
+  CustomFieldSchema,
+  EventTrackSchema,
+  TeamSettingsSchema,
+  TimelineItemSchema,
+} from "@/types/event-matrix";
 import styles from "./Admin.module.css";
 
 function formatDateTimeInput(isoStr?: string | null): string {
@@ -109,6 +115,18 @@ export default function AdminEventEditPanel({
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [bannerFilePreview, setBannerFilePreview] = useState<string | null>(null);
 
+  // Advanced Hackathon Operations State
+  const [customFields, setCustomFields] = useState<CustomFieldSchema[]>([]);
+  const [eventTracks, setEventTracks] = useState<EventTrackSchema[]>([]);
+  const [teamSettings, setTeamSettings] = useState<TeamSettingsSchema>({
+    allow_team_creation: true,
+    require_join_approval: false,
+    allow_solo_pool: true,
+    lock_rosters_at: null,
+    auto_convert_to_spg: false,
+  });
+  const [timelineItems, setTimelineItems] = useState<TimelineItemSchema[]>([]);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -185,6 +203,17 @@ export default function AdminEventEditPanel({
         setBannerUrl(ev.banner_url || "");
         setBannerFile(null);
         setBannerFilePreview(null);
+
+        setCustomFields(ev.custom_registration_fields || []);
+        setEventTracks(ev.event_tracks || []);
+        setTeamSettings(ev.team_settings || {
+          allow_team_creation: true,
+          require_join_approval: false,
+          allow_solo_pool: true,
+          lock_rosters_at: null,
+          auto_convert_to_spg: false,
+        });
+        setTimelineItems(ev.timeline || []);
       })
       .catch((err) => {
         if (active) setErrorMessage(err instanceof Error ? err.message : "Failed to load event.");
@@ -370,6 +399,10 @@ export default function AdminEventEditPanel({
         },
         banner_url: imageUrl || undefined,
         status,
+        custom_registration_fields: customFields,
+        event_tracks: eventTracks,
+        team_settings: teamSettings,
+        timeline: timelineItems,
       };
 
       const updated = await api.adminUpdateEvent(token, selectedId, payload);
@@ -417,7 +450,7 @@ export default function AdminEventEditPanel({
           title="Refresh event list"
         >
           <MemberIcon name="lightning" size={14} />
-          {loadingList ? "Refreshing…" : "Refresh List"}
+          {loadingList ? "Refreshingâ€¦" : "Refresh List"}
         </button>
       </div>
 
@@ -435,7 +468,7 @@ export default function AdminEventEditPanel({
           <div className={styles.eventListToolbar}>
             <input
               type="search"
-              placeholder="Search events by title, slug, track, or type…"
+              placeholder="Search events by title, slug, track, or typeâ€¦"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className={styles.eventSearchInput}
@@ -457,7 +490,7 @@ export default function AdminEventEditPanel({
 
           {loadingList ? (
             <div style={{ textAlign: "center", padding: "48px", color: "#e5b731" }}>
-              Loading existing club events…
+              Loading existing club eventsâ€¦
             </div>
           ) : filteredEvents.length === 0 ? (
             <div
@@ -538,7 +571,7 @@ export default function AdminEventEditPanel({
                       <span className={styles.eventItemMetaSpan}>
                         <MemberIcon name="location" size={13} />
                         {(ev.format || "OFFLINE").toUpperCase()}
-                        {ev.venue_info?.venue_name ? ` · ${ev.venue_info.venue_name}` : ""}
+                        {ev.venue_info?.venue_name ? ` Â· ${ev.venue_info.venue_name}` : ""}
                       </span>
 
                       {ev.stats?.registered_count !== undefined && (
@@ -570,7 +603,7 @@ export default function AdminEventEditPanel({
                       title="Open public event page in new tab"
                     >
                       <MemberIcon name="external" size={13} />
-                      View Page ↗
+                      View Page â†—
                     </Link>
                   </div>
                 </article>
@@ -591,7 +624,7 @@ export default function AdminEventEditPanel({
                 onClick={() => setSelectedId("")}
                 className={styles.backToListBtn}
               >
-                ← Back to All Events
+                â† Back to All Events
               </button>
               <span>
                 <strong>Currently Editing:</strong> {title || "Selected Event"}
@@ -604,13 +637,13 @@ export default function AdminEventEditPanel({
               className={styles.viewActionBtn}
             >
               <MemberIcon name="external" size={13} />
-              View Live Page ↗
+              View Live Page â†—
             </Link>
           </div>
 
           {loadingDetail ? (
             <div style={{ textAlign: "center", padding: "40px", color: "#e5b731" }}>
-              Loading event details…
+              Loading event detailsâ€¦
             </div>
           ) : (
             <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
@@ -911,7 +944,7 @@ export default function AdminEventEditPanel({
                   Choose several links from the shared pool. A link can be reused on other events.
                 </p>
                 {resourcesLoading ? (
-                  <p className={styles.cardSubtitle}>Loading shared links…</p>
+                  <p className={styles.cardSubtitle}>Loading shared linksâ€¦</p>
                 ) : poolResources.length ? (
                   <div className={styles.eventResourceOptions}>
                     {poolResources.map((resource) => (
@@ -928,7 +961,7 @@ export default function AdminEventEditPanel({
                         />
                         <span className={styles.eventResourceText}>
                           <span>{resource.title}</span>
-                          <small>{resourceFolderLabel(resourceCategoryId(resource))} · {resource.url}</small>
+                          <small>{resourceFolderLabel(resourceCategoryId(resource))} Â· {resource.url}</small>
                         </span>
                       </label>
                     ))}
@@ -960,7 +993,7 @@ export default function AdminEventEditPanel({
                         className={styles.formInput}
                         value={newResourceUrl}
                         onChange={(event) => setNewResourceUrl(event.target.value)}
-                        placeholder="https://…"
+                        placeholder="https://â€¦"
                       />
                     </div>
                     <div className={styles.formGroup}>
@@ -980,7 +1013,7 @@ export default function AdminEventEditPanel({
                         ))}
                       </datalist>
                       <small id="event-resource-category-hint" className={styles.formLabelHint}>
-                        Use / between nested folders. This event’s folder is preselected.
+                        Use / between nested folders. This eventâ€™s folder is preselected.
                       </small>
                     </div>
                   </div>
@@ -1002,7 +1035,7 @@ export default function AdminEventEditPanel({
                       disabled={isAddingResource || !newResourceTitle.trim() || !newResourceUrl.trim()}
                       onClick={handleAddPoolResource}
                     >
-                      {isAddingResource ? "Adding link…" : "Add to shared pool"}
+                      {isAddingResource ? "Adding linkâ€¦" : "Add to shared pool"}
                     </button>
                   </div>
                 </div>
@@ -1045,7 +1078,7 @@ export default function AdminEventEditPanel({
                       <MemberIcon name="image" size={32} />
                     </span>
                     <span className={styles.uploadTextPrimary}>Click to upload new event cover banner</span>
-                    <span className={styles.uploadTextSecondary}>16:9 or 22:9 recommended (1200×630px)</span>
+                    <span className={styles.uploadTextSecondary}>16:9 or 22:9 recommended (1200Ã—630px)</span>
                   </div>
                 )}
 
@@ -1067,6 +1100,539 @@ export default function AdminEventEditPanel({
                 />
               </div>
 
+              {/* Section 6: Custom Registration Intake Fields */}
+              <div className={styles.formSectionHeading}>6. Custom Registration Intake Fields</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px", background: "#1a1a20", padding: "16px", borderRadius: "8px", border: "1px solid #282832" }}>
+                <p style={{ margin: 0, fontSize: "12.5px", color: "#a1a1aa" }}>
+                  Prompt attendees or teams for custom logistical, hardware, or problem information during RSVP. Answers automatically hydrate into the Event Matrix.
+                </p>
+
+                {customFields.map((cf, idx) => (
+                  <div
+                    key={cf.field_id || idx}
+                    style={{
+                      background: "#141416",
+                      border: "1px solid #31343a",
+                      borderRadius: "8px",
+                      padding: "14px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "10px",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
+                      <span style={{ fontSize: "13px", fontWeight: "700", color: "#e5b731" }}>
+                        Field #{idx + 1}: {cf.label || "Untitled Field"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setCustomFields((prev) => prev.filter((_, i) => i !== idx))}
+                        style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                      >
+                        <MemberIcon name="close" size={12} /> Remove
+                      </button>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "10px" }}>
+                      <div>
+                        <label style={{ fontSize: "11px", color: "#8c8c98" }}>Question Label</label>
+                        <input
+                          type="text"
+                          value={cf.label}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setCustomFields((prev) =>
+                              prev.map((item, i) => (i === idx ? { ...item, label: val } : item))
+                            );
+                          }}
+                          className={styles.formInput}
+                          placeholder="e.g. Mess Vendor / T-Shirt Size"
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: "11px", color: "#8c8c98" }}>Identifier (Slug)</label>
+                        <input
+                          type="text"
+                          value={cf.field_id}
+                          onChange={(e) => {
+                            const val = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_");
+                            setCustomFields((prev) =>
+                              prev.map((item, i) => (i === idx ? { ...item, field_id: val } : item))
+                            );
+                          }}
+                          className={styles.formInput}
+                          placeholder="e.g. mess_vendor"
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: "11px", color: "#8c8c98" }}>Type</label>
+                        <select
+                          value={cf.field_type}
+                          onChange={(e) => {
+                            const val = e.target.value as CustomFieldSchema["field_type"];
+                            setCustomFields((prev) =>
+                              prev.map((item, i) => (i === idx ? { ...item, field_type: val } : item))
+                            );
+                          }}
+                          className={styles.formSelect}
+                        >
+                          <option value="text">Short Text</option>
+                          <option value="select">Dropdown Select</option>
+                          <option value="boolean">Boolean Toggle</option>
+                          <option value="url">URL Link</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: "11px", color: "#8c8c98" }}>Applies To</label>
+                        <select
+                          value={cf.applies_to}
+                          onChange={(e) => {
+                            const val = e.target.value as "individual" | "team";
+                            setCustomFields((prev) =>
+                              prev.map((item, i) => (i === idx ? { ...item, applies_to: val } : item))
+                            );
+                          }}
+                          className={styles.formSelect}
+                        >
+                          <option value="individual">Each Individual Member</option>
+                          <option value="team">Team / Project Level</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {cf.field_type === "select" && (
+                      <div>
+                        <label style={{ fontSize: "11px", color: "#8c8c98" }}>Options (comma-separated)</label>
+                        <input
+                          type="text"
+                          value={(cf.options || []).join(", ")}
+                          onChange={(e) => {
+                            const opts = e.target.value
+                              .split(",")
+                              .map((s) => s.trim())
+                              .filter(Boolean);
+                            setCustomFields((prev) =>
+                              prev.map((item, i) => (i === idx ? { ...item, options: opts } : item))
+                            );
+                          }}
+                          className={styles.formInput}
+                          placeholder="e.g. Dominos, Subway, Campus Mess"
+                        />
+                      </div>
+                    )}
+
+                    <div style={{ display: "flex", gap: "16px", marginTop: "4px" }}>
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "#d4d4d8", cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={cf.required}
+                          onChange={(e) =>
+                            setCustomFields((prev) =>
+                              prev.map((item, i) => (i === idx ? { ...item, required: e.target.checked } : item))
+                            )
+                          }
+                        />
+                        <span>Required to register</span>
+                      </label>
+
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "#d4d4d8", cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={cf.sync_to_matrix}
+                          onChange={(e) =>
+                            setCustomFields((prev) =>
+                              prev.map((item, i) => (i === idx ? { ...item, sync_to_matrix: e.target.checked } : item))
+                            )
+                          }
+                        />
+                        <span>Sync column to Event Matrix</span>
+                      </label>
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCustomFields((prev) => [
+                      ...prev,
+                      {
+                        field_id: `custom_${Date.now().toString(36)}`,
+                        label: "New Question",
+                        field_type: "text",
+                        required: false,
+                        applies_to: "individual",
+                        sync_to_matrix: true,
+                      },
+                    ])
+                  }
+                  className={styles.secondaryBtn}
+                  style={{ alignSelf: "flex-start" }}
+                >
+                  <MemberIcon name="plus" size={13} /> Add Intake Question
+                </button>
+              </div>
+
+              {/* Section 7: Sub-Tracks & Focus Areas */}
+              <div className={styles.formSectionHeading}>7. Problem Tracks & Sub-Themes</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px", background: "#1a1a20", padding: "16px", borderRadius: "8px", border: "1px solid #282832" }}>
+                <p style={{ margin: 0, fontSize: "12.5px", color: "#a1a1aa" }}>
+                  Divide your event or hackathon into specific tracks (e.g., Open Innovation, FinTech, AI Agents). Attendees pick their track during registration.
+                </p>
+
+                {eventTracks.map((tr, idx) => (
+                  <div
+                    key={tr.track_id || idx}
+                    style={{
+                      background: "#141416",
+                      border: "1px solid #31343a",
+                      borderRadius: "8px",
+                      padding: "14px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "10px",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
+                      <span style={{ fontSize: "13px", fontWeight: "750", color: "#e5b731" }}>
+                        Track #{idx + 1}: {tr.name || "Untitled Track"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setEventTracks((prev) => prev.filter((_, i) => i !== idx))}
+                        style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                      >
+                        <MemberIcon name="close" size={12} /> Remove Track
+                      </button>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px" }}>
+                      <div>
+                        <label style={{ fontSize: "11px", color: "#8c8c98" }}>Track Name</label>
+                        <input
+                          type="text"
+                          value={tr.name}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setEventTracks((prev) =>
+                              prev.map((item, i) => (i === idx ? { ...item, name: val } : item))
+                            );
+                          }}
+                          className={styles.formInput}
+                          placeholder="e.g. Autonomous AI Track"
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: "11px", color: "#8c8c98" }}>Track Identifier</label>
+                        <input
+                          type="text"
+                          value={tr.track_id}
+                          onChange={(e) => {
+                            const val = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_");
+                            setEventTracks((prev) =>
+                              prev.map((item, i) => (i === idx ? { ...item, track_id: val } : item))
+                            );
+                          }}
+                          className={styles.formInput}
+                          placeholder="e.g. autonomous_ai"
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: "11px", color: "#8c8c98" }}>Team Capacity Cap</label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={tr.max_teams ?? ""}
+                          onChange={(e) => {
+                            const val = e.target.value ? Number(e.target.value) : undefined;
+                            setEventTracks((prev) =>
+                              prev.map((item, i) => (i === idx ? { ...item, max_teams: val } : item))
+                            );
+                          }}
+                          className={styles.formInput}
+                          placeholder="Unlimited if blank"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: "11px", color: "#8c8c98" }}>Track Description & Problem Statement</label>
+                      <textarea
+                        rows={2}
+                        value={tr.description || ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setEventTracks((prev) =>
+                            prev.map((item, i) => (i === idx ? { ...item, description: val } : item))
+                          );
+                        }}
+                        className={styles.formTextarea}
+                        placeholder="Brief overview of challenges, criteria, or deliverables..."
+                      />
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEventTracks((prev) => [
+                      ...prev,
+                      {
+                        track_id: `track_${Date.now().toString(36)}`,
+                        name: "New Track",
+                        description: "",
+                      },
+                    ])
+                  }
+                  className={styles.secondaryBtn}
+                  style={{ alignSelf: "flex-start" }}
+                >
+                  <MemberIcon name="plus" size={13} /> Add Track
+                </button>
+              </div>
+
+              {/* Section 8: Team Settings & Roster Locks */}
+              <div className={styles.formSectionHeading}>8. Team Governance & Roster Locking</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px", background: "#1a1a20", padding: "16px", borderRadius: "8px", border: "1px solid #282832" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px" }}>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "12.5px", color: "#d4d4d8", cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={teamSettings.allow_team_creation ?? true}
+                      onChange={(e) =>
+                        setTeamSettings((prev) => ({ ...prev, allow_team_creation: e.target.checked }))
+                      }
+                    />
+                    <span>Allow Team Creation</span>
+                  </label>
+
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "12.5px", color: "#d4d4d8", cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={teamSettings.require_join_approval ?? false}
+                      onChange={(e) =>
+                        setTeamSettings((prev) => ({ ...prev, require_join_approval: e.target.checked }))
+                      }
+                    />
+                    <span>Require Join Approval</span>
+                  </label>
+
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "12.5px", color: "#d4d4d8", cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={teamSettings.allow_solo_pool ?? true}
+                      onChange={(e) =>
+                        setTeamSettings((prev) => ({ ...prev, allow_solo_pool: e.target.checked }))
+                      }
+                    />
+                    <span>Allow Solo Pool</span>
+                  </label>
+
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "12.5px", color: "#d4d4d8", cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={teamSettings.auto_convert_to_spg ?? false}
+                      onChange={(e) =>
+                        setTeamSettings((prev) => ({ ...prev, auto_convert_to_spg: e.target.checked }))
+                      }
+                    />
+                    <span>Auto-Convert Teams to SPGs</span>
+                  </label>
+                </div>
+
+                <div style={{ marginTop: "6px" }}>
+                  <label style={{ fontSize: "12px", color: "#8c8c98", display: "block", marginBottom: "4px" }}>
+                    Roster Lock Deadline (Disables roster modifications / joins after this timestamp)
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={formatDateTimeInput(teamSettings.lock_rosters_at)}
+                    onChange={(e) => {
+                      const val = e.target.value ? new Date(e.target.value).toISOString() : null;
+                      setTeamSettings((prev) => ({ ...prev, lock_rosters_at: val }));
+                    }}
+                    className={styles.formInput}
+                    style={{ maxWidth: "300px" }}
+                  />
+                </div>
+              </div>
+
+              {/* Section 9: Timeline Milestone Stepper */}
+              <div className={styles.formSectionHeading}>9. Event Timeline & Milestone Schedule</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px", background: "#1a1a20", padding: "16px", borderRadius: "8px", border: "1px solid #282832" }}>
+                <p style={{ margin: 0, fontSize: "12.5px", color: "#a1a1aa" }}>
+                  Publish schedule milestones, kickoff dates, checkpoints, stream links, and deliverable submission deadlines.
+                </p>
+
+                {timelineItems.map((item, idx) => (
+                  <div
+                    key={item.id || idx}
+                    style={{
+                      background: "#141416",
+                      border: "1px solid #31343a",
+                      borderRadius: "8px",
+                      padding: "14px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "10px",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
+                      <span style={{ fontSize: "13px", fontWeight: "750", color: "#e5b731" }}>
+                        Milestone #{idx + 1}: {item.title || "Untitled Milestone"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setTimelineItems((prev) => prev.filter((_, i) => i !== idx))}
+                        style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                      >
+                        <MemberIcon name="close" size={12} /> Remove Milestone
+                      </button>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px" }}>
+                      <div>
+                        <label style={{ fontSize: "11px", color: "#8c8c98" }}>Milestone Title</label>
+                        <input
+                          type="text"
+                          value={item.title}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setTimelineItems((prev) =>
+                              prev.map((m, i) => (i === idx ? { ...m, title: val } : m))
+                            );
+                          }}
+                          className={styles.formInput}
+                          placeholder="e.g. Hacking Starts / Submissions Due"
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: "11px", color: "#8c8c98" }}>Start Time</label>
+                        <input
+                          type="datetime-local"
+                          value={formatDateTimeInput(item.start_time)}
+                          onChange={(e) => {
+                            const val = e.target.value ? new Date(e.target.value).toISOString() : "";
+                            setTimelineItems((prev) =>
+                              prev.map((m, i) => (i === idx ? { ...m, start_time: val } : m))
+                            );
+                          }}
+                          className={styles.formInput}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: "11px", color: "#8c8c98" }}>End Time (Optional)</label>
+                        <input
+                          type="datetime-local"
+                          value={formatDateTimeInput(item.end_time)}
+                          onChange={(e) => {
+                            const val = e.target.value ? new Date(e.target.value).toISOString() : undefined;
+                            setTimelineItems((prev) =>
+                              prev.map((m, i) => (i === idx ? { ...m, end_time: val } : m))
+                            );
+                          }}
+                          className={styles.formInput}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: "11px", color: "#8c8c98" }}>Location / Stream URL</label>
+                        <input
+                          type="text"
+                          value={item.location_or_link || ""}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setTimelineItems((prev) =>
+                              prev.map((m, i) => (i === idx ? { ...m, location_or_link: val } : m))
+                            );
+                          }}
+                          className={styles.formInput}
+                          placeholder="e.g. Auditorium A or https://youtube.com/..."
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: "11px", color: "#8c8c98" }}>Description / Agenda</label>
+                      <input
+                        type="text"
+                        value={item.description || ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setTimelineItems((prev) =>
+                            prev.map((m, i) => (i === idx ? { ...m, description: val } : m))
+                          );
+                        }}
+                        className={styles.formInput}
+                        placeholder="Key instructions or activities..."
+                      />
+                    </div>
+
+                    <div style={{ display: "flex", gap: "16px", marginTop: "4px" }}>
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "#f87171", fontWeight: "650", cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(item.is_submission_deadline)}
+                          onChange={(e) =>
+                            setTimelineItems((prev) =>
+                              prev.map((m, i) => (i === idx ? { ...m, is_submission_deadline: e.target.checked } : m))
+                            )
+                          }
+                        />
+                        <span>⚠️ Mark as Project Submission Deadline</span>
+                      </label>
+
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                        <span style={{ fontSize: "12px", color: "#8c8c98" }}>Status Override:</span>
+                        <select
+                          value={item.status_override || ""}
+                          onChange={(e) => {
+                            const val = e.target.value ? (e.target.value as "completed" | "live" | "upcoming") : undefined;
+                            setTimelineItems((prev) =>
+                              prev.map((m, i) => (i === idx ? { ...m, status_override: val } : m))
+                            );
+                          }}
+                          className={styles.formSelect}
+                          style={{ padding: "4px 8px", fontSize: "11px" }}
+                        >
+                          <option value="">Auto (Calculate from time)</option>
+                          <option value="upcoming">Upcoming</option>
+                          <option value="live">Live / In Progress</option>
+                          <option value="completed">Completed</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setTimelineItems((prev) => [
+                      ...prev,
+                      {
+                        id: `milestone_${Date.now().toString(36)}`,
+                        title: "New Milestone",
+                        start_time: new Date().toISOString(),
+                        is_submission_deadline: false,
+                      },
+                    ])
+                  }
+                  className={styles.secondaryBtn}
+                  style={{ alignSelf: "flex-start" }}
+                >
+                  <MemberIcon name="plus" size={13} /> Add Timeline Milestone
+                </button>
+              </div>
+
               {/* Submit & Cancel */}
               <div style={{ display: "flex", gap: "12px", marginTop: "12px" }}>
                 <button
@@ -1076,7 +1642,7 @@ export default function AdminEventEditPanel({
                   style={{ flex: 1 }}
                 >
                   <MemberIcon name="check" size={16} />
-                  {isSubmitting ? "Saving Changes…" : "Save Event Changes"}
+                  {isSubmitting ? "Saving Changesâ€¦" : "Save Event Changes"}
                 </button>
 
                 <button

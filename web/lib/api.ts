@@ -202,6 +202,14 @@ export type EventSummaryItem = {
   banner_badge_text?: string | null;
   banner_cta_text?: string | null;
   banner_cta_url?: string | null;
+  custom_registration_fields?: import("../types/event-matrix").CustomFieldSchema[];
+  event_tracks?: import("../types/event-matrix").EventTrackSchema[];
+  allow_open_track_change?: boolean;
+  team_settings?: import("../types/event-matrix").TeamSettingsSchema;
+  timeline?: import("../types/event-matrix").TimelineItemSchema[];
+  matrix_columns?: import("../types/event-matrix").MatrixColumnDef[];
+  matrix_access_uids?: string[];
+  can_access_matrix?: boolean;
   status: string;
 };
 
@@ -262,6 +270,14 @@ export type EventDocument = {
   banner_badge_text?: string | null;
   banner_cta_text?: string | null;
   banner_cta_url?: string | null;
+  custom_registration_fields?: import("../types/event-matrix").CustomFieldSchema[];
+  event_tracks?: import("../types/event-matrix").EventTrackSchema[];
+  allow_open_track_change?: boolean;
+  team_settings?: import("../types/event-matrix").TeamSettingsSchema;
+  timeline?: import("../types/event-matrix").TimelineItemSchema[];
+  matrix_columns?: import("../types/event-matrix").MatrixColumnDef[];
+  matrix_access_uids?: string[];
+  can_access_matrix?: boolean;
   status: string;
   created_by?: string;
   created_at?: string;
@@ -307,6 +323,19 @@ export type EventRegistration = {
   member_uids: string[];
   spg_id?: string | null;
   spg_status?: string | null;
+  custom_responses?: Record<string, any>;
+  member_responses?: Record<string, Record<string, any>>;
+  selected_track_id?: string | null;
+  invite_code?: string | null;
+  submission?: {
+    repo_url?: string | null;
+    slides_url?: string | null;
+    demo_url?: string | null;
+    paper_link?: string | null;
+    notes?: string | null;
+    submitted_at?: string;
+    submitted_by?: string;
+  } | null;
   status: "registered" | "waitlisted" | "checked_in" | "absent" | "disqualified" | "excused" | "cancelled";
   checked_in_at?: string | null;
   checked_in_by?: string | null;
@@ -1095,13 +1124,101 @@ export const api = {
     request<EventDocument>(`/events/${encodeURIComponent(idOrSlug)}`, token || undefined),
 
   myEventRegistration: (token: string, id: string) =>
-    request<{ is_registered: boolean; registration: { status: string } | null }>(
+    request<{ is_registered: boolean; registration: EventRegistration | null }>(
       `/events/${encodeURIComponent(id)}/my-registration`, token),
 
-  registerForEvent: (token: string, id: string, payload: { team_name?: string; member_uids?: string[] }) =>
+  registerForEvent: (
+    token: string,
+    id: string,
+    payload: {
+      team_name?: string;
+      member_uids?: string[];
+      custom_responses?: Record<string, any>;
+      member_responses?: Record<string, Record<string, any>>;
+      selected_track_id?: string;
+    }
+  ) =>
     request<{ status: string }>(`/events/${encodeURIComponent(id)}/register`, token, {
-      method: "POST", body: JSON.stringify(payload),
+      method: "POST",
+      body: JSON.stringify(payload),
     }),
+
+  updateRegistrationTrack: (
+    token: string,
+    eventId: string,
+    regId: string,
+    selectedTrackId: string
+  ) =>
+    request<{ success: boolean; selected_track_id: string }>(
+      `/events/${encodeURIComponent(eventId)}/registrations/${encodeURIComponent(regId)}/track`,
+      token,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ selected_track_id: selectedTrackId }),
+      }
+    ),
+
+  submitEventProject: (
+    token: string,
+    eventId: string,
+    payload: import("../types/event-matrix").EventSubmissionPayload
+  ) =>
+    request<{ success: boolean; submission: any }>(
+      `/events/${encodeURIComponent(eventId)}/my-registration/submission`,
+      token,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    ),
+
+  updateMemberCustomResponses: (
+    token: string,
+    eventId: string,
+    responses: Record<string, any>
+  ) =>
+    request<{ success: boolean; responses: Record<string, any> }>(
+      `/events/${encodeURIComponent(eventId)}/my-registration/custom-responses`,
+      token,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ responses }),
+      }
+    ),
+
+  downloadComprehensiveExportCsv: async (
+    token: string,
+    eventId: string,
+    onlyCheckedIn = false
+  ): Promise<Blob> => {
+    const query = onlyCheckedIn ? "?format=csv&only_checked_in=true" : "?format=csv";
+    const res = await fetch(`${BASE}/events/${encodeURIComponent(eventId)}/export/comprehensive${query}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) {
+      let detail = `Failed to download CSV (${res.status})`;
+      try {
+        const err = await res.json();
+        if (err.detail) detail = err.detail;
+      } catch {}
+      throw new ApiError(detail, res.status);
+    }
+    return res.blob();
+  },
+
+  getComprehensiveExportJson: (
+    token: string,
+    eventId: string,
+    onlyCheckedIn = false
+  ) => {
+    const query = onlyCheckedIn ? "?format=json&only_checked_in=true" : "?format=json";
+    return request<{ event_id: string; event_title: string; rows: any[]; total: number }>(
+      `/events/${encodeURIComponent(eventId)}/export/comprehensive${query}`,
+      token
+    );
+  },
 
   cancelEventRegistration: (token: string, id: string) =>
     request<unknown>(`/events/${encodeURIComponent(id)}/register`, token, { method: "DELETE" }),
@@ -1112,6 +1229,117 @@ export const api = {
   }) => request<unknown>(`/events/${encodeURIComponent(id)}/feedback`, token, {
     method: "POST", body: JSON.stringify(payload),
   }),
+
+  /* ----------------------------------------------------------- Event Matrix APIs */
+  getEventMatrix: (token: string, eventId: string) =>
+    request<import("../types/event-matrix").EventMatrixResponse>(
+      `/events/${encodeURIComponent(eventId)}/matrix`,
+      token
+    ),
+
+  createMatrixColumn: (
+    token: string,
+    eventId: string,
+    payload: import("../types/event-matrix").CreateMatrixColumnPayload
+  ) =>
+    request<import("../types/event-matrix").MatrixColumnDef>(
+      `/events/${encodeURIComponent(eventId)}/matrix/columns`,
+      token,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    ),
+
+  deleteMatrixColumn: (token: string, eventId: string, columnId: string) =>
+    request<{ success: boolean; deleted_column_id: string }>(
+      `/events/${encodeURIComponent(eventId)}/matrix/columns/${encodeURIComponent(columnId)}`,
+      token,
+      {
+        method: "DELETE",
+      }
+    ),
+
+  updateMatrixCell: (
+    token: string,
+    eventId: string,
+    payload: import("../types/event-matrix").UpdateMatrixCellPayload
+  ) =>
+    request<{ success: boolean; user_id: string; column_id: string; value: unknown }>(
+      `/events/${encodeURIComponent(eventId)}/matrix/cell`,
+      token,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }
+    ),
+
+  updateMatrixAttendance: (
+    token: string,
+    eventId: string,
+    payload: import("../types/event-matrix").MatrixAttendanceUpdatePayload
+  ) =>
+    request<{ success: boolean; user_id: string; status: string }>(
+      `/events/${encodeURIComponent(eventId)}/matrix/attendance`,
+      token,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }
+    ),
+
+  batchUpdateMatrix: (
+    token: string,
+    eventId: string,
+    payload: import("../types/event-matrix").BatchUpdateMatrixPayload
+  ) =>
+    request<{ success: boolean; updated_cells: number; updated_attendance: number }>(
+      `/events/${encodeURIComponent(eventId)}/matrix/batch`,
+      token,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    ),
+
+  assignAllToColumn: (
+    token: string,
+    eventId: string,
+    columnId: string,
+    value: unknown
+  ) =>
+    request<{ success: boolean; column_id: string; updated_count: number; value: unknown }>(
+      `/events/${encodeURIComponent(eventId)}/matrix/columns/${encodeURIComponent(columnId)}/assign-all`,
+      token,
+      {
+        method: "POST",
+        body: JSON.stringify({ value }),
+      }
+    ),
+
+  updateMatrixSettings: (
+    token: string,
+    eventId: string,
+    payload: import("../types/event-matrix").MatrixSettingsUpdatePayload
+  ) =>
+    request<{ success: boolean; matrix_is_public: boolean; matrix_is_pinned: boolean }>(
+      `/events/${encodeURIComponent(eventId)}/matrix/settings`,
+      token,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }
+    ),
+
+  updateMatrixAccess: (token: string, eventId: string, volunteerUids: string[]) =>
+    request<{ success: boolean; volunteer_uids: string[] }>(
+      `/events/${encodeURIComponent(eventId)}/matrix/access`,
+      token,
+      {
+        method: "PUT",
+        body: JSON.stringify({ volunteer_uids: volunteerUids }),
+      }
+    ),
 
   /* ----------------------------------------------------------- Banner APIs */
   listBanners: (token?: string | null, params?: { status?: string; limit?: number }) => {
@@ -1553,3 +1781,5 @@ export type TicketThread = {
     source?: string;
   }[];
 };
+
+export * from "../types/event-matrix";

@@ -1,0 +1,1406 @@
+/* Event Matrix Styles - Strictly following Reinforce Design Tokens */
+
+.pageContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 0 4px 60px 4px;
+}
+
+/* Back Link Row */
+.backRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.backBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #a1a1aa;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  background: #18181b;
+  border: 1px solid #27272a;
+  padding: 8px 14px;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+}
+
+.backBtn:hover {
+  color: #ffffff;
+  border-color: #3f3f46;
+  background: #202024;
+}
+
+.roleBadge {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(229, 183, 49, 0.12);
+  color: #e5b731;
+  border: 1px solid rgba(229, 183, 49, 0.3);
+}
+
+/* Header Banner Card */
+.headerCard {
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 14px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.headerTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.titleArea {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.matrixTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.matrixHeading {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 750;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+.eventTitleTag {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e5b731;
+  background: rgba(229, 183, 49, 0.1);
+  border: 1px solid rgba(229, 183, 49, 0.25);
+  padding: 3px 10px;
+  border-radius: 6px;
+}
+
+.matrixSubtitle {
+  margin: 0;
+  font-size: 13px;
+  color: #a1a1aa;
+}
+
+/* Action Controls Row */
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.actionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: #27272a;
+  border: 1px solid #3f3f46;
+  color: #f4f4f5;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.actionBtn:hover:not(:disabled) {
+  background: #323238;
+  border-color: #52525b;
+}
+
+.actionBtnPrimary {
+  background: #e5b731;
+  border: 1px solid #e5b731;
+  color: #121214;
+  font-weight: 700;
+}
+
+.actionBtnPrimary:hover:not(:disabled) {
+  background: #f0c345;
+  border-color: #f0c345;
+  color: #000000;
+}
+
+/* Stats and Search Filter Bar */
+.filterBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding-top: 14px;
+  border-top: 1px solid #27272a;
+}
+
+.filterPills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.filterPill {
+  background: #202024;
+  border: 1px solid #2e2e34;
+  color: #a1a1aa;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.filterPill:hover {
+  color: #ffffff;
+  border-color: #3f3f46;
+}
+
+.filterPillActive {
+  background: rgba(229, 183, 49, 0.12);
+  border-color: rgba(229, 183, 49, 0.4);
+  color: #e5b731;
+}
+
+.searchBox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #121214;
+  border: 1px solid #2e2e34;
+  border-radius: 8px;
+  padding: 6px 12px;
+  width: 260px;
+}
+
+.searchInput {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #ffffff;
+  font-size: 13px;
+  width: 100%;
+}
+
+.searchInput::placeholder {
+  color: #71717a;
+}
+
+/* Matrix Table Outer Frame */
+.matrixTableCard {
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.tableContainer {
+  width: 100%;
+  overflow-x: auto;
+  position: relative;
+  max-height: 75vh;
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f46 #18181b;
+}
+
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  text-align: left;
+  font-size: 13px;
+}
+
+/* Table Header Styles */
+.th {
+  position: sticky;
+  top: 0;
+  background: #1f1f23;
+  color: #a1a1aa;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 12px 16px;
+  border-bottom: 1px solid #2e2e34;
+  border-right: 1px solid #2e2e34;
+  z-index: 10;
+  white-space: nowrap;
+}
+
+.thStickyMember {
+  position: sticky;
+  left: 0;
+  top: 0;
+  z-index: 30;
+  background: #1f1f23;
+  min-width: 260px;
+  max-width: 260px;
+  border-right: 2px solid #33333d;
+}
+
+.thStickyAttendance {
+  position: sticky;
+  left: 260px;
+  top: 0;
+  z-index: 30;
+  background: #1f1f23;
+  min-width: 175px;
+  max-width: 175px;
+  border-right: 2px solid #33333d;
+}
+
+.columnHeaderContent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.columnHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.colTypeBadge {
+  font-size: 9px;
+  font-weight: 750;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: #2a2a30;
+  color: #d1d1d6;
+  border: 1px solid #3a3a44;
+}
+
+.colTypeBadgeObj {
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+.deleteColBtn {
+  background: transparent;
+  border: none;
+  color: #71717a;
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.deleteColBtn:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.12);
+}
+
+/* Table Body Styles */
+.tr {
+  background: #18181b;
+  transition: background 0.12s ease;
+}
+
+.tr:hover {
+  background: #1c1c20;
+}
+
+.td {
+  padding: 10px 16px;
+  border-bottom: 1px solid #27272a;
+  border-right: 1px solid #27272a;
+  color: #e4e4e7;
+  vertical-align: middle;
+}
+
+.tdStickyMember {
+  position: sticky;
+  left: 0;
+  background: inherit;
+  z-index: 20;
+  min-width: 260px;
+  max-width: 260px;
+  border-right: 2px solid #33333d;
+}
+
+.tdStickyAttendance {
+  position: sticky;
+  left: 260px;
+  background: inherit;
+  z-index: 20;
+  min-width: 175px;
+  max-width: 175px;
+  border-right: 2px solid #33333d;
+}
+
+/* Member Column Profile View */
+.memberCell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #2e2e34;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 12px;
+  color: #e5b731;
+  flex-shrink: 0;
+  border: 1px solid #3f3f46;
+  overflow: hidden;
+}
+
+.avatarImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.memberMeta {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.memberName {
+  font-weight: 600;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.memberEmail {
+  font-size: 11px;
+  color: #8c8c98;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.teamBadge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  color: #e5b731;
+  background: rgba(229, 183, 49, 0.1);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-top: 2px;
+  width: fit-content;
+}
+
+/* Attendance Status Select */
+.attendanceSelect {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+.attendanceCheckedIn {
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.attendanceRegistered {
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+.attendanceWaitlisted {
+  background: rgba(234, 179, 8, 0.12);
+  color: #eab308;
+  border-color: rgba(234, 179, 8, 0.3);
+}
+
+.attendanceAbsent {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.attendanceExcused {
+  background: rgba(168, 85, 247, 0.12);
+  color: #a855f7;
+  border-color: rgba(168, 85, 247, 0.3);
+}
+
+.attendanceDisqualified {
+  background: rgba(107, 114, 128, 0.15);
+  color: #9ca3af;
+  border-color: rgba(107, 114, 128, 0.3);
+}
+
+/* Text Cell Editor */
+.textCellBox {
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: text;
+  display: flex;
+  align-items: center;
+  transition: background 0.12s ease;
+}
+
+.textCellBox:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.textCellPlaceholder {
+  color: #52525b;
+  font-style: italic;
+  font-size: 12px;
+}
+
+.textInputInline {
+  width: 100%;
+  background: #121214;
+  border: 1px solid #e5b731;
+  border-radius: 4px;
+  color: #ffffff;
+  padding: 4px 6px;
+  font-size: 13px;
+  outline: none;
+}
+
+/* Object Cell Badges */
+.objectCellBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  max-width: 100%;
+}
+
+.objectCellBadgeEmpty {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed #3f3f46;
+  color: #71717a;
+}
+
+.objectCellBadgeEmpty:hover {
+  background: rgba(229, 183, 49, 0.08);
+  border-color: #e5b731;
+  color: #e5b731;
+}
+
+.objectCellBadgeFeedback {
+  background: rgba(234, 179, 8, 0.12);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  color: #eab308;
+}
+
+.objectCellBadgeFeedback:hover {
+  background: rgba(234, 179, 8, 0.2);
+  border-color: #eab308;
+}
+
+.objectCellBadgeSubmission {
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+}
+
+.objectCellBadgeSubmission:hover {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: #38bdf8;
+}
+
+.objectCellBadgeRole {
+  background: rgba(168, 85, 247, 0.12);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  color: #a855f7;
+}
+
+.objectCellBadgeRole:hover {
+  background: rgba(168, 85, 247, 0.2);
+  border-color: #a855f7;
+}
+
+/* Modals & Popovers */
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+}
+
+.modalCard {
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  border-radius: 14px;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #27272a;
+}
+
+.modalTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.modalCloseBtn {
+  background: transparent;
+  border: none;
+  color: #71717a;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modalCloseBtn:hover {
+  color: #ffffff;
+  background: #27272a;
+}
+
+.modalBody {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modalFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-top: 1px solid #27272a;
+  background: #141416;
+}
+
+.footerActionsRight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.clearCellBtn {
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.clearCellBtn:hover {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: #ef4444;
+}
+
+/* Form Controls */
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.formLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: #a1a1aa;
+}
+
+.formInput,
+.formSelect,
+.formTextarea {
+  background: #121214;
+  border: 1px solid #2e2e34;
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 13px;
+  padding: 9px 12px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.formInput:focus,
+.formSelect:focus,
+.formTextarea:focus {
+  border-color: #e5b731;
+}
+
+.formTextarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+/* Empty / Error States */
+.errorCard {
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  border-radius: 12px;
+  padding: 40px 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.errorTitle {
+  color: #ef4444;
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.emptyState {
+  padding: 48px 24px;
+  text-align: center;
+  color: #71717a;
+  font-size: 14px;
+}
+
+/* Number Column Badge */
+.colTypeBadgeNum {
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+/* Contribution Assignment Badge */
+.objectCellBadgeContrib {
+  background: rgba(229, 183, 49, 0.12);
+  color: #e5b731;
+  border: 1px solid rgba(229, 183, 49, 0.35);
+}
+
+.objectCellBadgeContrib:hover {
+  background: rgba(229, 183, 49, 0.2);
+  border-color: #e5b731;
+}
+
+/* Sorting */
+.thSortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.thSortable:hover {
+  color: #ffffff;
+}
+
+.sortIndicator {
+  color: #e5b731;
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+/* Column Header Actions */
+.colHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.colHeaderActionBtn {
+  background: transparent;
+  border: none;
+  color: #71717a;
+  cursor: pointer;
+  padding: 3px 5px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.colHeaderActionBtn:hover {
+  color: #e5b731;
+  background: rgba(229, 183, 49, 0.12);
+}
+
+/* Unsaved Cell / Attendance Indicators */
+.cellUnsaved {
+  border-color: rgba(229, 183, 49, 0.6) !important;
+  background: rgba(229, 183, 49, 0.05) !important;
+}
+
+.attendanceWrapper {
+  display: flex;
+  align-items: center;
+}
+
+.attendanceUnsaved {
+  border-color: #e5b731 !important;
+  box-shadow: 0 0 0 1px rgba(229, 183, 49, 0.4);
+}
+
+.unsavedDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #e5b731;
+  display: inline-block;
+  flex-shrink: 0;
+  box-shadow: 0 0 6px #e5b731;
+}
+
+/* Sticky Save Changes Floating Bar */
+.stickySaveBar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #18181b;
+  border: 1px solid #e5b731;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 16px rgba(229, 183, 49, 0.2);
+  border-radius: 12px;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  z-index: 100;
+  animation: slideUp 0.2s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 15px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.stickySaveInfo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #f4f4f5;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.stickySaveActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.discardBtn {
+  background: transparent;
+  border: 1px solid #3f3f46;
+  color: #a1a1aa;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.discardBtn:hover {
+  color: #ffffff;
+  border-color: #71717a;
+  background: #27272a;
+}
+
+.saveChangesBtn {
+  background: #e5b731;
+  border: 1px solid #e5b731;
+  color: #121214;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.saveChangesBtn:hover:not(:disabled) {
+  background: #d4a625;
+  border-color: #d4a625;
+}
+
+.toastNotice {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  background: #18181b;
+  border: 1px solid #22c55e;
+  color: #22c55e;
+  padding: 10px 18px;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 1000;
+  animation: slideInRight 0.2s ease-out;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Right Sidebar Drawer */
+.drawerBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(2px);
+  z-index: 199;
+  animation: fadeIn 0.15s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.drawerContainer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 440px;
+  max-width: 92vw;
+  height: 100vh;
+  background: #141416;
+  border-left: 1px solid #27272a;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -10px 0 40px rgba(0, 0, 0, 0.7);
+  animation: drawerSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes drawerSlideIn {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.drawerHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid #27272a;
+  background: #18181b;
+}
+
+.drawerHeaderLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.drawerAttendeeRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.drawerAttendeeName {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.drawerTeamTag {
+  font-size: 11px;
+  font-weight: 600;
+  color: #a1a1aa;
+  background: #27272a;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.drawerSubMeta {
+  font-size: 12px;
+  color: #8c8c98;
+}
+
+.drawerForm {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.drawerBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.drawerFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-top: 1px solid #27272a;
+  background: #101012;
+}
+
+.drawerChoiceBtn {
+  background: #1c1c20;
+  border: 1px solid #2d2d34;
+  color: #d4d4d8;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 9px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.drawerChoiceBtn:hover:not(:disabled) {
+  background: #26262c;
+  border-color: #3f3f46;
+}
+
+.drawerChoiceBtnActive {
+  background: rgba(229, 183, 49, 0.15) !important;
+  border-color: #e5b731 !important;
+  color: #e5b731 !important;
+}
+
+/* Header Toggle Buttons */
+.toggleBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: #1f1f23;
+  border: 1px solid #33333a;
+  color: #a1a1aa;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.toggleBtn:hover:not(:disabled) {
+  border-color: #4a4a54;
+  color: #ffffff;
+}
+
+.toggleBtnActive {
+  background: rgba(229, 183, 49, 0.12) !important;
+  border-color: rgba(229, 183, 49, 0.4) !important;
+  color: #e5b731 !important;
+}
+
+.toggleBtnActivePublic {
+  background: rgba(34, 197, 94, 0.12) !important;
+  border-color: rgba(34, 197, 94, 0.4) !important;
+  color: #22c55e !important;
+}
+
+/* Mobile Responsiveness: Pin and Truncate Name column on phones */
+@media (max-width: 768px) {
+  .thStickyMember,
+  .tdStickyMember {
+    max-width: 120px !important;
+    min-width: 105px !important;
+    width: 115px !important;
+    padding: 8px 6px !important;
+  }
+
+  .memberName {
+    max-width: 75px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    font-size: 12px !important;
+  }
+
+  .memberEmail {
+    display: none !important;
+  }
+
+  .avatar {
+    width: 22px !important;
+    height: 22px !important;
+    font-size: 9px !important;
+  }
+
+  .matrixHeading {
+    font-size: 18px !important;
+  }
+}
+
+/* ==========================================================================
+   Matrix Workspace Layout & Persistent Desktop Sidebar (Zero Backdrop Blur)
+   ========================================================================== */
+
+.matrixWorkspace {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  align-items: stretch;
+}
+
+@media (min-width: 1024px) {
+  .matrixWorkspace {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+}
+
+.matrixTableSection {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+}
+
+/* Cell Selection Highlight */
+.cellSelected {
+  outline: 2px solid #e5b731 !important;
+  outline-offset: -2px;
+  background: rgba(229, 183, 49, 0.08) !important;
+}
+
+/* Persistent Sidebar Panel */
+.sidebarPanel {
+  width: 100%;
+  background: #141416;
+  border: 1px solid #27272a;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+}
+
+@media (min-width: 1024px) {
+  .sidebarPanel {
+    width: 380px;
+    min-width: 380px;
+    max-width: 420px;
+    position: sticky;
+    top: 24px;
+    max-height: calc(100vh - 48px);
+  }
+}
+
+.sidebarHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border-bottom: 1px solid #27272a;
+  background: #18181b;
+  gap: 12px;
+}
+
+.sidebarHeaderTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #e5b731;
+}
+
+.sidebarTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.sidebarHeaderLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sidebarAttendeeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sidebarAttendeeName {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebarTeamTag {
+  font-size: 11px;
+  font-weight: 600;
+  color: #e5b731;
+  background: rgba(229, 183, 49, 0.12);
+  border: 1px solid rgba(229, 183, 49, 0.25);
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.sidebarSubMeta {
+  font-size: 12px;
+  color: #8c8c98;
+}
+
+.sidebarDeselectBtn {
+  background: transparent;
+  border: 1px solid #3f3f46;
+  color: #a1a1aa;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.sidebarDeselectBtn:hover {
+  background: #27272a;
+  color: #ffffff;
+  border-color: #52525b;
+}
+
+/* Empty State in Inspector */
+.sidebarEmptyBody {
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.emptyIconCircle {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(229, 183, 49, 0.1);
+  border: 1px solid rgba(229, 183, 49, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #e5b731;
+  margin-bottom: 4px;
+}
+
+.emptyHeading {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.emptyNotice {
+  margin: 0;
+  font-size: 13px;
+  color: #a1a1aa;
+  line-height: 1.5;
+}
+
+.statsSummaryCard {
+  width: 100%;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.statsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.statsLabel {
+  color: #a1a1aa;
+}
+
+.statsVal {
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.tipCard {
+  width: 100%;
+  background: rgba(229, 183, 49, 0.05);
+  border: 1px solid rgba(229, 183, 49, 0.2);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12px;
+  color: #d4d4d8;
+  line-height: 1.4;
+  text-align: left;
+}
+
+.tipIcon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.tipText {
+  flex: 1;
+}
+
+/* Active Editing Form in Sidebar */
+.sidebarForm {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.sidebarBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sidebarFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-top: 1px solid #27272a;
+  background: #18181b;
+  gap: 10px;
+}
+
+/* SPG & Idea Jar Object Cell Badges */
+.objectCellBadgeSPG {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.objectCellBadgeSPG:hover {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: #10b981;
+}
+
+.objectCellBadgeIdea {
+  background: rgba(236, 72, 153, 0.12);
+  color: #ec4899;
+  border: 1px solid rgba(236, 72, 153, 0.35);
+}
+
+.objectCellBadgeIdea:hover {
+  background: rgba(236, 72, 153, 0.2);
+  border-color: #ec4899;
+}

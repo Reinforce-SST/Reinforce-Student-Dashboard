@@ -8,7 +8,7 @@ Strictly follows zero user denormalization (pure UID references).
 # Validated Need Some Changes and Discussion along the Comemnted Points
 from datetime import date, datetime, timedelta, timezone
 from enum import Enum
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 from urllib.parse import urlsplit
 try:
     from zoneinfo import ZoneInfo
@@ -22,6 +22,7 @@ from pydantic import (
     Field,
     PlainSerializer,
     StringConstraints,
+    TypeAdapter,
     field_validator,
     model_validator,
 )
@@ -231,6 +232,53 @@ BannerLabel = Annotated[str, AfterValidator(_banner_label)]
 BannerDestination = Annotated[str, AfterValidator(_banner_destination)]
 
 
+# --- Advanced Hackathon & Operations Schemas ---
+
+
+class CustomFieldSchema(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    field_id: str = Field(..., description="Slugified field ID, e.g. mess_vendor")
+    label: str
+    field_type: str = "text"  # "text" | "select" | "boolean" | "url"
+    options: Optional[List[str]] = None
+    required: bool = True
+    applies_to: str = "individual"  # "individual" | "team"
+    sync_to_matrix: bool = True
+
+
+class EventTrackSchema(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    track_id: str
+    name: str
+    description: Optional[str] = None
+    max_teams: Optional[int] = None
+
+
+class TeamSettingsSchema(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    allow_team_creation: bool = True
+    require_join_approval: bool = True
+    allow_solo_pool: bool = False
+    lock_rosters_at: Optional[UtcDatetime] = None
+    auto_convert_to_spg: bool = False
+
+
+class TimelineItemSchema(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    title: str
+    description: Optional[str] = None
+    start_time: str
+    end_time: Optional[str] = None
+    location_or_link: Optional[str] = None
+    is_submission_deadline: bool = False
+    status_override: Optional[str] = None  # "upcoming" | "live" | "completed"
+
+
 class EventCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -254,6 +302,11 @@ class EventCreate(BaseModel):
     banner_badge_text: Optional[BannerLabel] = None
     banner_cta_text: Optional[BannerLabel] = None
     banner_cta_url: Optional[BannerDestination] = None
+    custom_registration_fields: List[CustomFieldSchema] = Field(default_factory=list)
+    event_tracks: List[EventTrackSchema] = Field(default_factory=list)
+    allow_open_track_change: bool = False
+    team_settings: Optional[TeamSettingsSchema] = None
+    timeline: List[TimelineItemSchema] = Field(default_factory=list)
     status: EventStatus = EventStatus.DRAFT
 
 
@@ -277,6 +330,11 @@ class EventUpdate(BaseModel):
     banner_badge_text: Optional[BannerLabel] = None
     banner_cta_text: Optional[BannerLabel] = None
     banner_cta_url: Optional[BannerDestination] = None
+    custom_registration_fields: Optional[List[CustomFieldSchema]] = None
+    event_tracks: Optional[List[EventTrackSchema]] = None
+    allow_open_track_change: Optional[bool] = None
+    team_settings: Optional[TeamSettingsSchema] = None
+    timeline: Optional[List[TimelineItemSchema]] = None
     winners: Optional[List[EventWinner]] = None
     status: Optional[EventStatus] = None
 
@@ -285,6 +343,227 @@ class EventStatusUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: EventStatus
+
+
+# --- Event Matrix Schemas ---
+
+
+class MatrixColumnType(str, Enum):
+    TEXT = "text"
+    NUMBER = "number"
+    OBJECT = "object"
+
+
+class MatrixSchemaType(str, Enum):
+    SUBMISSION = "submission"
+    ROLE_ASSIGNMENT = "role_assignment"
+    FEEDBACK = "feedback"
+    CONTRIBUTION_ASSIGNMENT = "contribution_assignment"
+    SPG_ASSIGNMENT = "spg_assignment"
+    IDEA_JAR_ASSIGNMENT = "idea_jar_assignment"
+
+
+class MatrixColumnDef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    column_id: str
+    title: str
+    column_type: MatrixColumnType
+    object_schema_type: Optional[MatrixSchemaType] = None
+
+
+class SubmissionObject(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_type: Literal[MatrixSchemaType.SUBMISSION] = MatrixSchemaType.SUBMISSION
+    repo_url: Optional[str] = None
+    paper_link: Optional[str] = None
+    score: Optional[float] = None
+
+
+class RoleAssignmentObject(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_type: Literal[MatrixSchemaType.ROLE_ASSIGNMENT] = MatrixSchemaType.ROLE_ASSIGNMENT
+    role_title: str
+    team_name: Optional[str] = None
+    is_lead: bool = False
+
+
+class FeedbackObject(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_type: Literal[MatrixSchemaType.FEEDBACK] = MatrixSchemaType.FEEDBACK
+    rating: int = Field(ge=1, le=5)
+    notes: Optional[str] = None
+
+
+class ContributionAssignmentObject(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_type: Literal[MatrixSchemaType.CONTRIBUTION_ASSIGNMENT] = MatrixSchemaType.CONTRIBUTION_ASSIGNMENT
+    category: ContributionCategory = ContributionCategory.PARTICIPATION
+    track: str = "general"
+    points: int = Field(default=10, ge=0, le=1000)
+    title: Optional[str] = None
+    description: Optional[str] = None
+
+
+class SPGAssignmentObject(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_type: Literal[MatrixSchemaType.SPG_ASSIGNMENT] = MatrixSchemaType.SPG_ASSIGNMENT
+    spg_id: Optional[str] = None
+    spg_name: str
+    spg_status: Optional[str] = "active"
+    role: Optional[str] = None
+
+
+class IdeaJarAssignmentObject(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_type: Literal[MatrixSchemaType.IDEA_JAR_ASSIGNMENT] = MatrixSchemaType.IDEA_JAR_ASSIGNMENT
+    idea_id: Optional[str] = None
+    idea_title: str
+    track: Optional[str] = "general"
+    spg_id: Optional[str] = None
+    spg_name: Optional[str] = None
+
+
+MatrixObjectPayload = Annotated[
+    Union[
+        SubmissionObject,
+        RoleAssignmentObject,
+        FeedbackObject,
+        ContributionAssignmentObject,
+        SPGAssignmentObject,
+        IdeaJarAssignmentObject,
+    ],
+    Field(discriminator="schema_type"),
+]
+
+SUBMISSION_ADAPTER = TypeAdapter(SubmissionObject)
+ROLE_ASSIGNMENT_ADAPTER = TypeAdapter(RoleAssignmentObject)
+FEEDBACK_ADAPTER = TypeAdapter(FeedbackObject)
+CONTRIBUTION_ASSIGNMENT_ADAPTER = TypeAdapter(ContributionAssignmentObject)
+SPG_ASSIGNMENT_ADAPTER = TypeAdapter(SPGAssignmentObject)
+IDEA_JAR_ASSIGNMENT_ADAPTER = TypeAdapter(IdeaJarAssignmentObject)
+
+MATRIX_ADAPTERS: Dict[MatrixSchemaType, TypeAdapter[Any]] = {
+    MatrixSchemaType.SUBMISSION: SUBMISSION_ADAPTER,
+    MatrixSchemaType.ROLE_ASSIGNMENT: ROLE_ASSIGNMENT_ADAPTER,
+    MatrixSchemaType.FEEDBACK: FEEDBACK_ADAPTER,
+    MatrixSchemaType.CONTRIBUTION_ASSIGNMENT: CONTRIBUTION_ASSIGNMENT_ADAPTER,
+    MatrixSchemaType.SPG_ASSIGNMENT: SPG_ASSIGNMENT_ADAPTER,
+    MatrixSchemaType.IDEA_JAR_ASSIGNMENT: IDEA_JAR_ASSIGNMENT_ADAPTER,
+}
+
+
+class CreateMatrixColumnRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: NonBlankStr
+    column_type: MatrixColumnType
+    object_schema_type: Optional[MatrixSchemaType] = None
+
+
+class UpdateMatrixCellRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    user_id: NonBlankStr
+    column_id: NonBlankStr
+    value: Optional[Any] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def support_camel_case(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "columnId" in data and "column_id" not in data:
+                data["column_id"] = data["columnId"]
+        return data
+
+
+class MatrixCellUpdateItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    user_id: NonBlankStr
+    column_id: NonBlankStr
+    value: Optional[Any] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def support_camel_case(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "columnId" in data and "column_id" not in data:
+                data["column_id"] = data["columnId"]
+        return data
+
+
+class MatrixAttendanceUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: NonBlankStr
+    status: RegistrationStatus
+    attendance_note: Optional[str] = None
+    award_points: bool = False
+    category: ContributionCategory = ContributionCategory.PARTICIPATION
+
+
+class BatchUpdateMatrixRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cells: List[MatrixCellUpdateItem] = Field(default_factory=list)
+    attendance: List[MatrixAttendanceUpdateRequest] = Field(default_factory=list)
+
+
+class AssignAllColumnRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    value: Optional[Any] = None
+
+
+class MatrixAccessUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    volunteer_uids: List[NonBlankStr] = Field(default_factory=list)
+
+
+class MatrixSettingsUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    matrix_is_public: Optional[bool] = None
+    matrix_is_pinned: Optional[bool] = None
+
+
+class MatrixRowHydrated(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    user_id: str
+    user_name: str
+    email: str
+    avatar_url: Optional[str] = None
+    batch_year: Optional[int] = None
+    team_name: Optional[str] = None
+    rsvp_status: str
+    attendance: str
+    cells: Dict[str, Any] = Field(default_factory=dict)
+
+
+class EventMatrixResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    event_id: str
+    event_title: str
+    is_admin: bool
+    has_edit_access: bool
+    matrix_is_public: bool = False
+    matrix_is_pinned: bool = False
+    volunteer_uids: List[str] = Field(default_factory=list)
+    volunteer_profiles: List[Dict[str, Any]] = Field(default_factory=list)
+    event_spgs: List[Dict[str, Any]] = Field(default_factory=list)
+    approved_ideas: List[Dict[str, Any]] = Field(default_factory=list)
+    columns: List[MatrixColumnDef] = Field(default_factory=list)
+    rows: List[MatrixRowHydrated] = Field(default_factory=list)
 
 
 class EventDocument(BaseModel):
@@ -314,10 +593,21 @@ class EventDocument(BaseModel):
     banner_cta_text: Optional[str] = None
     banner_cta_url: Optional[str] = None
     winners: Optional[List[EventWinner]] = None
+    custom_registration_fields: List[CustomFieldSchema] = Field(default_factory=list)
+    event_tracks: List[EventTrackSchema] = Field(default_factory=list)
+    allow_open_track_change: bool = False
+    team_settings: TeamSettingsSchema = Field(default_factory=TeamSettingsSchema)
+    timeline: List[TimelineItemSchema] = Field(default_factory=list)
+    matrix_columns: List[MatrixColumnDef] = Field(default_factory=list)
+    matrix_cells: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    matrix_access_uids: List[str] = Field(default_factory=list)
+    matrix_is_public: bool = False
+    matrix_is_pinned: bool = False
+    can_access_matrix: Optional[bool] = None
     status: str = EventStatus.DRAFT.value
-    created_by: str
-    created_at: str
-    updated_at: str
+    created_by: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
 
 class EventSummary(BaseModel):
@@ -359,6 +649,9 @@ class EventRegisterRequest(BaseModel):
 
     team_name: Optional[NonBlankStr] = None
     member_uids: List[NonBlankStr] = Field(default_factory=list)
+    custom_responses: Dict[str, Any] = Field(default_factory=dict)
+    member_responses: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    selected_track_id: Optional[str] = None
 
 
 class RegistrationDocument(BaseModel):
@@ -373,6 +666,11 @@ class RegistrationDocument(BaseModel):
     member_uids: List[str] = Field(default_factory=list)
     spg_id: Optional[str] = None
     spg_status: Optional[str] = None
+    custom_responses: Dict[str, Any] = Field(default_factory=dict)
+    member_responses: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    selected_track_id: Optional[str] = None
+    invite_code: Optional[str] = None
+    submission: Optional[Dict[str, Any]] = None
     status: str = RegistrationStatus.REGISTERED.value
     checked_in_at: Optional[str] = None
     checked_in_by: Optional[str] = None
@@ -380,6 +678,28 @@ class RegistrationDocument(BaseModel):
     registered_at: str
     user_profile: Optional[Dict[str, Any]] = None
     member_profiles: Optional[List[Dict[str, Any]]] = None
+
+
+class UpdateRegistrationTrackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    selected_track_id: str
+
+
+class EventSubmissionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    repo_url: Optional[str] = None
+    slides_url: Optional[str] = None
+    demo_url: Optional[str] = None
+    paper_link: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class UpdateMemberCustomResponsesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    responses: Dict[str, Any]
 
 
 class RegistrationAttendanceUpdateRequest(BaseModel):

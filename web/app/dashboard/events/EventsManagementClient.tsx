@@ -31,7 +31,8 @@ export type CalendarEventItem = {
 
 export default function EventsManagementClient() {
   const router = useRouter();
-  const { token } = useMember();
+  const { token, profile } = useMember();
+  const isAdmin = Boolean(profile?.is_admin);
   const [activeTab, setActiveTab] = useState<"ALL" | "WORKSHOPS" | "HACKATHONS" | "MEETUPS">("ALL");
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [events, setEvents] = useState<CalendarEventItem[]>([]);
@@ -60,13 +61,15 @@ export default function EventsManagementClient() {
         if (allFetched.length > 0) {
           const now = Date.now();
           const mapped: CalendarEventItem[] = allFetched
-            .filter((ev) =>
-              !ev.event_type?.toLowerCase().includes("banner") &&
-              ["published", "registration_closed", "ongoing", "completed"].includes(ev.status)
-            )
+            .filter((ev) => {
+              if (ev.event_type?.toLowerCase().includes("banner")) return false;
+              if (isAdmin && ev.status === "draft") return true;
+              return ["published", "registration_closed", "ongoing", "completed"].includes(ev.status);
+            })
             .map((ev) => {
               const start = new Date(ev.schedule.start_time);
               const isEnded = ev.status === "completed" || start.getTime() < now;
+              const isDraft = ev.status === "draft";
 
               const monthStr = start.toLocaleString("en-US", { month: "short" }).toUpperCase();
               const dayNum = start.getDate();
@@ -79,14 +82,16 @@ export default function EventsManagementClient() {
 
               const rawType = ev.event_type.toLowerCase();
               const registrationOpen = !isEnded &&
-                (ev.status === "published" || ev.status === "ongoing") &&
+                (ev.status === "published" || ev.status === "ongoing" || (isAdmin && isDraft)) &&
                 (!ev.schedule.registration_deadline || new Date(ev.schedule.registration_deadline).getTime() >= now);
               const loc =
                 ev.venue_info?.room ||
                 ev.venue_info?.venue_name ||
                 (ev.format === "online" ? "Online" : "Venue to be announced");
 
-              const statusText = isEnded
+              const statusText = isDraft
+                ? "DRAFT (ADMIN)"
+                : isEnded
                 ? "ENDED"
                 : registrationOpen
                 ? "OPEN"
@@ -104,7 +109,7 @@ export default function EventsManagementClient() {
                 time: timeStr,
                 location: loc,
                 statusText,
-                statusType: isEnded ? "ended" : "available",
+                statusType: isDraft ? "limited" : isEnded ? "ended" : "available",
                 registrationOpen,
                 isEnded,
                 startDate: start,
@@ -349,7 +354,7 @@ export default function EventsManagementClient() {
                             : styles.statusAvailable
                         }`}
                       >
-                        {ev.isEnded ? "• ENDED" : ev.statusText}
+                        {ev.isEnded ? "â€¢ ENDED" : ev.statusText}
                       </span>
                     </div>
 
