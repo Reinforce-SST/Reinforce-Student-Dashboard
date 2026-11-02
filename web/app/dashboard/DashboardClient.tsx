@@ -318,9 +318,11 @@ export default function DashboardClient() {
   const slides: FeaturedBanner[] = dedicatedSlides.length > 0 ? dedicatedSlides : fallbackEventSlides;
   const activeSlide = slides.length > 0 ? slides[slideIndex % slides.length] : null;
 
+  const bannerEventIdsKey = Array.from(new Set(slides.map((s) => s.eventId).filter(Boolean))).sort().join(",");
+
   useEffect(() => {
-    if (!token || slides.length === 0) return;
-    const eventIds = Array.from(new Set(slides.map((s) => s.eventId).filter(Boolean)));
+    if (!token || !bannerEventIdsKey) return;
+    const eventIds = bannerEventIdsKey.split(",").filter(Boolean);
     if (eventIds.length === 0) return;
 
     let active = true;
@@ -329,17 +331,21 @@ export default function DashboardClient() {
     ).then((results) => {
       if (!active) return;
       setRegisteredEventIds((prev) => {
+        let changed = false;
         const next = new Set(prev);
         for (const r of results) {
           if (r.status === "fulfilled" && r.value.is_registered) {
-            next.add(r.value.id);
+            if (!next.has(r.value.id)) {
+              next.add(r.value.id);
+              changed = true;
+            }
           }
         }
-        return next;
+        return changed ? next : prev;
       });
     });
     return () => { active = false; };
-  }, [token, slides]);
+  }, [token, bannerEventIdsKey]);
 
   const navigateTo = (url: string) => {
     if (url.startsWith("http://") || url.startsWith("https://")) {

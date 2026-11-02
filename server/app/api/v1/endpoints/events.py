@@ -2803,18 +2803,15 @@ def update_registration_track(
             detail="Event not found",
         )
 
-    if not is_admin and not event.allow_open_track_change:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Track changes are not permitted for this event.",
-        )
-
-    target_track = next((t for t in (event.event_tracks or []) if t.track_id == payload.selected_track_id), None)
-    if not target_track:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Track '{payload.selected_track_id}' not found in event tracks.",
-        )
+    clean_track_id = payload.selected_track_id.strip() if payload.selected_track_id else None
+    target_track = None
+    if clean_track_id:
+        target_track = next((t for t in (event.event_tracks or []) if t.track_id == clean_track_id), None)
+        if not target_track:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Track '{clean_track_id}' not found in event tracks.",
+            )
 
     regs_ref = (
         db.collection(EVENTS_COLLECTION)
@@ -2829,14 +2826,35 @@ def update_registration_track(
         if not r_snap.exists:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registration not found")
         r_data = r_snap.to_dict() or {}
-        if not is_admin and r_data.get("user_id") != user_uid:
+        
+        is_member = (
+            user_uid == r_data.get("user_id")
+            or user_uid in (r_data.get("member_uids") or [])
+        )
+        if not is_admin and not is_member:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only the team leader or an admin can switch tracks.",
+                detail="Only a registered team member or an admin can switch tracks.",
             )
 
-        if target_track.max_teams:
-            track_regs = list(transaction.get(regs_ref.where("selected_track_id", "==", payload.selected_track_id)))
+        # Disallow track change only if the event explicitly blocks changes AND a track was already previously chosen
+        if not is_admin and not event.allow_open_track_change and r_data.get("selected_track_id"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Track changes are not permitted for this event.",
+            )
+
+        # Check deadline if not admin
+        if not is_admin and event.schedule.registration_deadline:
+            dl = _parse_utc(event.schedule.registration_deadline)
+            if datetime.now(timezone.utc) > dl:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Registration deadline has passed; tracks can no longer be changed.",
+                )
+
+        if target_track and target_track.max_teams:
+            track_regs = list(transaction.get(regs_ref.where("selected_track_id", "==", clean_track_id)))
             active_track_teams = sum(1 for d in track_regs if d.id != reg_id and _active_registration(d.to_dict() or {}))
             if active_track_teams >= target_track.max_teams:
                 raise HTTPException(
@@ -2844,10 +2862,10 @@ def update_registration_track(
                     detail=f"Track '{target_track.name}' has reached its maximum capacity of {target_track.max_teams} teams.",
                 )
 
-        transaction.update(reg_ref, {"selected_track_id": payload.selected_track_id, "updated_at": now_timestamp})
+        transaction.update(reg_ref, {"selected_track_id": clean_track_id, "updated_at": now_timestamp})
 
     run_event_transaction(switch_track)
-    return {"success": True, "selected_track_id": payload.selected_track_id}
+    return {"success": True, "selected_track_id": clean_track_id or ""}
 
 
 @router.post("/{id}/my-registration/submission")
@@ -2949,6 +2967,7 @@ def update_member_custom_responses(
 ):
     """Update individual custom intake responses (e.g. Mess Vendor, T-Shirt) for the authenticated member."""
     user_uid = get_user_uid(current_user)
+    is_admin = is_admin_user(current_user)
     event_doc = _get_event_doc_or_404(id)
     event_id = event_doc.id
     event_data = event_doc.to_dict() or {}
@@ -2981,6 +3000,7 @@ def update_member_custom_responses(
     now_timestamp = now_iso()
 
     custom_fields = event.custom_registration_fields or []
+    custom_responses = reg_data.get("custom_responses") or {}
     member_responses = reg_data.get("member_responses") or {}
     user_responses = member_responses.get(user_uid) or {}
 
@@ -2993,14 +3013,18 @@ def update_member_custom_responses(
                     detail=f"Value for '{f_def.label}' must be one of: {', '.join(f_def.options)}",
                 )
         user_responses[k] = v
+        # If field applies to team or this is a solo registration, also sync into custom_responses
+        if (f_def and f_def.applies_to == "team") or event.participation.mode.value == "solo":
+            custom_responses[k] = v
 
     member_responses[user_uid] = user_responses
     reg_doc.reference.update({
         "member_responses": member_responses,
+        "custom_responses": custom_responses,
         "updated_at": now_timestamp,
     })
 
-    return {"success": True, "responses": user_responses}
+    return {"success": True, "responses": user_responses, "custom_responses": custom_responses}
 
 
 def _sanitize_csv_cell(value: Any) -> str:

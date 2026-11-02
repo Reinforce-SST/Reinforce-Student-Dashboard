@@ -104,6 +104,7 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    max_age=3600,
 )
 
 API_PREFIX = "/api/v1"

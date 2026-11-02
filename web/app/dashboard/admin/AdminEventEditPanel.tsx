@@ -121,6 +121,7 @@ export default function AdminEventEditPanel({
   // Advanced Hackathon Operations State
   const [customFields, setCustomFields] = useState<CustomFieldSchema[]>([]);
   const [eventTracks, setEventTracks] = useState<EventTrackSchema[]>([]);
+  const [allowOpenTrackChange, setAllowOpenTrackChange] = useState(true);
   const [teamSettings, setTeamSettings] = useState<TeamSettingsSchema>({
     allow_team_creation: true,
     require_join_approval: false,
@@ -129,6 +130,92 @@ export default function AdminEventEditPanel({
     auto_convert_to_spg: false,
   });
   const [timelineItems, setTimelineItems] = useState<TimelineItemSchema[]>([]);
+
+  // Quick preset adder for registration intake questions
+  const addIntakePreset = (preset: "mess" | "tshirt" | "github" | "hardware" | "problem" | "blank") => {
+    switch (preset) {
+      case "mess":
+        setCustomFields((prev) => [
+          ...prev,
+          {
+            field_id: "mess_vendor",
+            label: "Mess Vendor Preference",
+            field_type: "select",
+            options: ["Subway", "Dominos", "Campus Mess", "Other"],
+            required: true,
+            applies_to: "individual",
+            sync_to_matrix: true,
+          },
+        ]);
+        break;
+      case "tshirt":
+        setCustomFields((prev) => [
+          ...prev,
+          {
+            field_id: "tshirt_size",
+            label: "T-Shirt Size",
+            field_type: "select",
+            options: ["S", "M", "L", "XL", "XXL"],
+            required: true,
+            applies_to: "individual",
+            sync_to_matrix: true,
+          },
+        ]);
+        break;
+      case "github":
+        setCustomFields((prev) => [
+          ...prev,
+          {
+            field_id: "github_profile",
+            label: "GitHub Profile / Portfolio URL",
+            field_type: "url",
+            required: false,
+            applies_to: "individual",
+            sync_to_matrix: true,
+          },
+        ]);
+        break;
+      case "hardware":
+        setCustomFields((prev) => [
+          ...prev,
+          {
+            field_id: "hardware_requirements",
+            label: "Hardware / Kit Requirements",
+            field_type: "text",
+            required: false,
+            applies_to: "team",
+            sync_to_matrix: true,
+          },
+        ]);
+        break;
+      case "problem":
+        setCustomFields((prev) => [
+          ...prev,
+          {
+            field_id: "problem_statement_id",
+            label: "Selected Problem Statement ID",
+            field_type: "text",
+            required: false,
+            applies_to: "team",
+            sync_to_matrix: true,
+          },
+        ]);
+        break;
+      case "blank":
+        setCustomFields((prev) => [
+          ...prev,
+          {
+            field_id: `custom_${Date.now().toString(36)}`,
+            label: "New Question",
+            field_type: "text",
+            required: false,
+            applies_to: "individual",
+            sync_to_matrix: true,
+          },
+        ]);
+        break;
+    }
+  };
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -212,6 +299,7 @@ export default function AdminEventEditPanel({
 
         setCustomFields(ev.custom_registration_fields || []);
         setEventTracks(ev.event_tracks || []);
+        setAllowOpenTrackChange(ev.allow_open_track_change ?? true);
         setTeamSettings(ev.team_settings || {
           allow_team_creation: true,
           require_join_approval: false,
@@ -410,6 +498,7 @@ export default function AdminEventEditPanel({
         status,
         custom_registration_fields: customFields,
         event_tracks: eventTracks,
+        allow_open_track_change: allowOpenTrackChange,
         team_settings: teamSettings,
         timeline: timelineItems,
       };
@@ -1246,6 +1335,63 @@ export default function AdminEventEditPanel({
                   Prompt attendees or teams for custom logistical, hardware, or problem information during RSVP. Answers automatically hydrate into the Event Matrix.
                 </p>
 
+                {/* Quick Presets */}
+                <div>
+                  <label style={{ fontSize: "11px", fontWeight: "700", color: "#a1a1aa", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "6px" }}>
+                    Quick Add Common Questions:
+                  </label>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                    <button
+                      type="button"
+                      onClick={() => addIntakePreset("mess")}
+                      className={styles.secondaryBtn}
+                      style={{ fontSize: "12px", padding: "4px 8px" }}
+                    >
+                      <MemberIcon name="plus" size={12} /> Mess Vendor Preference
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addIntakePreset("tshirt")}
+                      className={styles.secondaryBtn}
+                      style={{ fontSize: "12px", padding: "4px 8px" }}
+                    >
+                      <MemberIcon name="plus" size={12} /> T-Shirt Size
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addIntakePreset("github")}
+                      className={styles.secondaryBtn}
+                      style={{ fontSize: "12px", padding: "4px 8px" }}
+                    >
+                      <MemberIcon name="plus" size={12} /> GitHub / Portfolio URL
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addIntakePreset("hardware")}
+                      className={styles.secondaryBtn}
+                      style={{ fontSize: "12px", padding: "4px 8px" }}
+                    >
+                      <MemberIcon name="plus" size={12} /> Hardware Requirements
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addIntakePreset("problem")}
+                      className={styles.secondaryBtn}
+                      style={{ fontSize: "12px", padding: "4px 8px" }}
+                    >
+                      <MemberIcon name="plus" size={12} /> Problem Statement ID
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addIntakePreset("blank")}
+                      className={styles.secondaryBtn}
+                      style={{ fontSize: "12px", padding: "4px 8px", borderColor: "#e5b731", color: "#e5b731" }}
+                    >
+                      <MemberIcon name="plus" size={12} /> Blank Question
+                    </button>
+                  </div>
+                </div>
+
                 {customFields.map((cf, idx) => (
                   <div
                     key={cf.field_id || idx}
@@ -1517,23 +1663,34 @@ export default function AdminEventEditPanel({
                   </div>
                 ))}
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    setEventTracks((prev) => [
-                      ...prev,
-                      {
-                        track_id: `track_${Date.now().toString(36)}`,
-                        name: "New Track",
-                        description: "",
-                      },
-                    ])
-                  }
-                  className={styles.secondaryBtn}
-                  style={{ alignSelf: "flex-start" }}
-                >
-                  <MemberIcon name="plus" size={13} /> Add Track
-                </button>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginTop: "4px" }}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEventTracks((prev) => [
+                        ...prev,
+                        {
+                          track_id: `track_${Date.now().toString(36)}`,
+                          name: "New Track",
+                          description: "",
+                        },
+                      ])
+                    }
+                    className={styles.secondaryBtn}
+                    style={{ alignSelf: "flex-start" }}
+                  >
+                    <MemberIcon name="plus" size={13} /> Add Track
+                  </button>
+
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "#d4d4d8", cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={allowOpenTrackChange}
+                      onChange={(e) => setAllowOpenTrackChange(e.target.checked)}
+                    />
+                    <span>Allow teams to change tracks before the registration deadline</span>
+                  </label>
+                </div>
               </div>
 
               {/* Section 8: Team Settings & Roster Locks */}

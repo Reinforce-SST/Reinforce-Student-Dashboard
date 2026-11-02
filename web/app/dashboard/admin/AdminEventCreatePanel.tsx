@@ -93,7 +93,7 @@ export default function AdminEventCreatePanel({
 
   // --- Section 6: Open Tracks / Themes ---
   const [eventTracks, setEventTracks] = useState<EventTrackSchema[]>([]);
-  const [allowOpenTrackChange, setAllowOpenTrackChange] = useState(false);
+  const [allowOpenTrackChange, setAllowOpenTrackChange] = useState(true);
 
   // --- Section 7: Team Governance & Roster Locking ---
   const [teamSettings, setTeamSettings] = useState<TeamSettingsSchema>({
@@ -1013,7 +1013,7 @@ export default function AdminEventCreatePanel({
               className={styles.presetBtn}
               style={{ borderColor: "#e5b731", color: "#e5b731" }}
             >
-              <MemberIcon name="plus" size={12} /> + Blank Question
+              <MemberIcon name="plus" size={12} /> Blank Question
             </button>
           </div>
         </div>
@@ -1380,7 +1380,7 @@ export default function AdminEventCreatePanel({
                 setTeamSettings((prev) => ({ ...prev, allow_solo_pool: e.target.checked }))
               }
             />
-            Enable "Looking for Team" solo matching pool
+            Enable &quot;Looking for Team&quot; solo matching pool
           </label>
         </div>
 

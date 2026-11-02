@@ -683,7 +683,7 @@ class RegistrationDocument(BaseModel):
 class UpdateRegistrationTrackRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    selected_track_id: str
+    selected_track_id: Optional[str] = None
 
 
 class EventSubmissionRequest(BaseModel):

@@ -366,6 +366,57 @@ class AdvancedHackathonOpsTests(unittest.TestCase):
         self.assertEqual(matrix.rows[0].team_name, "Admin Test Squad")
         self.assertEqual(matrix.rows[1].team_name, "Admin Test Squad")
 
+    def test_track_switching_and_responses_editing(self):
+        """Verify participants and admins can switch tracks and edit custom form answers."""
+        # 1. Register team participant
+        reg = events.register_for_event(
+            "hackathon-1",
+            payload=EventRegisterRequest(
+                team_name="Lead Builders",
+                member_uids=["uid-lead", "uid-mem2"],
+                custom_responses={"hardware_req": "1x GPU Node"},
+                member_responses={
+                    "uid-lead": {"mess_vendor": "Vendor A"},
+                    "uid-mem2": {"mess_vendor": "Vendor B"},
+                },
+                selected_track_id="fintech",
+            ),
+            current_user=LEAD,
+        )
+        self.assertEqual(reg.selected_track_id, "fintech")
+
+        # 2. Switch track to ai_agents
+        switch_res = events.update_registration_track(
+            "hackathon-1",
+            reg_id=reg.id,
+            payload=events.UpdateRegistrationTrackRequest(selected_track_id="ai_agents"),
+            current_user=LEAD,
+        )
+        self.assertTrue(switch_res["success"])
+        self.assertEqual(switch_res["selected_track_id"], "ai_agents")
+
+        # 3. Unassign track (switch to -- No Track --)
+        clear_res = events.update_registration_track(
+            "hackathon-1",
+            reg_id=reg.id,
+            payload=events.UpdateRegistrationTrackRequest(selected_track_id=""),
+            current_user=LEAD,
+        )
+        self.assertTrue(clear_res["success"])
+        self.assertEqual(clear_res["selected_track_id"], "")
+
+        # 4. Edit custom intake responses
+        edit_res = events.update_member_custom_responses(
+            "hackathon-1",
+            payload=events.UpdateMemberCustomResponsesRequest(
+                responses={"mess_vendor": "Vendor B", "hardware_req": "2x Arduino Kit"}
+            ),
+            current_user=LEAD,
+        )
+        self.assertTrue(edit_res["success"])
+        self.assertEqual(edit_res["responses"]["mess_vendor"], "Vendor B")
+        self.assertEqual(edit_res["custom_responses"]["hardware_req"], "2x Arduino Kit")
+
 
 if __name__ == "__main__":
     unittest.main()

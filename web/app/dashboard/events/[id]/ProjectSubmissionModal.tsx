@@ -35,6 +35,11 @@ export default function ProjectSubmissionModal({
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState<number>(0);
+
+  useEffect(() => {
+    setNow(Date.now());
+  }, []);
 
   useEffect(() => {
     if (initialSubmission) {
@@ -52,7 +57,8 @@ export default function ProjectSubmissionModal({
   const deadlineItem = timeline?.find((t) => t.is_submission_deadline);
   const deadlinePassed = Boolean(
     deadlineItem &&
-      new Date(deadlineItem.end_time || deadlineItem.start_time).getTime() <= Date.now()
+      now > 0 &&
+      new Date(deadlineItem.end_time || deadlineItem.start_time).getTime() <= now
   );
 
   const handleSubmit = async (e: React.FormEvent) => {

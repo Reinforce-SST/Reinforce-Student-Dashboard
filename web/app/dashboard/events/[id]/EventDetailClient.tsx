@@ -14,6 +14,7 @@ import EventAttendancePanel from "./EventAttendancePanel";
 import EventTimelineSection from "./EventTimelineSection";
 import RsvpIntakeModal from "./RsvpIntakeModal";
 import ProjectSubmissionModal from "./ProjectSubmissionModal";
+import EditResponsesModal from "./EditResponsesModal";
 import styles from "./EventDetail.module.css";
 
 function formatInline(text: string): React.ReactNode[] {
@@ -188,13 +189,21 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
   // Modals & Interactive States
   const [showRsvpModal, setShowRsvpModal] = useState(false);
   const [showSubmissionModal, setShowSubmissionModal] = useState(false);
+  const [showEditResponsesModal, setShowEditResponsesModal] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [switchingTrack, setSwitchingTrack] = useState(false);
+  const [currentTime, setCurrentTime] = useState<number>(0);
+
+  useEffect(() => {
+    setCurrentTime(Date.now());
+    const interval = setInterval(() => setCurrentTime(Date.now()), 30_000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Active Milestone computation
   const activeTimelineStage = useMemo(() => {
-    if (!event.timeline || event.timeline.length === 0) return null;
-    const now = Date.now();
+    if (!event.timeline || event.timeline.length === 0 || !currentTime) return null;
+    const now = currentTime;
     const sorted = [...event.timeline].sort(
       (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
     );
@@ -216,7 +225,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
     if (upcoming) return { item: upcoming, isCurrent: false };
 
     return null;
-  }, [event.timeline]);
+  }, [event.timeline, currentTime]);
 
   useEffect(() => {
     const deadline = event.schedule?.registration_deadline;
@@ -227,6 +236,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
   }, [event.schedule?.registration_deadline]);
 
   useEffect(() => {
+    if (!token || !event?.id) return;
     let active = true;
     api.myEventRegistration(token, event.id).then((result) => {
       if (active) {
@@ -290,16 +300,14 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
     // Direct solo registration for basic events
     setRegistrationBusy(true);
     try {
-      const result = await api.registerForEvent(token, event.id, {});
+      const result: any = await api.registerForEvent(token, event.id, {});
       setIsRegistered(true);
-      setRegistrationStatus(result.status);
-      setMyRegistration({
-        id: "",
-        event_id: event.id,
-        user_id: profile?.id || "",
-        member_uids: [profile?.id || ""],
-        registered_at: new Date().toISOString(),
-        status: (result.status as EventRegistration["status"]) || "registered",
+      setRegistrationStatus(result.status || "registered");
+      setMyRegistration(result);
+      api.myEventRegistration(token, event.id).then((fresh) => {
+        if (fresh.is_registered && fresh.registration) {
+          setMyRegistration(fresh.registration);
+        }
       });
       const refreshed = await api.getEvent(event.id, token);
       setRegisteredCount(refreshed.stats?.registered_count ?? registeredCount + 1);
@@ -311,11 +319,27 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
   };
 
   const handleSwitchTrack = async (newTrackId: string) => {
-    if (!token || !myRegistration?.id || switchingTrack) return;
+    if (!token || switchingTrack) return;
+    let currentReg = myRegistration;
+    if (!currentReg?.id) {
+      try {
+        const fresh = await api.myEventRegistration(token, event.id);
+        if (fresh.registration) {
+          currentReg = fresh.registration;
+          setMyRegistration(fresh.registration);
+        }
+      } catch {
+        // continue
+      }
+    }
+    if (!currentReg?.id) {
+      setRegistrationError("Could not locate registration record to switch tracks.");
+      return;
+    }
     setSwitchingTrack(true);
     setRegistrationError("");
     try {
-      const res = await api.updateRegistrationTrack(token, event.id, myRegistration.id, newTrackId);
+      const res = await api.updateRegistrationTrack(token, event.id, currentReg.id, newTrackId);
       setMyRegistration((prev) => (prev ? { ...prev, selected_track_id: res.selected_track_id } : prev));
     } catch (err) {
       setRegistrationError(err instanceof Error ? err.message : "Failed to switch track.");
@@ -551,7 +575,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                   <div className={styles.rosterLockWarning}>
                     <MemberIcon name="clock" size={12} />
                     <span>
-                      {Date.now() >= new Date(event.team_settings.lock_rosters_at).getTime()
+                      {currentTime > 0 && currentTime >= new Date(event.team_settings.lock_rosters_at).getTime()
                         ? "🔒 Rosters Locked"
                         : `Rosters lock ${new Date(event.team_settings.lock_rosters_at).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`}
                     </span>
@@ -785,6 +809,100 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                   No deliverables submitted yet. Upload your repository, pitch slides, or demo before the submission deadline.
                 </p>
               )}
+            </section>
+          )}
+
+          {/* Custom Intake Form Responses Card (For Registered Attendees) */}
+          {isRegistered && (
+            (event.custom_registration_fields?.length ?? 0) > 0 ||
+            Boolean(myRegistration?.custom_responses && Object.keys(myRegistration.custom_responses).length > 0)
+          ) && (
+            <section className={styles.intakeCard} aria-label="Registration Form Answers">
+              <div className={styles.intakeHeader}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                  <h2 className={styles.sectionTitle} style={{ margin: 0 }}>
+                    <MemberIcon name="tag" size={18} />
+                    Registration Form Responses
+                  </h2>
+                  <span
+                    className={styles.deliverablesStatusTag}
+                    style={{
+                      background: "rgba(229, 183, 49, 0.12)",
+                      color: "#e5b731",
+                      border: "1px solid rgba(229, 183, 49, 0.3)",
+                    }}
+                  >
+                    ✓ Intake Recorded
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowEditResponsesModal(true)}
+                  className={styles.editIntakeBtn}
+                  title="Edit your submitted answers for this event"
+                >
+                  <MemberIcon name="edit" size={13} />
+                  Edit Responses
+                </button>
+              </div>
+
+              <div className={styles.intakeGrid}>
+                {event.custom_registration_fields?.map((cf) => {
+                  const val =
+                    cf.applies_to === "team"
+                      ? myRegistration?.custom_responses?.[cf.field_id]
+                      : myRegistration?.member_responses?.[profile?.id || ""]?.[cf.field_id] ??
+                        myRegistration?.custom_responses?.[cf.field_id];
+
+                  const hasVal = val !== undefined && val !== null && val !== "";
+
+                  return (
+                    <div key={cf.field_id} className={styles.intakeFieldBox}>
+                      <div className={styles.intakeFieldHeader}>
+                        <span className={styles.intakeFieldLabel}>{cf.label}</span>
+                        <span
+                          className={styles.intakeFieldScope}
+                          style={{
+                            background:
+                              cf.applies_to === "team"
+                                ? "rgba(229, 183, 49, 0.12)"
+                                : "rgba(56, 189, 248, 0.12)",
+                            color: cf.applies_to === "team" ? "#e5b731" : "#38bdf8",
+                            border: `1px solid ${
+                              cf.applies_to === "team"
+                                ? "rgba(229, 183, 49, 0.3)"
+                                : "rgba(56, 189, 248, 0.3)"
+                            }`,
+                          }}
+                        >
+                          {cf.applies_to === "team" ? "Team" : "Individual"}
+                        </span>
+                      </div>
+
+                      <div className={styles.intakeFieldValue}>
+                        {!hasVal ? (
+                          <span className={styles.intakeFieldValueEmpty}>Not provided</span>
+                        ) : cf.field_type === "boolean" ? (
+                          <span>{val ? "✓ Yes, Confirmed" : "✗ No"}</span>
+                        ) : cf.field_type === "url" ? (
+                          <a
+                            href={String(val)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className={styles.intakeFieldLink}
+                          >
+                            <span>🔗</span>
+                            <span>{String(val)}</span>
+                          </a>
+                        ) : (
+                          <span>{String(val)}</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </section>
           )}
 
@@ -1078,12 +1196,15 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
         currentUserId={profile?.id || ""}
         initialTeamName={teamName}
         initialTeammates={teammates}
-        onSuccess={(res) => {
+        onSuccess={(res: any) => {
           setIsRegistered(true);
-          setRegistrationStatus(res.status);
-          if (res.registration) {
-            setMyRegistration(res.registration);
-          }
+          setRegistrationStatus(res?.status || "registered");
+          setMyRegistration(res?.registration || res);
+          api.myEventRegistration(token, event.id).then((fresh) => {
+            if (fresh.is_registered && fresh.registration) {
+              setMyRegistration(fresh.registration);
+            }
+          });
           api.getEvent(event.id, token).then((refreshed) => {
             setRegisteredCount(refreshed.stats?.registered_count ?? registeredCount + 1);
           });
@@ -1101,6 +1222,49 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
         token={token}
         onSuccess={(savedSubmission) => {
           setMyRegistration((prev) => (prev ? { ...prev, submission: savedSubmission } : prev));
+        }}
+      />
+
+      {/* Edit Registration Responses Modal */}
+      <EditResponsesModal
+        isOpen={showEditResponsesModal}
+        onClose={() => setShowEditResponsesModal(false)}
+        event={event}
+        token={token}
+        currentUserId={profile?.id || ""}
+        initialResponses={
+          event.custom_registration_fields?.reduce((acc, cf) => {
+            const val =
+              cf.applies_to === "team"
+                ? myRegistration?.custom_responses?.[cf.field_id]
+                : myRegistration?.member_responses?.[profile?.id || ""]?.[cf.field_id] ??
+                  myRegistration?.custom_responses?.[cf.field_id];
+            if (val !== undefined && val !== null) {
+              acc[cf.field_id] = val;
+            }
+            return acc;
+          }, {} as Record<string, any>) || {}
+        }
+        onSuccess={(updatedUserResponses, updatedCustom) => {
+          setMyRegistration((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              custom_responses: { ...prev.custom_responses, ...updatedCustom },
+              member_responses: {
+                ...prev.member_responses,
+                [profile?.id || ""]: {
+                  ...(prev.member_responses?.[profile?.id || ""] || {}),
+                  ...updatedUserResponses,
+                },
+              },
+            };
+          });
+          api.myEventRegistration(token, event.id).then((fresh) => {
+            if (fresh.is_registered && fresh.registration) {
+              setMyRegistration(fresh.registration);
+            }
+          });
         }}
       />
     </div>

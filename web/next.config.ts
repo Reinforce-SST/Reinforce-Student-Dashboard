@@ -11,6 +11,7 @@ function originOf(url: string | undefined): string {
   }
 }
 
+const isDev = process.env.NODE_ENV !== "production";
 const apiOrigin = originOf(process.env.NEXT_PUBLIC_API_BASE_URL);
 const firebaseAuthDomain = process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
   ? `https://${process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}`
@@ -18,13 +19,39 @@ const firebaseAuthDomain = process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
 
 // The reinforce-sst.com family covers prod + the separate staging API host
 // even when NEXT_PUBLIC_API_BASE_URL points somewhere else for a given build.
-const connectSrc = ["'self'", "https://*.reinforce-sst.com", "https://*.googleapis.com", apiOrigin, firebaseAuthDomain]
+const connectSrc = [
+  "'self'",
+  "https://*.reinforce-sst.com",
+  "https://*.googleapis.com",
+  "https://*.firebaseio.com",
+  apiOrigin,
+  firebaseAuthDomain,
+]
   .filter(Boolean)
   .join(" ");
 
 // Firebase Auth's popup sign-in flow (signInWithPopup, web/app/auth/AuthClient.tsx)
-// uses a helper iframe against the project's own authDomain.
-const frameSrc = ["'self'", firebaseAuthDomain].filter(Boolean).join(" ");
+// uses helper iframes against the project's own authDomain and Google identity.
+const frameSrc = [
+  "'self'",
+  "https://*.firebaseapp.com",
+  "https://accounts.google.com",
+  firebaseAuthDomain,
+]
+  .filter(Boolean)
+  .join(" ");
+
+// Firebase Auth loads Google API scripts (https://apis.google.com/js/api.js)
+// during popup and iframe authentication flows.
+const scriptSrc = [
+  "'self'",
+  "'unsafe-inline'",
+  "https://apis.google.com",
+  "https://*.firebaseapp.com",
+  isDev ? "'unsafe-eval'" : "",
+]
+  .filter(Boolean)
+  .join(" ");
 
 // 'unsafe-inline' on script-src, not a nonce: Next's documented nonce pattern
 // requires every page to render dynamically (no static generation, no ISR,
@@ -38,11 +65,10 @@ const frameSrc = ["'self'", firebaseAuthDomain].filter(Boolean).join(" ");
 // content could land inside an executable <script> tag regardless of this
 // directive. The CSP still earns its keep via connect-src/frame-src/img-src/
 // object-src/frame-ancestors below.
-const isDev = process.env.NODE_ENV !== "production";
 
 const contentSecurityPolicy = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  `script-src ${scriptSrc}`,
   "style-src 'self' 'unsafe-inline'",
   // Article/idea Markdown lets members link an image from any host (see
   // ArticleMarkdown.tsx), so img-src can't be a fixed host allowlist.

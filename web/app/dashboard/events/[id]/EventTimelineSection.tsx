@@ -35,9 +35,10 @@ export default function EventTimelineSection({
 }: {
   timeline: TimelineItemSchema[];
 }) {
-  const [now, setNow] = useState<number>(Date.now());
+  const [now, setNow] = useState<number>(0);
 
   useEffect(() => {
+    setNow(Date.now());
     const interval = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(interval);
   }, []);

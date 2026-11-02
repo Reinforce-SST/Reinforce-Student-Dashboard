@@ -3469,3 +3469,115 @@
   transform: translateY(-1px);
 }
 
+/* Intake Responses Card on Event Detail */
+.intakeCard {
+  background: #141416;
+  border: 1px solid #232328;
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.intakeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.intakeGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.intakeFieldBox {
+  background: #18181c;
+  border: 1px solid #282832;
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color 0.15s ease;
+}
+
+.intakeFieldBox:hover {
+  border-color: #383844;
+}
+
+.intakeFieldHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.intakeFieldLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: #a1a1aa;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.intakeFieldScope {
+  font-size: 10px;
+  font-weight: 750;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.intakeFieldValue {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+  word-break: break-word;
+}
+
+.intakeFieldValueEmpty {
+  font-size: 13px;
+  font-style: italic;
+  color: #71717a;
+}
+
+.intakeFieldLink {
+  color: #e5b731;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.intakeFieldLink:hover {
+  color: #f5cb4a;
+}
+
+.editIntakeBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(229, 183, 49, 0.1);
+  border: 1px solid rgba(229, 183, 49, 0.35);
+  color: #e5b731;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.editIntakeBtn:hover {
+  background: rgba(229, 183, 49, 0.2);
+  border-color: #e5b731;
+  transform: translateY(-1px);
+}
+
+
