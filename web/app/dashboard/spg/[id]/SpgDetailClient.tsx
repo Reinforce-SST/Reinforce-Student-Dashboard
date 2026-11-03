@@ -64,6 +64,17 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
   const [membersMap, setMembersMap] = useState<Record<string, { full_name: string; avatar_url?: string | null }>>({});
   const [failedAvatars, setFailedAvatars] = useState<Set<string>>(new Set());
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [outgoingSpgInvites, setOutgoingSpgInvites] = useState<InvitationItem[]>([]);
+
+  useEffect(() => {
+    if (!token || !spgId) return;
+    let active = true;
+    api.listTargetInvitations(token, spgId, "pending").then((invs) => {
+      if (!active) return;
+      setOutgoingSpgInvites(invs);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [token, spgId, showInviteModal]);
   const [pendingSpgInvite, setPendingSpgInvite] = useState<InvitationItem | null>(null);
   const [invitationBusy, setInvitationBusy] = useState(false);
 
@@ -1328,6 +1339,45 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
                     </div>
                   );
                 })}
+
+              {/* Outgoing Pending SPG Invitations */}
+              {outgoingSpgInvites.map((inv) => (
+                <div key={inv.id} className={styles.rosterItem} style={{ border: "1px dashed rgba(229, 183, 49, 0.35)", background: "rgba(229, 183, 49, 0.04)" }}>
+                  <div className={styles.rosterLeft}>
+                    <div className={styles.memberAvatar} style={{ background: "rgba(229, 183, 49, 0.15)", color: "#e5b731", fontWeight: "800" }}>
+                      ✉
+                    </div>
+                    <div className={styles.memberNameGroup}>
+                      <span className={styles.memberName}>{inv.invitee_name}</span>
+                      <span className={styles.memberRole} style={{ color: "#e5b731" }}>Invited (Pending)</span>
+                    </div>
+                  </div>
+                  {spg.lead_id === profile?.id && (
+                    <button
+                      type="button"
+                      title="Cancel Invitation"
+                      onClick={async () => {
+                        try {
+                          await api.cancelInvitation(token, inv.id);
+                          setOutgoingSpgInvites((prev) => prev.filter((i) => i.id !== inv.id));
+                        } catch (e) {
+                          console.error(e);
+                        }
+                      }}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: "#8c8c98",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        padding: "2px 4px",
+                      }}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
 
@@ -1693,6 +1743,9 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
         maxTeamSize={10}
         onInviteSent={() => {
           fetchSpgData();
+          api.listTargetInvitations(token, spgId, "pending").then((invs) => {
+            setOutgoingSpgInvites(invs);
+          }).catch(() => {});
         }}
       />
       {DialogComponent}

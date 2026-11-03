@@ -601,12 +601,11 @@ def register_for_event(
         )
 
     # 2. Check Team vs Solo Participation Rules
-    member_uids = list(set(payload.member_uids))
-    if user_uid not in member_uids:
-        member_uids.append(user_uid)
-
+    payload_members = list(dict.fromkeys(payload.member_uids or []))
+    member_uids = [user_uid] + [m for m in payload_members if m != user_uid]
     if event.participation.mode.value == "solo":
-        member_uids = [user_uid]
+        confirmed_member_uids = [user_uid]
+        invited_uids: List[str] = []
         team_name = None
     else:
         # Team mode
@@ -616,28 +615,36 @@ def register_for_event(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Team name is required for team events",
             )
-        if len(member_uids) < event.participation.min_team_size:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Minimum team size is {event.participation.min_team_size}",
-            )
-        if len(member_uids) > event.participation.max_team_size:
+        invited_uids = [m for m in payload_members if m and m != user_uid]
+        total_intended = 1 + len(invited_uids)
+        if total_intended > event.participation.max_team_size:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Maximum team size is {event.participation.max_team_size}",
             )
+        confirmed_member_uids = [user_uid]
 
     # 3. Check every participant's profile and event eligibility.
     member_profiles = {}
-    for member_uid in member_uids:
-        user_doc = db.collection(USERS_COLLECTION).document(member_uid).get()
-        profile = user_doc.to_dict() if user_doc.exists else {}
-        member_profiles[member_uid] = profile
-        _check_member_eligibility(
-            event,
-            member_uid,
-            profile,
-        )
+    user_doc = db.collection(USERS_COLLECTION).document(user_uid).get()
+    user_profile = user_doc.to_dict() if user_doc.exists else {}
+    member_profiles[user_uid] = user_profile
+    _check_member_eligibility(event, user_uid, user_profile)
+
+    invitee_profiles: Dict[str, Dict[str, Any]] = {}
+    for inv_uid in invited_uids:
+        i_doc = db.collection(USERS_COLLECTION).document(inv_uid).get()
+        if not i_doc.exists:
+            matches = list(db.collection(USERS_COLLECTION).where("email", "==", inv_uid).limit(1).stream())
+            if not matches:
+                matches = list(db.collection(USERS_COLLECTION).where("firebase_uid", "==", inv_uid).limit(1).stream())
+            if matches:
+                i_doc = matches[0]
+        i_data = i_doc.to_dict() if i_doc and i_doc.exists else {}
+        actual_inv_uid = i_doc.id if i_doc and i_doc.exists else inv_uid
+        _check_member_eligibility(event, actual_inv_uid, i_data)
+        invitee_profiles[actual_inv_uid] = i_data
+        member_profiles[actual_inv_uid] = i_data
 
     # 4. Validate custom intake fields (individual vs team applies_to)
     custom_fields = event.custom_registration_fields or []
@@ -779,11 +786,11 @@ def register_for_event(
                         detail=f"Track '{fresh_track.name}' has reached its maximum capacity of {fresh_track.max_teams} teams.",
                     )
 
-        for member_uid in member_uids:
+        for member_uid in confirmed_member_uids:
             _check_member_eligibility(
                 fresh_event, member_uid, member_profiles[member_uid]
             )
-        for member_uid in member_uids:
+        for member_uid in confirmed_member_uids:
             if any(
                 _active_registration(doc.to_dict() or {})
                 for doc in _registrations_for_user(
@@ -797,7 +804,7 @@ def register_for_event(
 
         registered = int((fresh.get("stats") or {}).get("registered_count", 0))
         maximum = fresh_event.participation.max_participants
-        fits = maximum is None or registered + len(member_uids) <= maximum
+        fits = maximum is None or registered + len(confirmed_member_uids) <= maximum
         reg_status = (
             RegistrationStatus.REGISTERED.value
             if fits
@@ -810,7 +817,7 @@ def register_for_event(
         ) and fits
         if should_spawn_spg and team_name:
             spg_id, spg_data = _event_spg_data(
-                fresh_event, event_id, user_uid, member_uids, team_name
+                fresh_event, event_id, user_uid, confirmed_member_uids, team_name
             )
             transaction.set(db.collection(SPGS_COLLECTION).document(spg_id), spg_data)
 
@@ -821,7 +828,7 @@ def register_for_event(
             "event_id": event_id,
             "user_id": user_uid,
             "team_name": team_name,
-            "member_uids": member_uids,
+            "member_uids": confirmed_member_uids,
             "spg_id": spg_id,
             "spg_status": None,
             "custom_responses": cleaned_custom_responses,
@@ -839,13 +846,45 @@ def register_for_event(
             transaction.update(
                 event_ref,
                 {
-                    "stats.registered_count": registered + len(member_uids),
+                    "stats.registered_count": registered + len(confirmed_member_uids),
                     "updated_at": now_timestamp,
                 },
             )
         return registration_data
 
     registration_data = run_event_transaction(reserve)
+
+    # Issue formal pending invitations for each invited squad teammate
+    if invited_uids:
+        now_ts = now_iso()
+        inviter_name = user_profile.get("full_name") or "Team Lead"
+        inviter_email = user_profile.get("email") or ""
+        spawned_spg_id = registration_data.get("spg_id")
+
+        for inv_uid in invited_uids:
+            inv_p = invitee_profiles.get(inv_uid, {})
+            inv_id = f"inv_{uuid.uuid4().hex[:12]}"
+            inv_doc = {
+                "id": inv_id,
+                "type": "event_spg" if spawned_spg_id else "event_team",
+                "target_id": spawned_spg_id if spawned_spg_id else event_id,
+                "target_name": team_name or event.title,
+                "event_id": event_id,
+                "spg_id": spawned_spg_id,
+                "team_name": team_name,
+                "inviter_uid": user_uid,
+                "inviter_name": inviter_name,
+                "inviter_email": inviter_email,
+                "invitee_uid": inv_uid,
+                "invitee_name": inv_p.get("full_name") or "Club Member",
+                "invitee_email": inv_p.get("email") or "",
+                "status": "pending",
+                "role": "member",
+                "created_at": now_ts,
+                "updated_at": now_ts,
+            }
+            db.collection("invitations").document(inv_id).set(inv_doc)
+
     _hydrate_single_registration_profiles(registration_data)
 
     return RegistrationDocument.model_validate(registration_data)

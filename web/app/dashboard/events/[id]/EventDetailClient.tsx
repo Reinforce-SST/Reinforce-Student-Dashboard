@@ -204,6 +204,17 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [pendingEventInvite, setPendingEventInvite] = useState<InvitationItem | null>(null);
   const [invitationBusy, setInvitationBusy] = useState(false);
+  const [outgoingTeamInvites, setOutgoingTeamInvites] = useState<InvitationItem[]>([]);
+
+  useEffect(() => {
+    if (!token || !event?.id || !isRegistered) return;
+    let active = true;
+    api.listTargetInvitations(token, event.id, "pending").then((invs) => {
+      if (!active) return;
+      setOutgoingTeamInvites(invs);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [token, event?.id, isRegistered, showInviteModal]);
 
   useEffect(() => {
     if (!token || !event?.id) return;
@@ -1055,6 +1066,88 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                         </div>
                       );
                     })}
+
+                    {/* Outgoing Pending Invitations */}
+                    {outgoingTeamInvites.map((inv) => (
+                      <div
+                        key={inv.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          background: "rgba(229, 183, 49, 0.05)",
+                          border: "1px dashed rgba(229, 183, 49, 0.35)",
+                          padding: "8px 10px",
+                          borderRadius: "6px",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <div
+                            style={{
+                              width: "24px",
+                              height: "24px",
+                              borderRadius: "50%",
+                              background: "rgba(229, 183, 49, 0.2)",
+                              color: "#e5b731",
+                              fontWeight: "750",
+                              fontSize: "11px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            ✉
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column" }}>
+                            <span style={{ fontSize: "13px", color: "#e4e4e7" }}>
+                              {inv.invitee_name}
+                            </span>
+                            <span style={{ fontSize: "10.5px", color: "#8c8c98" }}>
+                              {inv.invitee_email || "Pending Acceptance"}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <span
+                            style={{
+                              fontSize: "9.5px",
+                              fontWeight: "800",
+                              background: "rgba(229, 183, 49, 0.15)",
+                              color: "#e5b731",
+                              padding: "2px 6px",
+                              borderRadius: "4px",
+                            }}
+                          >
+                            INVITED (PENDING)
+                          </span>
+                          {myRegistration?.user_id === profile?.id && (
+                            <button
+                              type="button"
+                              title="Cancel Invitation"
+                              onClick={async () => {
+                                try {
+                                  await api.cancelInvitation(token, inv.id);
+                                  setOutgoingTeamInvites((prev) => prev.filter((i) => i.id !== inv.id));
+                                } catch (e) {
+                                  console.error(e);
+                                }
+                              }}
+                              style={{
+                                background: "transparent",
+                                border: "none",
+                                color: "#8c8c98",
+                                cursor: "pointer",
+                                fontSize: "13px",
+                                padding: "2px 4px",
+                              }}
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
@@ -1802,6 +1895,9 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
               setMyRegistration(fresh.registration);
             }
           });
+          api.listTargetInvitations(token, event.id, "pending").then((invs) => {
+            setOutgoingTeamInvites(invs);
+          }).catch(() => {});
         }}
       />
     </div>

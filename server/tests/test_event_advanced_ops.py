@@ -5,7 +5,7 @@ import unittest
 from datetime import datetime, timezone
 from fastapi import HTTPException
 
-from app.api.v1.endpoints import events
+from app.api.v1.endpoints import events, invitations
 from app.schemas.events import (
     CustomFieldSchema,
     EventCreate,
@@ -31,6 +31,7 @@ class AdvancedHackathonOpsTests(unittest.TestCase):
     def setUp(self):
         self.db = NestedFirestore()
         events.db = self.db
+        invitations.db = self.db
         events.run_event_transaction = lambda work: work(self.db.transaction())
 
         # Seed Users
@@ -230,6 +231,9 @@ class AdvancedHackathonOpsTests(unittest.TestCase):
             ),
             current_user=LEAD,
         )
+        inv_list = list(self.db.collection("invitations").where("invitee_uid", "==", "uid-mem2").stream())
+        if inv_list:
+            invitations.accept_invitation(inv_list[0].id, current_user=MEMBER_2)
 
         # 2. Submit project deliverables (Edge Case 3)
         sub_res = events.submit_event_project(
@@ -281,6 +285,9 @@ class AdvancedHackathonOpsTests(unittest.TestCase):
             ),
             current_user=LEAD,
         )
+        inv_list = list(self.db.collection("invitations").where("invitee_uid", "==", "uid-mem2").stream())
+        if inv_list:
+            invitations.accept_invitation(inv_list[0].id, current_user=MEMBER_2)
 
         # Export CSV
         csv_resp = events.export_comprehensive_event_data(
@@ -351,6 +358,9 @@ class AdvancedHackathonOpsTests(unittest.TestCase):
             ),
             current_user=ADMIN,
         )
+        inv_list = list(self.db.collection("invitations").where("invitee_uid", "==", "uid-solo").stream())
+        if inv_list:
+            invitations.accept_invitation(inv_list[0].id, current_user=SOLO_USER)
         self.assertEqual(admin_reg.status, "registered")
         self.assertEqual(admin_reg.team_name, "Admin Test Squad")
 

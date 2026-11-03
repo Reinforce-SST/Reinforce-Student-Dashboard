@@ -1,3 +1,4 @@
+from google.cloud import firestore
 """Invitations API endpoints for SPGs and Event Teams.
 
 Enforces that joining an SPG or Event Team requires an explicit invitation from
@@ -26,6 +27,21 @@ SPGS_COLLECTION = "spgs"
 EVENTS_COLLECTION = "events"
 REGISTRATIONS_SUBCOLLECTION = "registrations"
 USERS_COLLECTION = "users"
+
+try:
+    from google.cloud.firestore_v1.base_query import FieldFilter
+except Exception:
+    FieldFilter = None
+
+
+def _filter(query, field: str, op: str, value: Any):
+    if FieldFilter is not None:
+        try:
+            return query.where(filter=FieldFilter(field, op, value))
+        except Exception:
+            pass
+    return query.where(field, op, value)
+
 
 
 def _doc_to_invitation(doc_dict: Dict[str, Any]) -> InvitationResponse:
@@ -235,12 +251,12 @@ def get_my_invitations(
 ):
     """Retrieve incoming invitations for the logged-in user."""
     user_uid = get_user_uid(current_user)
-    query = db.collection(INVITATIONS_COLLECTION).where("invitee_uid", "==", user_uid)
+    query = _filter(db.collection(INVITATIONS_COLLECTION), "invitee_uid", "==", user_uid)
 
     if status and status != "all":
-        query = query.where("status", "==", status)
+        query = _filter(query, "status", "==", status)
     if type:
-        query = query.where("type", "==", type)
+        query = _filter(query, "type", "==", type)
 
     docs = [d.to_dict() or {} for d in query.stream()]
     docs.sort(key=lambda d: d.get("created_at") or "", reverse=True)
@@ -254,11 +270,20 @@ def get_target_invitations(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Retrieve all invitations associated with a specific SPG or Event."""
-    query = db.collection(INVITATIONS_COLLECTION).where("target_id", "==", target_id)
-    if status and status != "all":
-        query = query.where("status", "==", status)
+    results: Dict[str, Dict[str, Any]] = {}
+    for field in ("target_id", "spg_id", "event_id"):
+        try:
+            q = _filter(db.collection(INVITATIONS_COLLECTION), field, "==", target_id)
+            if status and status != "all":
+                q = _filter(q, "status", "==", status)
+            for doc in q.stream():
+                d = doc.to_dict() or {}
+                d["id"] = doc.id
+                results[doc.id] = d
+        except Exception:
+            pass
 
-    docs = [d.to_dict() or {} for d in query.stream()]
+    docs = list(results.values())
     docs.sort(key=lambda d: d.get("created_at") or "", reverse=True)
     return [_doc_to_invitation(d) for d in docs]
 
@@ -335,11 +360,19 @@ def accept_invitation(
         if target_reg:
             reg_d = target_reg.to_dict() or {}
             members = set(reg_d.get("member_uids") or [])
-            members.add(user_uid)
-            target_reg.reference.update({
-                "member_uids": list(members),
-                "updated_at": now,
-            })
+            if user_uid not in members:
+                members.add(user_uid)
+                target_reg.reference.update({
+                    "member_uids": list(members),
+                    "updated_at": now,
+                })
+                try:
+                    event_ref.update({
+                        "stats.registered_count": firestore.Increment(1),
+                        "updated_at": now,
+                    })
+                except Exception:
+                    pass
 
     # 3. Update invitation status
     inv_ref.update({

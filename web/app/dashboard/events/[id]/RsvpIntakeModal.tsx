@@ -208,7 +208,7 @@ export default function RsvpIntakeModal({
                 {maxTeamSize > 1 && (
                   <MemberPicker
                     token={token}
-                    label="Teammates"
+                    label="Invite Teammates"
                     selected={teammates}
                     onChange={setTeammates}
                     excludeIds={currentUserId ? [currentUserId] : []}
@@ -216,10 +216,7 @@ export default function RsvpIntakeModal({
                   />
                 )}
                 <span className={styles.teamHintText}>
-                  You are registered automatically as the team lead. Teams have{" "}
-                  {minTeamSize === maxTeamSize
-                    ? `${maxTeamSize} members.`
-                    : `${minTeamSize}–${maxTeamSize} members.`}
+                  You are registered automatically as the team lead. Teammates added here will receive invitations and must accept them to join your squad roster. Teams require {minTeamSize === maxTeamSize ? `${maxTeamSize} members.` : `${minTeamSize}–${maxTeamSize} members.`}
                 </span>
               </div>
             </div>
