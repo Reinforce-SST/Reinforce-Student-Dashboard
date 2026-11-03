@@ -209,6 +209,7 @@ export type EventSummaryItem = {
   allow_open_track_change?: boolean;
   team_settings?: import("../types/event-matrix").TeamSettingsSchema;
   timeline?: import("../types/event-matrix").TimelineItemSchema[];
+  submission_config?: import("../types/event-matrix").SubmissionConfigSchema;
   matrix_columns?: import("../types/event-matrix").MatrixColumnDef[];
   matrix_access_uids?: string[];
   can_access_matrix?: boolean;
@@ -277,6 +278,7 @@ export type EventDocument = {
   allow_open_track_change?: boolean;
   team_settings?: import("../types/event-matrix").TeamSettingsSchema;
   timeline?: import("../types/event-matrix").TimelineItemSchema[];
+  submission_config?: import("../types/event-matrix").SubmissionConfigSchema;
   matrix_columns?: import("../types/event-matrix").MatrixColumnDef[];
   matrix_access_uids?: string[];
   can_access_matrix?: boolean;
@@ -335,6 +337,8 @@ export type EventRegistration = {
     demo_url?: string | null;
     paper_link?: string | null;
     notes?: string | null;
+    problem_statement_id?: string | null;
+    custom_fields?: Record<string, any> | null;
     submitted_at?: string;
     submitted_by?: string;
   } | null;
@@ -928,6 +932,15 @@ export const api = {
     return res;
   },
 
+  attachSpgIdea: async <T = SPGRecord>(token: string, spgId: string, ideaId: string | null) => {
+    const res = await request<T>(`/spgs/${encodeURIComponent(spgId)}/idea`, token, {
+      method: "PATCH",
+      body: JSON.stringify({ idea_id: ideaId }),
+    });
+    appCache.invalidateTags(["spgs", "dashboard", `spg:${spgId}`, "events"]);
+    return res;
+  },
+
   adminPauseSpg: async <T = SPGRecord>(token: string, spgId: string) => {
     const res = await request<T>(`/spgs/${encodeURIComponent(spgId)}/pause`, token, {
       method: "POST",
@@ -1264,6 +1277,20 @@ export const api = {
       {
         method: "POST",
         body: JSON.stringify(payload),
+      }
+    ),
+
+  attachEventIdea: (
+    token: string,
+    eventId: string,
+    ideaId: string | null
+  ) =>
+    request<{ success: boolean; idea_id: string | null; idea?: any }>(
+      `/events/${encodeURIComponent(eventId)}/my-registration/idea`,
+      token,
+      {
+        method: "POST",
+        body: JSON.stringify({ idea_id: ideaId }),
       }
     ),
 

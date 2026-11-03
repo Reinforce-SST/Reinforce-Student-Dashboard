@@ -279,6 +279,34 @@ class TimelineItemSchema(BaseModel):
     status_override: Optional[str] = None  # "upcoming" | "live" | "completed"
 
 
+class SubmissionCustomField(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    field_id: str
+    label: str
+    field_type: str = "url"  # "url" | "text"
+    placeholder: Optional[str] = None
+    required: bool = False
+
+
+class SubmissionConfigSchema(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enable_repo_url: bool = True
+    require_repo_url: bool = False
+    enable_slides_url: bool = True
+    require_slides_url: bool = False
+    enable_demo_url: bool = True
+    require_demo_url: bool = False
+    enable_paper_link: bool = True
+    require_paper_link: bool = False
+    enable_notes: bool = True
+    require_notes: bool = False
+    allow_problem_statement_selection: bool = True
+    require_problem_statement: bool = False
+    custom_fields: List[SubmissionCustomField] = Field(default_factory=list)
+
+
 class EventCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -307,6 +335,7 @@ class EventCreate(BaseModel):
     allow_open_track_change: bool = False
     team_settings: Optional[TeamSettingsSchema] = None
     timeline: List[TimelineItemSchema] = Field(default_factory=list)
+    submission_config: Optional[SubmissionConfigSchema] = None
     status: EventStatus = EventStatus.DRAFT
 
 
@@ -335,6 +364,7 @@ class EventUpdate(BaseModel):
     allow_open_track_change: Optional[bool] = None
     team_settings: Optional[TeamSettingsSchema] = None
     timeline: Optional[List[TimelineItemSchema]] = None
+    submission_config: Optional[SubmissionConfigSchema] = None
     winners: Optional[List[EventWinner]] = None
     status: Optional[EventStatus] = None
 
@@ -598,6 +628,7 @@ class EventDocument(BaseModel):
     allow_open_track_change: bool = False
     team_settings: TeamSettingsSchema = Field(default_factory=TeamSettingsSchema)
     timeline: List[TimelineItemSchema] = Field(default_factory=list)
+    submission_config: SubmissionConfigSchema = Field(default_factory=SubmissionConfigSchema)
     matrix_columns: List[MatrixColumnDef] = Field(default_factory=list)
     matrix_cells: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     matrix_access_uids: List[str] = Field(default_factory=list)
@@ -687,13 +718,15 @@ class UpdateRegistrationTrackRequest(BaseModel):
 
 
 class EventSubmissionRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     repo_url: Optional[str] = None
     slides_url: Optional[str] = None
     demo_url: Optional[str] = None
     paper_link: Optional[str] = None
     notes: Optional[str] = None
+    problem_statement_id: Optional[str] = None
+    custom_fields: Optional[Dict[str, Any]] = None
 
 
 class UpdateMemberCustomResponsesRequest(BaseModel):

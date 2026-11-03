@@ -227,6 +227,15 @@ class SPGUpdate(BaseModel):
     visibility: Optional[SPGVisibility] = None
     is_recruiting: Optional[bool] = None
     recruiting_roles: Optional[List[str]] = None
+    idea_id: Optional[str] = None
+
+
+class SPGIdeaAttachRequest(BaseModel):
+    """Payload for attaching/detaching an Idea Jar problem statement to an SPG."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    idea_id: Optional[str] = None
 
 
 class SPGLeadUpdate(BaseModel):

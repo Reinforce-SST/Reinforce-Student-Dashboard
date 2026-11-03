@@ -15,6 +15,7 @@ import secrets
 from typing import Any, Dict, List, Optional, Set
 import uuid
 
+from pydantic import BaseModel, ConfigDict
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from google.cloud import firestore
@@ -28,6 +29,8 @@ from app.utils import get_user_uid, is_admin_user, now_iso, resolve_batch_year, 
 from app.schemas.contributions import (
     AdminAwardUser,
     ContributionCategory,
+    ContributionRecord,
+    ContributionStatus,
     ContributionTrack,
 )
 from app.schemas.events import (
@@ -277,6 +280,80 @@ def _contribution_track(track: str) -> ContributionTrack:
     )
 
 
+def _hydrate_single_registration_profiles(r_dict: Dict[str, Any]) -> Dict[str, Any]:
+    uid = r_dict.get("user_id") or ""
+    member_uids = r_dict.get("member_uids") or ([uid] if uid else [])
+    target_uids = list({uid, *member_uids} - {""})
+
+    profiles: Dict[str, Any] = {}
+    if target_uids:
+        try:
+            refs = [db.collection(USERS_COLLECTION).document(u) for u in target_uids]
+            snaps = db.get_all(refs)
+            for snap in snaps:
+                if snap.exists:
+                    udata = snap.to_dict() or {}
+                    u = snap.id
+                    profiles[u] = {
+                        "id": u,
+                        "full_name": udata.get("full_name") or "Club Member",
+                        "email": udata.get("email") or "",
+                        "avatar_url": udata.get("avatar_url"),
+                        "batch_year": udata.get("batch_year"),
+                        "tier": udata.get("tier") or "beginner",
+                        "role_label": udata.get("role_label"),
+                        "bio": udata.get("bio"),
+                        "points": (udata.get("points") or {}).get("total", 0),
+                    }
+        except Exception:
+            pass
+
+        for u in target_uids:
+            if u not in profiles:
+                try:
+                    snap = db.collection(USERS_COLLECTION).document(u).get()
+                    if snap.exists:
+                        udata = snap.to_dict() or {}
+                        profiles[u] = {
+                            "id": u,
+                            "full_name": udata.get("full_name") or "Club Member",
+                            "email": udata.get("email") or "",
+                            "avatar_url": udata.get("avatar_url"),
+                            "batch_year": udata.get("batch_year"),
+                            "tier": udata.get("tier") or "beginner",
+                            "role_label": udata.get("role_label"),
+                            "bio": udata.get("bio"),
+                            "points": (udata.get("points") or {}).get("total", 0),
+                        }
+                    else:
+                        matches = list(db.collection(USERS_COLLECTION).where("email", "==", u).limit(1).stream())
+                        if not matches:
+                            matches = list(db.collection(USERS_COLLECTION).where("firebase_uid", "==", u).limit(1).stream())
+                        if matches:
+                            udata = matches[0].to_dict() or {}
+                            profiles[u] = {
+                                "id": u,
+                                "full_name": udata.get("full_name") or "Club Member",
+                                "email": udata.get("email") or "",
+                                "avatar_url": udata.get("avatar_url"),
+                                "batch_year": udata.get("batch_year"),
+                                "tier": udata.get("tier") or "beginner",
+                                "role_label": udata.get("role_label"),
+                                "bio": udata.get("bio"),
+                                "points": (udata.get("points") or {}).get("total", 0),
+                            }
+                except Exception:
+                    pass
+
+    r_dict["user_profile"] = profiles.get(uid)
+    r_dict["member_profiles"] = [
+        profiles.get(m, {"id": m, "full_name": profiles.get(m, {}).get("full_name") or m})
+        for m in member_uids
+        if m
+    ]
+    return r_dict
+
+
 def _validate_learning_resource_ids(resource_ids: List[str]) -> None:
     """Ensure event links point at resources that exist in the shared pool."""
     for resource_id in resource_ids:
@@ -474,6 +551,7 @@ def get_my_registration(
     if matches:
         reg_dict = matches[0].to_dict() or {}
         reg_dict["id"] = matches[0].id
+        _hydrate_single_registration_profiles(reg_dict)
         return MyRegistrationResponse(
             is_registered=True,
             registration=RegistrationDocument.model_validate(reg_dict),
@@ -768,6 +846,7 @@ def register_for_event(
         return registration_data
 
     registration_data = run_event_transaction(reserve)
+    _hydrate_single_registration_profiles(registration_data)
 
     return RegistrationDocument.model_validate(registration_data)
 
@@ -1464,55 +1543,6 @@ def download_event_attendance_csv(
     )
 
 
-def _hydrate_single_registration_profiles(r_dict: Dict[str, Any]) -> Dict[str, Any]:
-    uid = r_dict.get("user_id") or ""
-    member_uids = r_dict.get("member_uids") or ([uid] if uid else [])
-    target_uids = list({uid, *member_uids} - {""})
-
-    profiles: Dict[str, Any] = {}
-    if target_uids:
-        try:
-            refs = [db.collection(USERS_COLLECTION).document(u) for u in target_uids]
-            snaps = db.get_all(refs)
-            for snap in snaps:
-                if snap.exists:
-                    udata = snap.to_dict() or {}
-                    u = snap.id
-                    profiles[u] = {
-                        "id": u,
-                        "full_name": udata.get("full_name") or "Club Member",
-                        "email": udata.get("email") or "",
-                        "avatar_url": udata.get("avatar_url"),
-                        "batch_year": udata.get("batch_year"),
-                        "tier": udata.get("tier") or "beginner",
-                        "role_label": udata.get("role_label"),
-                        "bio": udata.get("bio"),
-                        "points": (udata.get("points") or {}).get("total", 0),
-                    }
-        except Exception:
-            for u in target_uids:
-                snap = db.collection(USERS_COLLECTION).document(u).get()
-                if snap.exists:
-                    udata = snap.to_dict() or {}
-                    profiles[u] = {
-                        "id": u,
-                        "full_name": udata.get("full_name") or "Club Member",
-                        "email": udata.get("email") or "",
-                        "avatar_url": udata.get("avatar_url"),
-                        "batch_year": udata.get("batch_year"),
-                        "tier": udata.get("tier") or "beginner",
-                        "role_label": udata.get("role_label"),
-                        "bio": udata.get("bio"),
-                        "points": (udata.get("points") or {}).get("total", 0),
-                    }
-
-    r_dict["user_profile"] = profiles.get(uid)
-    r_dict["member_profiles"] = [
-        profiles.get(m, {"id": m, "full_name": m})
-        for m in member_uids
-        if m
-    ]
-    return r_dict
 
 
 def _sync_user_points(db_client: Any, user_id: str) -> None:
@@ -2088,6 +2118,36 @@ def get_event_matrix(
                     }
                 )
 
+    # Automatic SPG Cluster and Problem Statement Columns for Team Events
+    participation_info = event_data.get("participation") or {}
+    if participation_info.get("mode") == "team":
+        if not any(
+            c.get("column_id") == "col_spg_assignment"
+            or c.get("object_schema_type") == MatrixSchemaType.SPG_ASSIGNMENT.value
+            for c in raw_columns
+        ):
+            raw_columns.append(
+                {
+                    "column_id": "col_spg_assignment",
+                    "title": "SPG Cluster",
+                    "column_type": MatrixColumnType.OBJECT.value,
+                    "object_schema_type": MatrixSchemaType.SPG_ASSIGNMENT.value,
+                }
+            )
+        if not any(
+            c.get("column_id") == "col_idea_jar_assignment"
+            or c.get("object_schema_type") == MatrixSchemaType.IDEA_JAR_ASSIGNMENT.value
+            for c in raw_columns
+        ):
+            raw_columns.append(
+                {
+                    "column_id": "col_idea_jar_assignment",
+                    "title": "Problem Statement",
+                    "column_type": MatrixColumnType.OBJECT.value,
+                    "object_schema_type": MatrixSchemaType.IDEA_JAR_ASSIGNMENT.value,
+                }
+            )
+
     columns = [MatrixColumnDef.model_validate(c) for c in raw_columns]
 
     # Query all registrations for this event
@@ -2267,16 +2327,19 @@ def get_event_matrix(
                         }
                 elif col.object_schema_type == MatrixSchemaType.IDEA_JAR_ASSIGNMENT.value and val is None:
                     spg_info = user_to_spg_map.get(uid)
-                    if spg_info and spg_info.get("idea_id"):
-                        idea = idea_by_id_map.get(spg_info["idea_id"])
+                    target_idea_id = (spg_info and spg_info.get("idea_id")) or r_dict.get("idea_id") or r_dict.get("problem_statement_id")
+                    if not target_idea_id and r_dict.get("submission"):
+                        target_idea_id = r_dict["submission"].get("problem_statement_id")
+                    if target_idea_id:
+                        idea = idea_by_id_map.get(target_idea_id)
                         if idea:
                             val = {
                                 "schema_type": MatrixSchemaType.IDEA_JAR_ASSIGNMENT.value,
                                 "idea_id": idea["id"],
                                 "idea_title": idea["title"],
                                 "track": idea.get("track", "general"),
-                                "spg_id": spg_info.get("spg_id"),
-                                "spg_name": spg_info.get("spg_name"),
+                                "spg_id": spg_info.get("spg_id") if spg_info else r_dict.get("spg_id"),
+                                "spg_name": (spg_info.get("spg_name") if spg_info else None) or r_dict.get("team_name"),
                             }
                 elif col.column_id == "col_event_track" and val is None:
                     sel_id = r_dict.get("selected_track_id")
@@ -2292,7 +2355,7 @@ def get_event_matrix(
                         val = (r_dict.get("custom_responses") or {}).get(target_f_id)
                 elif col.object_schema_type == MatrixSchemaType.SUBMISSION.value and val is None:
                     sub_data = r_dict.get("submission")
-                    if sub_data:
+                    if sub_data and (sub_data.get("repo_url") or sub_data.get("paper_link") or sub_data.get("demo_url") or sub_data.get("slides_url") or sub_data.get("submitted_at")):
                         val = {
                             "schema_type": MatrixSchemaType.SUBMISSION.value,
                             "repo_url": sub_data.get("repo_url"),
@@ -2515,8 +2578,9 @@ def _apply_matrix_attendance(
 
         if attendance_pts > 0:
             try:
-                contribution_service.admin_award_points(
-                    user_uid=payload.user_id,
+                contribution_service.award_user(
+                    db,
+                    user_id=payload.user_id,
                     award=AdminAwardUser(
                         category=payload.category,
                         track=_contribution_track(track),
@@ -2528,7 +2592,10 @@ def _apply_matrix_attendance(
                     ),
                     admin_id=admin_uid,
                 )
+                contribution_service.sync_user_points(db, payload.user_id)
                 _sync_user_points(db, payload.user_id)
+                from app.api.v1.endpoints.users import invalidate_users_cache
+                invalidate_users_cache()
             except ContributionError:
                 pass
 
@@ -2537,6 +2604,117 @@ def _apply_matrix_attendance(
         "user_id": payload.user_id,
         "status": payload.status.value,
     }
+
+
+def _sync_matrix_contribution_award(
+    event_id: str,
+    event_title: str,
+    event_track: str,
+    user_id: str,
+    column_id: str,
+    col: Dict[str, Any],
+    val: Any,
+    admin_uid: str,
+) -> None:
+    """Sync matrix cell updates to the recipient's contributions and points."""
+    col_schema_type = col.get("object_schema_type")
+    is_contrib_col = (
+        col_schema_type == MatrixSchemaType.CONTRIBUTION_ASSIGNMENT.value
+        or (isinstance(val, dict) and val.get("schema_type") == MatrixSchemaType.CONTRIBUTION_ASSIGNMENT.value)
+        or column_id == "col_attendance_points"
+    )
+    is_numeric_pts_col = (
+        col.get("column_type") == MatrixColumnType.NUMBER.value
+        and "point" in (col.get("title") or "").lower()
+    )
+
+    if not is_contrib_col and not is_numeric_pts_col:
+        return
+
+    matrix_rec_id = hashlib.sha256(f"matrix_{event_id}_{column_id}_{user_id}".encode("utf-8")).hexdigest()
+    ref = db.collection(CONTRIBUTIONS_COLLECTION).document(matrix_rec_id)
+
+    points = 0
+    track_str = event_track or "general"
+    cat_str = "participation"
+    col_title = col.get("title") or "Contribution Points"
+    title_str = f"{col_title}: {event_title}"
+    desc_str = f"Awarded via Event Matrix ({col_title}) for {event_title}"
+
+    if is_contrib_col and isinstance(val, dict):
+        points = int(val.get("points") or 0)
+        track_str = val.get("track") or track_str
+        cat_str = val.get("category") or cat_str
+        if val.get("title"):
+            title_str = str(val.get("title")).strip()
+        if val.get("description"):
+            desc_str = str(val.get("description")).strip()
+    elif is_numeric_pts_col and val is not None:
+        try:
+            points = int(float(val))
+        except (ValueError, TypeError):
+            points = 0
+
+    if points <= 0 or val is None:
+        try:
+            snap = ref.get()
+            if snap.exists:
+                ref.delete()
+                contribution_service.sync_user_points(db, user_id)
+                _sync_user_points(db, user_id)
+                from app.api.v1.endpoints.users import invalidate_users_cache
+                invalidate_users_cache()
+        except Exception:
+            pass
+        return
+
+    track_enum = _contribution_track(track_str)
+    try:
+        category_enum = ContributionCategory(cat_str)
+    except (ValueError, TypeError):
+        category_enum = ContributionCategory.PARTICIPATION
+
+    now = datetime.now(timezone.utc)
+    try:
+        snap = ref.get()
+        if snap.exists:
+            ref.update({
+                "points": points,
+                "track": track_enum.value,
+                "category": category_enum.value,
+                "title": title_str[:200],
+                "description": desc_str[:2000] if desc_str else None,
+                "reviewed_by": admin_uid,
+                "reviewed_at": now,
+                "status": ContributionStatus.APPROVED.value,
+                "updated_at": now.isoformat(),
+            })
+        else:
+            rec = ContributionRecord(
+                id=matrix_rec_id,
+                user_id=user_id,
+                track=track_enum,
+                category=category_enum,
+                title=title_str[:200],
+                description=desc_str[:2000] if desc_str else None,
+                points=points,
+                event_id=event_id,
+                occurred_at=now,
+                status=ContributionStatus.APPROVED,
+                recorded_by=admin_uid,
+                created_at=now,
+                reviewed_by=admin_uid,
+                reviewed_at=now,
+                deduplication_key=matrix_rec_id,
+            )
+            ref.set(rec.model_dump())
+
+        contribution_service.sync_user_points(db, user_id)
+        _sync_user_points(db, user_id)
+        from app.api.v1.endpoints.users import invalidate_users_cache
+        invalidate_users_cache()
+    except Exception:
+        pass
 
 
 @router.patch("/{id}/matrix/cell")
@@ -2577,6 +2755,18 @@ def update_matrix_cell(
         }
     )
 
+    admin_uid = get_user_uid(current_user)
+    _sync_matrix_contribution_award(
+        event_id=event_id,
+        event_title=event_data.get("title", "Event"),
+        event_track=event_data.get("points_reward", {}).get("track", "general"),
+        user_id=payload.user_id,
+        column_id=payload.column_id,
+        col=col,
+        val=validated_val,
+        admin_uid=admin_uid,
+    )
+
     return {
         "success": True,
         "user_id": payload.user_id,
@@ -2607,6 +2797,7 @@ def batch_update_matrix(
 
     matrix_cells = event_data.get("matrix_cells") or {}
     updated_cells_count = 0
+    admin_uid = get_user_uid(current_user)
 
     for cell in payload.cells:
         col = col_map.get(cell.column_id)
@@ -2616,6 +2807,17 @@ def batch_update_matrix(
         user_cells = matrix_cells.setdefault(cell.user_id, {})
         user_cells[cell.column_id] = validated_val
         updated_cells_count += 1
+
+        _sync_matrix_contribution_award(
+            event_id=event_id,
+            event_title=event_data.get("title", "Event"),
+            event_track=event_data.get("points_reward", {}).get("track", "general"),
+            user_id=cell.user_id,
+            column_id=cell.column_id,
+            col=col,
+            val=validated_val,
+            admin_uid=admin_uid,
+        )
 
     if updated_cells_count > 0:
         db.collection(EVENTS_COLLECTION).document(event_id).update(
@@ -2682,10 +2884,22 @@ def assign_all_matrix_column(
             if m_uid:
                 attendee_uids.add(m_uid)
 
+    admin_uid = get_user_uid(current_user)
     matrix_cells = event_data.get("matrix_cells") or {}
     for uid in attendee_uids:
         user_cells = matrix_cells.setdefault(uid, {})
         user_cells[column_id] = validated_val
+
+        _sync_matrix_contribution_award(
+            event_id=event_id,
+            event_title=event_data.get("title", "Event"),
+            event_track=event_data.get("points_reward", {}).get("track", "general"),
+            user_id=uid,
+            column_id=column_id,
+            col=col,
+            val=validated_val,
+            admin_uid=admin_uid,
+        )
 
     db.collection(EVENTS_COLLECTION).document(event_id).update(
         {
@@ -2926,18 +3140,46 @@ def submit_event_project(
         "demo_url": payload.demo_url,
         "paper_link": payload.paper_link,
         "notes": payload.notes,
+        "problem_statement_id": payload.problem_statement_id,
+        "custom_fields": payload.custom_fields or {},
         "submitted_at": now_timestamp,
         "submitted_by": user_uid,
     }
 
-    reg_doc.reference.update({
+    update_payload: Dict[str, Any] = {
         "submission": sub_dict,
         "updated_at": now_timestamp,
-    })
+    }
+    if payload.problem_statement_id is not None:
+        update_payload["idea_id"] = payload.problem_statement_id
+        update_payload["problem_statement_id"] = payload.problem_statement_id
 
-    # Auto-update matrix cell for submission column if one exists
+    reg_doc.reference.update(update_payload)
+
+    # Sync idea to linked SPG if problem_statement_id was provided
+    if payload.problem_statement_id is not None:
+        spg_id = reg_data.get("spg_id")
+        if not spg_id and reg_data.get("team_name"):
+            matched_spgs = list(db.collection("spgs").where("event_id", "==", event_id).where("name", "==", reg_data.get("team_name")).limit(1).get())
+            if matched_spgs:
+                spg_id = matched_spgs[0].id
+        if spg_id:
+            try:
+                db.collection("spgs").document(spg_id).update({
+                    "idea_id": payload.problem_statement_id or None,
+                    "updated_at": now_timestamp,
+                })
+            except Exception as e:
+                print(f"Warning: Failed to sync idea to SPG {spg_id}: {e}")
+
+    # Auto-update matrix cells for submission and idea columns if they exist
     raw_columns: List[Dict[str, Any]] = event_data.get("matrix_columns") or []
     sub_col = next((c for c in raw_columns if c.get("object_schema_type") == MatrixSchemaType.SUBMISSION.value), None)
+    idea_col = next((c for c in raw_columns if c.get("object_schema_type") == MatrixSchemaType.IDEA_JAR_ASSIGNMENT.value), None)
+    matrix_cells = event_data.get("matrix_cells") or {}
+    matrix_needs_update = False
+    all_member_uids = reg_data.get("member_uids") or [reg_data.get("user_id")]
+
     if sub_col:
         sub_col_id = sub_col.get("column_id")
         cell_val = {
@@ -2946,17 +3188,147 @@ def submit_event_project(
             "paper_link": payload.paper_link or payload.demo_url or payload.slides_url,
             "score": None,
         }
-        all_member_uids = reg_data.get("member_uids") or [reg_data.get("user_id")]
-        matrix_cells = event_data.get("matrix_cells") or {}
         for m_uid in all_member_uids:
             if m_uid:
                 matrix_cells.setdefault(m_uid, {})[sub_col_id] = cell_val
+        matrix_needs_update = True
+
+    if idea_col and payload.problem_statement_id:
+        idea_col_id = idea_col.get("column_id")
+        idea_doc = db.collection("ideas").document(payload.problem_statement_id).get()
+        if idea_doc.exists:
+            idata = idea_doc.to_dict() or {}
+            idea_cell_val = {
+                "schema_type": MatrixSchemaType.IDEA_JAR_ASSIGNMENT.value,
+                "idea_id": payload.problem_statement_id,
+                "idea_title": idata.get("title") or "Idea",
+                "track": str(idata.get("track") or "general"),
+                "spg_id": reg_data.get("spg_id"),
+                "spg_name": reg_data.get("team_name"),
+            }
+            for m_uid in all_member_uids:
+                if m_uid:
+                    matrix_cells.setdefault(m_uid, {})[idea_col_id] = idea_cell_val
+            matrix_needs_update = True
+
+    if matrix_needs_update:
         db.collection(EVENTS_COLLECTION).document(event_id).update({
             "matrix_cells": matrix_cells,
             "updated_at": now_timestamp,
         })
 
     return {"success": True, "submission": sub_dict}
+
+
+class AttachRegistrationIdeaRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    idea_id: Optional[str] = None
+
+
+@router.post("/{id}/my-registration/idea")
+def attach_registration_idea(
+    id: str,
+    payload: AttachRegistrationIdeaRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Attach, change, or remove an Idea Jar problem statement for the member's registered team."""
+    user_uid = get_user_uid(current_user)
+    is_admin = is_admin_user(current_user)
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event_data = event_doc.to_dict() or {}
+
+    regs_ref = (
+        db.collection(EVENTS_COLLECTION)
+        .document(event_id)
+        .collection(REGISTRATIONS_SUBCOLLECTION)
+    )
+    my_regs = list(regs_ref.where("user_id", "==", user_uid).get())
+    if not my_regs:
+        my_regs = list(regs_ref.where("member_uids", "array_contains", user_uid).get())
+
+    active_regs = [r for r in my_regs if _active_registration(r.to_dict() or {})]
+    if not active_regs:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="You do not have an active registration for this event.",
+        )
+
+    reg_doc = active_regs[0]
+    reg_data = reg_doc.to_dict() or {}
+    now_timestamp = now_iso()
+
+    idea_data = {}
+    if payload.idea_id:
+        idea_doc = db.collection("ideas").document(payload.idea_id).get()
+        if not idea_doc.exists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Idea '{payload.idea_id}' not found.",
+            )
+        idea_data = idea_doc.to_dict() or {}
+        idea_data["id"] = idea_doc.id
+
+    sub_data = reg_data.get("submission") or {}
+    if payload.idea_id:
+        sub_data["problem_statement_id"] = payload.idea_id
+    elif "problem_statement_id" in sub_data:
+        sub_data["problem_statement_id"] = None
+
+    reg_doc.reference.update({
+        "idea_id": payload.idea_id if payload.idea_id else None,
+        "problem_statement_id": payload.idea_id if payload.idea_id else None,
+        "submission": sub_data,
+        "updated_at": now_timestamp,
+    })
+
+    # Sync to linked SPG
+    spg_id = reg_data.get("spg_id")
+    if not spg_id and reg_data.get("team_name"):
+        matched_spgs = list(db.collection("spgs").where("event_id", "==", event_id).where("name", "==", reg_data.get("team_name")).limit(1).get())
+        if matched_spgs:
+            spg_id = matched_spgs[0].id
+    if spg_id:
+        try:
+            db.collection("spgs").document(spg_id).update({
+                "idea_id": payload.idea_id if payload.idea_id else None,
+                "updated_at": now_timestamp,
+            })
+        except Exception as e:
+            print(f"Warning: Failed to sync idea to SPG {spg_id}: {e}")
+
+    # Sync Event Matrix
+    raw_columns: List[Dict[str, Any]] = event_data.get("matrix_columns") or []
+    idea_col = next((c for c in raw_columns if c.get("object_schema_type") == MatrixSchemaType.IDEA_JAR_ASSIGNMENT.value), None)
+    if idea_col:
+        idea_col_id = idea_col.get("column_id")
+        matrix_cells = event_data.get("matrix_cells") or {}
+        all_member_uids = reg_data.get("member_uids") or [reg_data.get("user_id")]
+        for m_uid in all_member_uids:
+            if m_uid:
+                if payload.idea_id:
+                    matrix_cells.setdefault(m_uid, {})[idea_col_id] = {
+                        "schema_type": MatrixSchemaType.IDEA_JAR_ASSIGNMENT.value,
+                        "idea_id": payload.idea_id,
+                        "idea_title": idea_data.get("title") or "Idea",
+                        "track": str(idea_data.get("track") or "general"),
+                        "spg_id": spg_id,
+                        "spg_name": reg_data.get("team_name"),
+                    }
+                else:
+                    if m_uid in matrix_cells and idea_col_id in matrix_cells[m_uid]:
+                        matrix_cells[m_uid][idea_col_id] = None
+        db.collection(EVENTS_COLLECTION).document(event_id).update({
+            "matrix_cells": matrix_cells,
+            "updated_at": now_timestamp,
+        })
+
+    return {
+        "success": True,
+        "idea_id": payload.idea_id,
+        "idea": idea_data,
+    }
+
 
 
 @router.patch("/{id}/my-registration/custom-responses")

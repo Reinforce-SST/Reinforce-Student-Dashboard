@@ -6,7 +6,7 @@ import { useMember } from "@/lib/useMember";
 import { api } from "@/lib/api";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import MemberPicker, { type PickedMember } from "@/components/dashboard/MemberPicker";
-import { type EventDocument, type LearningResource, type EventRegistration } from "@/lib/api";
+import { type EventDocument, type LearningResource, type EventRegistration, type IdeaSummary } from "@/lib/api";
 import type { EventSubmissionPayload, TimelineItemSchema } from "@/types/event-matrix";
 import { formatEventDuration, getEventGraduationBatches } from "@/lib/eventsData";
 import EventAttendeesPanel from "./EventAttendeesPanel";
@@ -15,6 +15,7 @@ import EventTimelineSection from "./EventTimelineSection";
 import RsvpIntakeModal from "./RsvpIntakeModal";
 import ProjectSubmissionModal from "./ProjectSubmissionModal";
 import EditResponsesModal from "./EditResponsesModal";
+import AttachProblemModal from "@/components/dashboard/AttachProblemModal";
 import styles from "./EventDetail.module.css";
 
 function formatInline(text: string): React.ReactNode[] {
@@ -190,9 +191,43 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
   const [showRsvpModal, setShowRsvpModal] = useState(false);
   const [showSubmissionModal, setShowSubmissionModal] = useState(false);
   const [showEditResponsesModal, setShowEditResponsesModal] = useState(false);
+  const [showAttachModal, setShowAttachModal] = useState(false);
+  const [attachedIdea, setAttachedIdea] = useState<IdeaSummary | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
   const [switchingTrack, setSwitchingTrack] = useState(false);
   const [currentTime, setCurrentTime] = useState<number>(0);
+  const [memberProfilesMap, setMemberProfilesMap] = useState<Record<string, { full_name?: string; avatar_url?: string }>>({});
+
+  useEffect(() => {
+    if (!token || !myRegistration) return;
+    const uidsToFetch = new Set<string>();
+    const leadUid = myRegistration.user_id;
+    if (leadUid && !myRegistration.user_profile?.full_name && !memberProfilesMap[leadUid]) {
+      uidsToFetch.add(leadUid);
+    }
+    const memberUids = myRegistration.member_uids || [];
+    for (const u of memberUids) {
+      if (!u || memberProfilesMap[u]) continue;
+      const cached = myRegistration.member_profiles?.find((p) => p.id === u);
+      if (!cached || !cached.full_name || cached.full_name === u) {
+        uidsToFetch.add(u);
+      }
+    }
+    if (uidsToFetch.size === 0) return;
+
+    uidsToFetch.forEach((uid) => {
+      api.getUserProfile(token, uid)
+        .then((prof) => {
+          if (prof?.full_name) {
+            setMemberProfilesMap((prev) => ({
+              ...prev,
+              [uid]: { full_name: prof.full_name, avatar_url: prof.avatar_url || undefined },
+            }));
+          }
+        })
+        .catch(() => {});
+    });
+  }, [token, myRegistration, memberProfilesMap]);
 
   useEffect(() => {
     setCurrentTime(Date.now());
@@ -248,6 +283,21 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
       .finally(() => { if (active) setRegistrationLoading(false); });
     return () => { active = false; };
   }, [token, event.id]);
+
+  useEffect(() => {
+    const ideaId =
+      (myRegistration as any)?.submission?.problem_statement_id ||
+      (myRegistration as any)?.problem_statement_id ||
+      (myRegistration as any)?.idea_id;
+    if (ideaId && token) {
+      api
+        .getIdea(ideaId, token)
+        .then((res) => setAttachedIdea(res as unknown as IdeaSummary))
+        .catch(() => setAttachedIdea(null));
+    } else {
+      setAttachedIdea(null);
+    }
+  }, [myRegistration, token]);
 
   useEffect(() => {
     let active = true;
@@ -359,6 +409,33 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
       setRegistrationError(err instanceof Error ? err.message : "Failed to switch track.");
     } finally {
       setSwitchingTrack(false);
+    }
+  };
+
+  const handleAttachEventProblem = async (ideaId: string | null) => {
+    if (!token || !event?.id) return;
+    try {
+      const res = await api.attachEventIdea(token, event.id, ideaId);
+      setMyRegistration((prev: any) => {
+        if (!prev) return prev;
+        const prevSub = prev.submission || {};
+        return {
+          ...prev,
+          idea_id: ideaId,
+          problem_statement_id: ideaId,
+          submission: {
+            ...prevSub,
+            problem_statement_id: ideaId,
+          },
+        };
+      });
+      if (ideaId && res?.idea) {
+        setAttachedIdea(res.idea as unknown as IdeaSummary);
+      } else if (!ideaId) {
+        setAttachedIdea(null);
+      }
+    } catch (err) {
+      setRegistrationError(err instanceof Error ? err.message : "Failed to update problem statement.");
     }
   };
 
@@ -724,119 +801,14 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
         <div className={styles.mainGrid}>
         {/* Left Main Column */}
         <div className={styles.contentColumn}>
-          {/* Project Deliverables Card (For Registered Attendees) */}
-          {isRegistered && (
-            <section className={styles.deliverablesCard} aria-label="Project Deliverables">
+          {/* Team Participation Box (For Team-based events) */}
+          {isRegistered && (event.participation?.mode === "team" || Boolean(myRegistration?.team_name)) && (
+            <section className={styles.deliverablesCard} style={{ borderColor: "#3f424c", marginBottom: "16px" }} aria-label="Your Registered Team">
               <div className={styles.deliverablesHeader}>
                 <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
                   <h2 className={styles.sectionTitle} style={{ margin: 0 }}>
-                    <MemberIcon name="articles" size={18} />
-                    Project Deliverables & Submission
-                  </h2>
-                  <span
-                    className={`${styles.deliverablesStatusTag} ${
-                      myRegistration?.submission
-                        ? styles.statusSubmitted
-                        : styles.statusPending
-                    }`}
-                  >
-                    {myRegistration?.submission
-                      ? "✓ Submitted"
-                      : "Submission Pending"}
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setShowSubmissionModal(true)}
-                  className={styles.openSubmissionModalBtn}
-                >
-                  <MemberIcon name="plus" size={14} />
-                  {myRegistration?.submission
-                    ? "Update Deliverables"
-                    : "Submit Project Links"}
-                </button>
-              </div>
-
-              {myRegistration?.submission ? (
-                <div className={styles.deliverablesLinksList}>
-                  {myRegistration.submission.repo_url && (
-                    <a
-                      href={myRegistration.submission.repo_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className={styles.deliverableLinkItem}
-                    >
-                      <span>💻</span>
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        Repository
-                      </span>
-                    </a>
-                  )}
-                  {myRegistration.submission.slides_url && (
-                    <a
-                      href={myRegistration.submission.slides_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className={styles.deliverableLinkItem}
-                    >
-                      <span>📊</span>
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        Pitch Slides
-                      </span>
-                    </a>
-                  )}
-                  {myRegistration.submission.demo_url && (
-                    <a
-                      href={myRegistration.submission.demo_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className={styles.deliverableLinkItem}
-                    >
-                      <span>🎥</span>
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        Live Demo
-                      </span>
-                    </a>
-                  )}
-                  {myRegistration.submission.paper_link && (
-                    <a
-                      href={myRegistration.submission.paper_link}
-                      target="_blank"
-                      rel="noreferrer"
-                      className={styles.deliverableLinkItem}
-                    >
-                      <span>📄</span>
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        Paper / Writeup
-                      </span>
-                    </a>
-                  )}
-                  {myRegistration.submission.notes && (
-                    <p style={{ margin: "6px 0 0 0", fontSize: "12.5px", color: "#a1a1aa", gridColumn: "1 / -1" }}>
-                      <strong>Notes:</strong> {myRegistration.submission.notes}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <p style={{ margin: 0, fontSize: "13px", color: "#8c8c98" }}>
-                  No deliverables submitted yet. Upload your repository, pitch slides, or demo before the submission deadline.
-                </p>
-              )}
-            </section>
-          )}
-
-          {/* Custom Intake Form Responses Card (For Registered Attendees) */}
-          {isRegistered && (
-            (event.custom_registration_fields?.length ?? 0) > 0 ||
-            Boolean(myRegistration?.custom_responses && Object.keys(myRegistration.custom_responses).length > 0)
-          ) && (
-            <section className={styles.intakeCard} aria-label="Registration Form Answers">
-              <div className={styles.intakeHeader}>
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                  <h2 className={styles.sectionTitle} style={{ margin: 0 }}>
-                    <MemberIcon name="tag" size={18} />
-                    Registration Form Responses
+                    <MemberIcon name="users" size={18} />
+                    Your Team: <span style={{ color: "#e5b731" }}>{myRegistration?.team_name || "Registered Team"}</span>
                   </h2>
                   <span
                     className={styles.deliverablesStatusTag}
@@ -846,79 +818,295 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                       border: "1px solid rgba(229, 183, 49, 0.3)",
                     }}
                   >
-                    ✓ Intake Recorded
+                    👥 Team Participation ({myRegistration?.member_uids?.length || 1} Members)
                   </span>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setShowEditResponsesModal(true)}
-                  className={styles.editIntakeBtn}
-                  title="Edit your submitted answers for this event"
-                >
-                  <MemberIcon name="edit" size={13} />
-                  Edit Responses
-                </button>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  {myRegistration?.spg_id && (
+                    <Link
+                      href={`/dashboard/spg/${encodeURIComponent(myRegistration.spg_id)}`}
+                      className={styles.openSubmissionModalBtn}
+                      style={{ textDecoration: "none", background: "rgba(229, 183, 49, 0.15)", color: "#e5b731", border: "1px solid rgba(229, 183, 49, 0.3)" }}
+                    >
+                      <MemberIcon name="sparkles" size={13} />
+                      View Team SPG →
+                    </Link>
+                  )}
+                </div>
               </div>
 
-              <div className={styles.intakeGrid}>
-                {event.custom_registration_fields?.map((cf) => {
-                  const val =
-                    cf.applies_to === "team"
-                      ? myRegistration?.custom_responses?.[cf.field_id]
-                      : myRegistration?.member_responses?.[profile?.id || ""]?.[cf.field_id] ??
-                        myRegistration?.custom_responses?.[cf.field_id];
-
-                  const hasVal = val !== undefined && val !== null && val !== "";
-
-                  return (
-                    <div key={cf.field_id} className={styles.intakeFieldBox}>
-                      <div className={styles.intakeFieldHeader}>
-                        <span className={styles.intakeFieldLabel}>{cf.label}</span>
-                        <span
-                          className={styles.intakeFieldScope}
-                          style={{
-                            background:
-                              cf.applies_to === "team"
-                                ? "rgba(229, 183, 49, 0.12)"
-                                : "rgba(56, 189, 248, 0.12)",
-                            color: cf.applies_to === "team" ? "#e5b731" : "#38bdf8",
-                            border: `1px solid ${
-                              cf.applies_to === "team"
-                                ? "rgba(229, 183, 49, 0.3)"
-                                : "rgba(56, 189, 248, 0.3)"
-                            }`,
-                          }}
-                        >
-                          {cf.applies_to === "team" ? "Team" : "Individual"}
+              {/* Team Details Grid: Roster, Invite Code, Problem Statement */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px", marginTop: "14px" }}>
+                {/* Team Roster Column */}
+                <div style={{ background: "#151518", border: "1px solid #2b2e35", borderRadius: "8px", padding: "14px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: "700", color: "#8c8c98", textTransform: "uppercase", marginBottom: "8px" }}>
+                    Team Roster
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    {/* Team Leader */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#1c1c22", padding: "8px 10px", borderRadius: "6px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "#e5b731", color: "#000", fontWeight: "800", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          L
+                        </div>
+                        <span style={{ fontSize: "13px", fontWeight: "700", color: "#ffffff" }}>
+                          {(() => {
+                            const leadUid = myRegistration?.user_id || "";
+                            if (leadUid === profile?.id) return `${profile.full_name || "You"} (You)`;
+                            if (myRegistration?.user_profile?.full_name && myRegistration.user_profile.full_name !== leadUid) {
+                              return myRegistration.user_profile.full_name;
+                            }
+                            return memberProfilesMap[leadUid]?.full_name || "Team Lead";
+                          })()}
                         </span>
                       </div>
+                      <span style={{ fontSize: "10px", fontWeight: "800", background: "rgba(229, 183, 49, 0.2)", color: "#e5b731", padding: "2px 6px", borderRadius: "4px" }}>
+                        LEAD
+                      </span>
+                    </div>
 
-                      <div className={styles.intakeFieldValue}>
-                        {!hasVal ? (
-                          <span className={styles.intakeFieldValueEmpty}>Not provided</span>
-                        ) : cf.field_type === "boolean" ? (
-                          <span>{val ? "✓ Yes, Confirmed" : "✗ No"}</span>
-                        ) : cf.field_type === "url" ? (
-                          <a
-                            href={String(val)}
-                            target="_blank"
-                            rel="noreferrer"
-                            className={styles.intakeFieldLink}
-                          >
-                            <span>🔗</span>
-                            <span>{String(val)}</span>
-                          </a>
-                        ) : (
-                          <span>{String(val)}</span>
-                        )}
+                    {/* Teammates */}
+                    {(myRegistration?.member_profiles?.length ? myRegistration.member_profiles : (myRegistration?.member_uids || []).filter(u => u !== myRegistration?.user_id).map(u => ({ id: u, full_name: u, email: "" }))).map((m: any, idx: number) => {
+                      const uid = m.id || m;
+                      if (uid === myRegistration?.user_id) return null;
+                      const rawName = m.full_name || uid;
+                      const displayName =
+                        rawName && rawName !== uid
+                          ? rawName
+                          : uid === profile?.id
+                          ? profile.full_name || "You"
+                          : memberProfilesMap[uid]?.full_name || "Team Member";
+                      return (
+                        <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#1c1c22", padding: "8px 10px", borderRadius: "6px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "#2b2e35", color: "#d4d4d8", fontWeight: "700", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              {displayName.slice(0, 1).toUpperCase()}
+                            </div>
+                            <span style={{ fontSize: "13px", color: "#e4e4e7" }}>
+                              {displayName} {uid === profile?.id && "(You)"}
+                            </span>
+                          </div>
+                          <span style={{ fontSize: "10px", color: "#8c8c98" }}>MEMBER</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Team Controls & Problem Statement */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  {/* Team Invite Code */}
+                  {myRegistration?.invite_code && (
+                    <div style={{ background: "#151518", border: "1px solid #2b2e35", borderRadius: "8px", padding: "14px" }}>
+                      <div style={{ fontSize: "11px", fontWeight: "700", color: "#8c8c98", textTransform: "uppercase", marginBottom: "6px" }}>
+                        Team Invite Code
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <code style={{ fontSize: "14px", fontWeight: "750", background: "#0c0c0e", padding: "6px 12px", borderRadius: "6px", color: "#e5b731", border: "1px solid #31343a", letterSpacing: "0.08em" }}>
+                          {myRegistration.invite_code}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (myRegistration?.invite_code) {
+                              navigator.clipboard.writeText(myRegistration.invite_code);
+                              setCopiedCode(true);
+                              setTimeout(() => setCopiedCode(false), 2000);
+                            }
+                          }}
+                          className={styles.copyCodeBtn}
+                          style={{ padding: "6px 12px", fontSize: "12px" }}
+                        >
+                          <MemberIcon name="tag" size={12} />
+                          {copiedCode ? "Copied!" : "Copy Code"}
+                        </button>
                       </div>
                     </div>
-                  );
-                })}
+                  )}
+
+                  {/* Attached Problem Statement from Idea Jar */}
+                  <div style={{ background: "#151518", border: "1px solid #2b2e35", borderRadius: "8px", padding: "14px", flex: 1 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                      <div style={{ fontSize: "11px", fontWeight: "700", color: "#8c8c98", textTransform: "uppercase" }}>
+                        Problem Statement (Idea Jar)
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowAttachModal(true)}
+                        style={{
+                          background: "rgba(229, 183, 49, 0.12)",
+                          border: "1px solid rgba(229, 183, 49, 0.3)",
+                          color: "#e5b731",
+                          fontSize: "11px",
+                          fontWeight: "750",
+                          padding: "3px 8px",
+                          borderRadius: "4px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {attachedIdea ? "Change Problem" : "+ Pick Problem"}
+                      </button>
+                    </div>
+
+                    {attachedIdea ? (
+                      <div>
+                        <div style={{ fontWeight: "750", fontSize: "13px", color: "#ffffff", marginTop: "4px" }}>
+                          {attachedIdea.title}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "6px" }}>
+                          <span style={{ fontSize: "10px", fontWeight: "750", background: "rgba(229, 183, 49, 0.15)", color: "#e5b731", padding: "2px 6px", borderRadius: "4px", textTransform: "uppercase" }}>
+                            {attachedIdea.track || "GENERAL"}
+                          </span>
+                          <Link href={`/dashboard/ideas/${encodeURIComponent(attachedIdea.id)}`} style={{ fontSize: "11.5px", color: "#a1a1aa", textDecoration: "underline" }}>
+                            View in Idea Jar →
+                          </Link>
+                        </div>
+                      </div>
+                    ) : (
+                      <p style={{ margin: "4px 0 0 0", fontSize: "12px", color: "#71717a" }}>
+                        No problem statement attached to this team yet. Choose an approved problem from the Idea Jar to sync with the Event Matrix.
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
             </section>
           )}
+
+          {/* Project Deliverables Card (For Registered Attendees) */}
+          {isRegistered && (() => {
+            const hasDeliverablesSubmitted = Boolean(
+              myRegistration?.submission && (
+                myRegistration.submission.submitted_at ||
+                myRegistration.submission.repo_url ||
+                myRegistration.submission.slides_url ||
+                myRegistration.submission.demo_url ||
+                myRegistration.submission.paper_link ||
+                (myRegistration.submission.custom_fields && Object.keys(myRegistration.submission.custom_fields).length > 0)
+              )
+            );
+
+            return (
+              <section className={styles.deliverablesCard} aria-label="Project Deliverables">
+                <div className={styles.deliverablesHeader}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                    <h2 className={styles.sectionTitle} style={{ margin: 0 }}>
+                      <MemberIcon name="articles" size={18} />
+                      Project Deliverables & Submission
+                    </h2>
+                    <span
+                      className={`${styles.deliverablesStatusTag} ${
+                        hasDeliverablesSubmitted
+                          ? styles.statusSubmitted
+                          : styles.statusPending
+                      }`}
+                    >
+                      {hasDeliverablesSubmitted
+                        ? "✓ Submitted"
+                        : "Submission Pending"}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowSubmissionModal(true)}
+                    className={styles.openSubmissionModalBtn}
+                  >
+                    <MemberIcon name={hasDeliverablesSubmitted ? "edit" : "plus"} size={14} />
+                    {hasDeliverablesSubmitted
+                      ? "Update Deliverables"
+                      : "Submit Project Deliverables"}
+                  </button>
+                </div>
+
+                {hasDeliverablesSubmitted && myRegistration?.submission ? (
+                  <div className={styles.deliverablesLinksList}>
+                    {myRegistration.submission.repo_url && (
+                      <a
+                        href={myRegistration.submission.repo_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={styles.deliverableLinkItem}
+                      >
+                        <span>💻</span>
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          Repository
+                        </span>
+                      </a>
+                    )}
+                    {myRegistration.submission.slides_url && (
+                      <a
+                        href={myRegistration.submission.slides_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={styles.deliverableLinkItem}
+                      >
+                        <span>📊</span>
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          Pitch Slides
+                        </span>
+                      </a>
+                    )}
+                    {myRegistration.submission.demo_url && (
+                      <a
+                        href={myRegistration.submission.demo_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={styles.deliverableLinkItem}
+                      >
+                        <span>🎥</span>
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          Live Demo
+                        </span>
+                      </a>
+                    )}
+                    {myRegistration.submission.paper_link && (
+                      <a
+                        href={myRegistration.submission.paper_link}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={styles.deliverableLinkItem}
+                      >
+                        <span>📄</span>
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          Paper / Writeup
+                        </span>
+                      </a>
+                    )}
+                    {myRegistration.submission.custom_fields &&
+                      Object.entries(myRegistration.submission.custom_fields).map(([k, v]) => {
+                        if (!v) return null;
+                        const href = String(v).startsWith("http") ? String(v) : `https://${v}`;
+                        return (
+                          <a
+                            key={k}
+                            href={href}
+                            target="_blank"
+                            rel="noreferrer"
+                            className={styles.deliverableLinkItem}
+                          >
+                            <span>🔗</span>
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {k}: {String(v)}
+                            </span>
+                          </a>
+                        );
+                      })}
+                    {myRegistration.submission.notes && (
+                      <p style={{ margin: "6px 0 0 0", fontSize: "12.5px", color: "#a1a1aa", gridColumn: "1 / -1" }}>
+                        <strong>Notes:</strong> {myRegistration.submission.notes}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p style={{ margin: 0, fontSize: "13px", color: "#8c8c98" }}>
+                    No deliverables submitted yet. Upload your repository, pitch slides, or demo before the submission deadline.
+                  </p>
+                )}
+              </section>
+            );
+          })()}
 
           {/* Detailed Overview */}
           <section className={styles.sectionCard} aria-label="Event Detailed Overview">
@@ -1077,6 +1265,126 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
             <MemberIcon name="award" size={28} />
           </div>
 
+          {/* Registration Form Responses Card (Right Sidebar for Registered Attendees) */}
+          {isRegistered && (
+            (event.custom_registration_fields?.length ?? 0) > 0 ||
+            Boolean(myRegistration?.custom_responses && Object.keys(myRegistration.custom_responses).length > 0) ||
+            Boolean(myRegistration?.team_name)
+          ) && (
+            <section className={styles.intakeCard} style={{ padding: "18px" }} aria-label="Registration Form Answers">
+              <div className={styles.intakeHeader}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <h2 className={styles.sectionTitle} style={{ margin: 0, fontSize: "15px" }}>
+                    <MemberIcon name="tag" size={16} />
+                    Registration Form Responses
+                  </h2>
+                  <span
+                    className={styles.deliverablesStatusTag}
+                    style={{
+                      background: "rgba(229, 183, 49, 0.12)",
+                      color: "#e5b731",
+                      border: "1px solid rgba(229, 183, 49, 0.3)",
+                      fontSize: "10.5px",
+                      padding: "2px 7px",
+                    }}
+                  >
+                    ✓ Intake Recorded
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowEditResponsesModal(true)}
+                  className={styles.editIntakeBtn}
+                  title="Edit your submitted answers for this event"
+                >
+                  <MemberIcon name="edit" size={13} />
+                  Edit Responses
+                </button>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                {/* Team Name Response (for team events) */}
+                {event.participation?.mode === "team" && myRegistration?.team_name && (
+                  <div className={styles.intakeFieldBox} style={{ padding: "12px 14px" }}>
+                    <div className={styles.intakeFieldHeader}>
+                      <span className={styles.intakeFieldLabel}>TEAM NAME</span>
+                      <span
+                        className={styles.intakeFieldScope}
+                        style={{
+                          background: "rgba(229, 183, 49, 0.12)",
+                          color: "#e5b731",
+                          border: "1px solid rgba(229, 183, 49, 0.3)",
+                        }}
+                      >
+                        Team
+                      </span>
+                    </div>
+                    <div className={styles.intakeFieldValue} style={{ fontWeight: "700", color: "#f4f4f5" }}>
+                      <span>{myRegistration.team_name}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Custom registration fields */}
+                {event.custom_registration_fields?.map((cf) => {
+                  const val =
+                    cf.applies_to === "team"
+                      ? myRegistration?.custom_responses?.[cf.field_id]
+                      : myRegistration?.member_responses?.[profile?.id || ""]?.[cf.field_id] ??
+                        myRegistration?.custom_responses?.[cf.field_id];
+
+                  const hasVal = val !== undefined && val !== null && val !== "";
+
+                  return (
+                    <div key={cf.field_id} className={styles.intakeFieldBox} style={{ padding: "12px 14px" }}>
+                      <div className={styles.intakeFieldHeader}>
+                        <span className={styles.intakeFieldLabel}>{cf.label.toUpperCase()}</span>
+                        <span
+                          className={styles.intakeFieldScope}
+                          style={{
+                            background:
+                              cf.applies_to === "team"
+                                ? "rgba(229, 183, 49, 0.12)"
+                                : "rgba(56, 189, 248, 0.12)",
+                            color: cf.applies_to === "team" ? "#e5b731" : "#38bdf8",
+                            border: `1px solid ${
+                              cf.applies_to === "team"
+                                ? "rgba(229, 183, 49, 0.3)"
+                                : "rgba(56, 189, 248, 0.3)"
+                            }`,
+                          }}
+                        >
+                          {cf.applies_to === "team" ? "Team" : "Individual"}
+                        </span>
+                      </div>
+
+                      <div className={styles.intakeFieldValue}>
+                        {!hasVal ? (
+                          <span className={styles.intakeFieldValueEmpty}>Not provided</span>
+                        ) : cf.field_type === "boolean" ? (
+                          <span>{val ? "✓ Yes, Confirmed" : "✗ No"}</span>
+                        ) : cf.field_type === "url" ? (
+                          <a
+                            href={String(val)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className={styles.intakeFieldLink}
+                          >
+                            <span>🔗</span>
+                            <span>{String(val)}</span>
+                          </a>
+                        ) : (
+                          <span>{String(val)}</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
           {/* Quick Specs */}
           <div className={styles.sectionCard}>
             <h2 className={styles.sectionTitle}>
@@ -1233,10 +1541,25 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
         eventTitle={event.title}
         timeline={event.timeline}
         initialSubmission={myRegistration?.submission}
+        submissionConfig={event.submission_config}
         token={token}
         onSuccess={(savedSubmission) => {
           setMyRegistration((prev) => (prev ? { ...prev, submission: savedSubmission } : prev));
         }}
+      />
+
+      {/* Attach Problem Statement Modal */}
+      <AttachProblemModal
+        isOpen={showAttachModal}
+        onClose={() => setShowAttachModal(false)}
+        token={token}
+        currentIdeaId={
+          (myRegistration as any)?.submission?.problem_statement_id ||
+          (myRegistration as any)?.problem_statement_id ||
+          (myRegistration as any)?.idea_id
+        }
+        onSelectIdea={(ideaId) => void handleAttachEventProblem(ideaId)}
+        title="Select Event Problem Statement"
       />
 
       {/* Edit Registration Responses Modal */}
@@ -1246,6 +1569,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
         event={event}
         token={token}
         currentUserId={profile?.id || ""}
+        initialTeamName={myRegistration?.team_name || ""}
         initialResponses={
           event.custom_registration_fields?.reduce((acc, cf) => {
             const val =
@@ -1259,12 +1583,13 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
             return acc;
           }, {} as Record<string, any>) || {}
         }
-        onSuccess={(updatedUserResponses, updatedCustom) => {
+        onSuccess={(updatedUserResponses, updatedCustom, newTeamName) => {
           setMyRegistration((prev) => {
             if (!prev) return prev;
             return {
               ...prev,
-              custom_responses: { ...prev.custom_responses, ...updatedCustom },
+              team_name: newTeamName !== undefined ? newTeamName : prev.team_name,
+              custom_responses: { ...prev.custom_responses, ...(updatedCustom || {}) },
               member_responses: {
                 ...prev.member_responses,
                 [profile?.id || ""]: {
