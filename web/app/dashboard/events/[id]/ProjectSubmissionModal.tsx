@@ -9,6 +9,7 @@ import type {
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import AttachProblemModal from "@/components/dashboard/AttachProblemModal";
 import { api, type IdeaSummary } from "@/lib/api";
+import { parseDateOrIST } from "@/lib/eventsData";
 import styles from "./EventDetail.module.css";
 
 interface ProjectSubmissionModalProps {
@@ -101,10 +102,13 @@ export default function ProjectSubmissionModal({
 
   // Deadline check
   const deadlineItem = timeline?.find((t) => t.is_submission_deadline);
+  const deadlineEndStr = deadlineItem?.end_time || deadlineItem?.start_time;
+  const deadlineEndMs = parseDateOrIST(deadlineEndStr)?.getTime();
   const deadlinePassed = Boolean(
     deadlineItem &&
       now > 0 &&
-      new Date(deadlineItem.end_time || deadlineItem.start_time).getTime() <= now
+      deadlineEndMs &&
+      deadlineEndMs <= now
   );
 
   const handleSubmit = async (e: React.FormEvent) => {

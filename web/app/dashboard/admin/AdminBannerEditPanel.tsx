@@ -5,32 +5,13 @@ import { api, type EventSummaryItem, type BannerDocument } from "@/lib/api";
 import { getBannerPresentation, isBannerDestination } from "@/lib/dashboardData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import ConfirmModal from "@/components/dashboard/ConfirmModal";
+import {
+  toISTInputString,
+  fromISTInputString,
+  parseDateOrIST,
+  formatBannerDate,
+} from "@/lib/eventsData";
 import styles from "./Admin.module.css";
-
-function formatBannerDate(startStr: string): string {
-  const start = new Date(startStr);
-  return startStr && Number.isFinite(start.getTime())
-    ? start.toLocaleDateString("en-IN", {
-        timeZone: "Asia/Kolkata",
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      })
-    : "Date not set";
-}
-
-function formatDateTimeInput(isoStr?: string | null): string {
-  if (!isoStr) return "";
-  try {
-    const d = new Date(isoStr);
-    if (isNaN(d.getTime())) return "";
-    return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-      .toISOString()
-      .slice(0, 16);
-  } catch {
-    return "";
-  }
-}
 
 export default function AdminBannerEditPanel({
   token,
@@ -100,10 +81,10 @@ export default function AdminBannerEditPanel({
     setTitle(ev.title || "");
     setDescription(ev.description || "");
     if (ev.schedule?.start_time) {
-      setStartDateTime(formatDateTimeInput(ev.schedule.start_time));
+      setStartDateTime(ev.schedule.start_time);
     }
     if (ev.schedule?.end_time) {
-      setEndDateTime(formatDateTimeInput(ev.schedule.end_time));
+      setEndDateTime(ev.schedule.end_time);
     }
     if (ev.banner_url) {
       setBannerUrl(ev.banner_url);
@@ -147,8 +128,8 @@ export default function AdminBannerEditPanel({
         if (!active) return;
         setTitle(b.title || "");
         setDescription(b.description || "");
-        setStartDateTime(formatDateTimeInput(b.schedule?.start_time));
-        setEndDateTime(formatDateTimeInput(b.schedule?.end_time));
+        setStartDateTime(b.schedule?.start_time || "");
+        setEndDateTime(b.schedule?.end_time || "");
         setBadgeText(b.banner_badge_text || "");
         setCtaText(b.banner_cta_text || "");
         setCtaUrl(b.banner_cta_url || "");
@@ -225,10 +206,10 @@ export default function AdminBannerEditPanel({
     setErrorMessage(null);
 
     try {
-      const startDateObj = new Date(startDateTime);
-      const endDateObj = endDateTime ? new Date(endDateTime) : null;
+      const startDateObj = parseDateOrIST(startDateTime);
+      const endDateObj = endDateTime ? parseDateOrIST(endDateTime) : null;
 
-      if (Number.isNaN(startDateObj.getTime()) || (endDateObj && Number.isNaN(endDateObj.getTime()))) {
+      if (!startDateObj || Number.isNaN(startDateObj.getTime()) || (endDateObj && Number.isNaN(endDateObj.getTime()))) {
         throw new Error("Enter valid banner dates.");
       }
       if (endDateObj && endDateObj <= startDateObj) {
@@ -617,8 +598,8 @@ export default function AdminBannerEditPanel({
                 <label className={styles.formLabel}>Start Date & Time</label>
                 <input
                   type="datetime-local"
-                  value={startDateTime}
-                  onChange={(e) => setStartDateTime(e.target.value)}
+                  value={toISTInputString(startDateTime)}
+                  onChange={(e) => setStartDateTime(fromISTInputString(e.target.value))}
                   className={styles.formInput}
                   required
                 />
@@ -627,8 +608,8 @@ export default function AdminBannerEditPanel({
                 <label className={styles.formLabel}>End Date & Time</label>
                 <input
                   type="datetime-local"
-                  value={endDateTime}
-                  onChange={(e) => setEndDateTime(e.target.value)}
+                  value={toISTInputString(endDateTime)}
+                  onChange={(e) => setEndDateTime(fromISTInputString(e.target.value))}
                   className={styles.formInput}
                 />
               </div>

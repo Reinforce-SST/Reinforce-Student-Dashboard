@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useMember } from "@/lib/useMember";
 import { loadAllEvents } from "@/lib/memberData";
 import { appCache } from "@/lib/cache";
+import { parseDateOrIST } from "@/lib/eventsData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import PaginationBar from "@/components/dashboard/PaginationBar";
 import LoadingBar from "@/components/dashboard/LoadingBar";
@@ -32,13 +33,15 @@ export type CalendarEventItem = {
 };
 
 function mapEventToCalendarItem(ev: any, now = Date.now(), isAdmin = false): CalendarEventItem {
-  const start = new Date(ev.schedule.start_time);
+  const start = parseDateOrIST(ev.schedule.start_time) || new Date(ev.schedule.start_time);
   const startMs = start.getTime();
-  const endMs = ev.schedule.end_time
-    ? new Date(ev.schedule.end_time).getTime()
-    : (Number.isFinite(startMs)
-        ? startMs + (ev.schedule.duration_minutes ? ev.schedule.duration_minutes * 60_000 : 7_200_000)
-        : null);
+  const end = ev.schedule.end_time ? parseDateOrIST(ev.schedule.end_time) : null;
+  const endMs =
+    end !== null && end !== undefined
+      ? end.getTime()
+      : (Number.isFinite(startMs)
+          ? startMs + (ev.schedule.duration_minutes ? ev.schedule.duration_minutes * 60_000 : 7_200_000)
+          : null);
 
   const isCompleted = ev.status === "completed" || (endMs !== null && endMs <= now);
   const isDraft = ev.status === "draft";
@@ -46,10 +49,11 @@ function mapEventToCalendarItem(ev: any, now = Date.now(), isAdmin = false): Cal
     (ev.status === "ongoing" || (Number.isFinite(startMs) && startMs <= now && (endMs !== null ? endMs > now : true)));
   const isEnded = isCompleted;
 
-  const monthStr = start.toLocaleString("en-US", { month: "short" }).toUpperCase();
-  const dayNum = start.getDate();
-  const yearNum = start.getFullYear();
+  const monthStr = start.toLocaleString("en-US", { timeZone: "Asia/Kolkata", month: "short" }).toUpperCase();
+  const dayNum = parseInt(start.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric" }), 10);
+  const yearNum = parseInt(start.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", year: "numeric" }), 10);
   const timeStr = start.toLocaleString("en-US", {
+    timeZone: "Asia/Kolkata",
     hour: "numeric",
     minute: "2-digit",
     hour12: true,

@@ -8,7 +8,7 @@ import MemberIcon from "@/components/dashboard/MemberIcon";
 import MemberPicker, { type PickedMember } from "@/components/dashboard/MemberPicker";
 import { type EventDocument, type LearningResource, type EventRegistration, type IdeaSummary } from "@/lib/api";
 import type { EventSubmissionPayload, TimelineItemSchema } from "@/types/event-matrix";
-import { formatEventDuration, getEventGraduationBatches } from "@/lib/eventsData";
+import { formatEventDuration, getEventGraduationBatches, parseDateOrIST } from "@/lib/eventsData";
 import EventAttendeesPanel from "./EventAttendeesPanel";
 import EventAttendancePanel from "./EventAttendancePanel";
 import EventTimelineSection from "./EventTimelineSection";
@@ -240,13 +240,13 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
     if (!event.timeline || event.timeline.length === 0 || !currentTime) return null;
     const now = currentTime;
     const sorted = [...event.timeline].sort(
-      (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+      (a, b) => (parseDateOrIST(a.start_time)?.getTime() ?? 0) - (parseDateOrIST(b.start_time)?.getTime() ?? 0)
     );
     // 1. Current in-progress milestone
     const current = sorted.find((m) => {
       if (m.status_override === "live") return true;
-      const s = new Date(m.start_time).getTime();
-      const e = m.end_time ? new Date(m.end_time).getTime() : s + 3600000;
+      const s = parseDateOrIST(m.start_time)?.getTime() ?? 0;
+      const e = m.end_time ? (parseDateOrIST(m.end_time)?.getTime() ?? s + 3600000) : s + 3600000;
       return now >= s && now <= e;
     });
     if (current) return { item: current, isCurrent: true };
@@ -254,7 +254,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
     // 2. Next upcoming milestone
     const upcoming = sorted.find((m) => {
       if (m.status_override === "upcoming") return true;
-      const s = new Date(m.start_time).getTime();
+      const s = parseDateOrIST(m.start_time)?.getTime() ?? 0;
       return s > now;
     });
     if (upcoming) return { item: upcoming, isCurrent: false };
@@ -264,7 +264,8 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
 
   useEffect(() => {
     const deadline = event.schedule?.registration_deadline;
-    const check = () => setDeadlinePassed(Boolean(deadline && Date.parse(deadline) <= Date.now()));
+    const deadlineTime = parseDateOrIST(deadline)?.getTime();
+    const check = () => setDeadlinePassed(Boolean(deadlineTime && deadlineTime <= Date.now()));
     const initial = setTimeout(check, 0);
     const interval = setInterval(check, 60_000);
     return () => { clearTimeout(initial); clearInterval(interval); };
@@ -453,28 +454,30 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
   };
 
   const formattedStartTime = event.schedule?.start_time
-    ? new Date(event.schedule.start_time).toLocaleString("en-US", {
+    ? (parseDateOrIST(event.schedule.start_time)?.toLocaleString("en-US", {
+        timeZone: "Asia/Kolkata",
         weekday: "short",
         month: "short",
         day: "numeric",
         hour: "2-digit",
         minute: "2-digit",
         timeZoneName: "short",
-      })
+      }) ?? "TBD")
     : "TBD";
 
   const formattedDeadline = event.schedule?.registration_deadline
-    ? new Date(event.schedule.registration_deadline).toLocaleString("en-US", {
+    ? (parseDateOrIST(event.schedule.registration_deadline)?.toLocaleString("en-US", {
+        timeZone: "Asia/Kolkata",
         month: "short",
         day: "numeric",
         hour: "2-digit",
         minute: "2-digit",
-      })
+      }) ?? "No deadline specified")
     : "No deadline specified";
 
   const durationMinutes = event.schedule?.duration_minutes ?? (
     event.schedule?.start_time && event.schedule?.end_time
-      ? Math.max(0, Math.round((new Date(event.schedule.end_time).getTime() - new Date(event.schedule.start_time).getTime()) / 60000))
+      ? Math.max(0, Math.round(((parseDateOrIST(event.schedule.end_time)?.getTime() ?? 0) - (parseDateOrIST(event.schedule.start_time)?.getTime() ?? 0)) / 60000))
       : null
   );
 
@@ -666,9 +669,9 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                   <div className={styles.rosterLockWarning}>
                     <MemberIcon name="clock" size={12} />
                     <span>
-                      {currentTime > 0 && currentTime >= new Date(event.team_settings.lock_rosters_at).getTime()
+                      {currentTime > 0 && currentTime >= (parseDateOrIST(event.team_settings.lock_rosters_at)?.getTime() ?? 0)
                         ? "🔒 Rosters Locked"
-                        : `Rosters lock ${new Date(event.team_settings.lock_rosters_at).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`}
+                        : `Rosters lock ${parseDateOrIST(event.team_settings.lock_rosters_at)?.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) ?? ""}`}
                     </span>
                   </div>
                 )}

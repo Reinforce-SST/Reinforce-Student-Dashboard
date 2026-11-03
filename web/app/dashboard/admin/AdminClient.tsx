@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useMember } from "@/lib/useMember";
 import { api, type StudentProfile, type EventSummaryItem } from "@/lib/api";
-import { getEventGraduationBatches } from "@/lib/eventsData";
+import { getEventGraduationBatches, toISTInputString, parseDateOrIST } from "@/lib/eventsData";
 import { getBannerPresentation, isBannerDestination } from "@/lib/dashboardData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import PaginationBar from "@/components/dashboard/PaginationBar";
@@ -33,23 +33,14 @@ type AdminTab =
   | "resources";
 
 function formatBannerDate(startStr: string): string {
-  const start = new Date(startStr);
-  return startStr && Number.isFinite(start.getTime())
+  const start = parseDateOrIST(startStr);
+  return start && Number.isFinite(start.getTime())
     ? start.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" })
     : "Date not set";
 }
 
 function formatDateTimeInput(isoStr?: string | null): string {
-  if (!isoStr) return "";
-  try {
-    const d = new Date(isoStr);
-    if (isNaN(d.getTime())) return "";
-    return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-      .toISOString()
-      .slice(0, 16);
-  } catch {
-    return "";
-  }
+  return toISTInputString(isoStr);
 }
 
 export default function AdminClient({ initialTab }: { initialTab?: AdminTab } = {}) {
@@ -579,8 +570,8 @@ export default function AdminClient({ initialTab }: { initialTab?: AdminTab } = 
       }[awardType] || "other";
       const occurredAt = (() => {
         if (awardOccurredAt) {
-          const d = new Date(awardOccurredAt);
-          if (!isNaN(d.getTime())) return d.toISOString();
+          const d = parseDateOrIST(awardOccurredAt);
+          if (d && !isNaN(d.getTime())) return d.toISOString();
         }
         return awardOccurredAtRef.current || new Date().toISOString();
       })();

@@ -44,6 +44,110 @@ export function formatEventDuration(durationMinutes: number | null | undefined):
 
   return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
 }
+
+/**
+ * Safely parses any date string into a Date object.
+ * If the string lacks an explicit timezone offset (like "2026-11-02T17:30"),
+ * it is explicitly assumed to be in Indian Standard Time (IST, UTC+05:30).
+ */
+export function parseDateOrIST(str?: string | null): Date | null {
+  if (!str) return null;
+  const trimmed = str.trim();
+  if (!trimmed) return null;
+  const normalized = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(trimmed)
+    ? (trimmed.length === 16 ? `${trimmed}:00+05:30` : `${trimmed}+05:30`)
+    : trimmed;
+  const d = new Date(normalized);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Converts a UTC ISO string (or any valid timestamp) into "YYYY-MM-DDTHH:mm"
+ * formatted in Indian Standard Time (IST, UTC+05:30) for <input type="datetime-local">.
+ */
+export function toISTInputString(isoOrDateStr?: string | null): string {
+  if (!isoOrDateStr) return "";
+  const trimmed = isoOrDateStr.trim();
+  if (!trimmed) return "";
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+  const d = parseDateOrIST(trimmed);
+  if (!d) return "";
+  const istDate = new Date(d.getTime() + 19800000);
+  return istDate.toISOString().slice(0, 16);
+}
+
+/**
+ * Converts a "YYYY-MM-DDTHH:mm" string from <input type="datetime-local">
+ * into a UTC ISO string ("YYYY-MM-DDTHH:mm:ss.sssZ"), explicitly interpreting
+ * the input value as Indian Standard Time (IST, UTC+05:30).
+ */
+export function fromISTInputString(inputStr?: string | null): string {
+  if (!inputStr) return "";
+  const trimmed = inputStr.trim();
+  if (!trimmed) return "";
+  if (trimmed.endsWith("Z") || trimmed.includes("+")) {
+    const d = new Date(trimmed);
+    return isNaN(d.getTime()) ? "" : d.toISOString();
+  }
+  const withTz = trimmed.length === 16 ? `${trimmed}:00+05:30` : `${trimmed}+05:30`;
+  const d = new Date(withTz);
+  return isNaN(d.getTime()) ? "" : d.toISOString();
+}
+
+/**
+ * Formats a timestamp into a human-readable banner date in Indian Standard Time.
+ */
+export function formatBannerDate(startStr?: string | null): string {
+  if (!startStr) return "Upcoming Event";
+  const start = parseDateOrIST(startStr);
+  return start && Number.isFinite(start.getTime())
+    ? start.toLocaleDateString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : "Date not set";
+}
+
+/**
+ * Formats a timestamp into a human-readable banner time in Indian Standard Time (e.g. "5:30 PM").
+ */
+export function formatBannerTime(startStr?: string | null): string {
+  if (!startStr) return "";
+  const start = parseDateOrIST(startStr);
+  return start && Number.isFinite(start.getTime())
+    ? start.toLocaleTimeString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      })
+    : "";
+}
+
+/**
+ * Formats a timestamp for event cards/lists in Indian Standard Time.
+ */
+export function formatEventDisplayDate(startStr?: string | null): string {
+  if (!startStr) return "Date TBD";
+  const d = parseDateOrIST(startStr);
+  if (!d || Number.isNaN(d.getTime())) return startStr;
+  return d.toLocaleDateString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
 export type EventFormat = "online" | "offline" | "hybrid";
 export type EventStatus =
   | "draft"

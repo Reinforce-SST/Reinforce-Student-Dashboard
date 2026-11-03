@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { api, type EventSummaryItem, type SPGRecord, type StudentProfile } from "@/lib/api";
+import { toISTInputString, parseDateOrIST } from "@/lib/eventsData";
 import type {
   ContributionRecord,
   ContributionCategory,
@@ -40,11 +41,7 @@ function formatDate(iso?: string | null): string {
 }
 
 function formatDateTimeInput(iso?: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return toISTInputString(iso);
 }
 
 export default function AdminContributionEditorPanel({ token }: { token: string }) {
@@ -235,7 +232,7 @@ export default function AdminContributionEditorPanel({ token }: { token: string 
     setNotice("");
 
     try {
-      const occurredDate = editOccurredAt ? new Date(editOccurredAt).toISOString() : undefined;
+      const occurredDate = editOccurredAt ? (parseDateOrIST(editOccurredAt)?.toISOString() || new Date(editOccurredAt).toISOString()) : undefined;
       await api.adminUpdateContribution(token, editingRecord.id, {
         title: editTitle.trim(),
         description: editDescription.trim() || null,
