@@ -52,21 +52,21 @@ export default function ProjectSubmissionModal({
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState<number>(0);
 
-  // Field visibility config defaults (all enabled if no config provided)
-  const config = submissionConfig || {
-    enable_repo_url: true,
-    require_repo_url: false,
-    enable_slides_url: true,
-    require_slides_url: false,
-    enable_demo_url: true,
-    require_demo_url: false,
-    enable_paper_link: true,
-    require_paper_link: false,
-    enable_notes: true,
-    require_notes: false,
-    allow_problem_statement_selection: true,
-    require_problem_statement: false,
-    custom_fields: [],
+  // Field visibility config defaults (all deliverable links enabled and required by default)
+  const config = {
+    enable_repo_url: submissionConfig?.enable_repo_url ?? true,
+    require_repo_url: submissionConfig ? (submissionConfig.require_repo_url ?? true) : true,
+    enable_slides_url: submissionConfig?.enable_slides_url ?? true,
+    require_slides_url: submissionConfig ? (submissionConfig.require_slides_url ?? true) : true,
+    enable_demo_url: submissionConfig?.enable_demo_url ?? true,
+    require_demo_url: submissionConfig ? (submissionConfig.require_demo_url ?? true) : true,
+    enable_paper_link: submissionConfig?.enable_paper_link ?? true,
+    require_paper_link: submissionConfig ? (submissionConfig.require_paper_link ?? true) : true,
+    enable_notes: submissionConfig?.enable_notes ?? true,
+    require_notes: submissionConfig?.require_notes ?? false,
+    allow_problem_statement_selection: submissionConfig?.allow_problem_statement_selection ?? true,
+    require_problem_statement: submissionConfig?.require_problem_statement ?? false,
+    custom_fields: submissionConfig?.custom_fields ?? [],
   };
 
   useEffect(() => {

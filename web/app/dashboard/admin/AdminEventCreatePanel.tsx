@@ -112,13 +112,13 @@ export default function AdminEventCreatePanel({
   // --- Section 9: Project Deliverables & Submission Form Setup ---
   const [submissionConfig, setSubmissionConfig] = useState<SubmissionConfigSchema>({
     enable_repo_url: true,
-    require_repo_url: false,
+    require_repo_url: true,
     enable_slides_url: true,
-    require_slides_url: false,
+    require_slides_url: true,
     enable_demo_url: true,
-    require_demo_url: false,
+    require_demo_url: true,
     enable_paper_link: true,
-    require_paper_link: false,
+    require_paper_link: true,
     enable_notes: true,
     require_notes: false,
     allow_problem_statement_selection: true,
