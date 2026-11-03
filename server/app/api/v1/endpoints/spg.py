@@ -38,6 +38,7 @@ from app.schemas.spg_reports import (
     SPGReportType,
 )
 from app.schemas.spgs import (
+    SPGIdeaAttachRequest,
     SPGLeadUpdate,
     SPGMilestone,
     SPGMilestoneCreate,
@@ -654,3 +655,113 @@ def delete_submilestone(
     except service.SPGError as error:
         raise _handle(error) from None
 
+
+
+
+@router.patch("/{spg_id}/idea", response_model=SPGResponse, summary="Attach or update SPG problem statement / idea")
+@router.post("/{spg_id}/idea", response_model=SPGResponse, summary="Attach or update SPG problem statement / idea")
+def attach_spg_idea(
+    spg_id: str,
+    payload: SPGIdeaAttachRequest,
+    current_user: dict = Depends(get_current_user),
+    db: Any = Depends(get_db),
+) -> SPGResponse:
+    """Attach, change, or remove an Idea Jar problem statement for this SPG.
+
+    Allowed for SPG lead, team members, or admins.
+    Automatically syncs idea to linked event registrations and Event Matrix.
+    """
+    user_uid = current_user.get("uid")
+    is_admin = bool(current_user.get("is_admin"))
+
+    spg = service.require_spg(db, spg_id)
+    is_lead = (spg.lead_id == user_uid)
+    is_member = (user_uid in spg.member_ids)
+
+    if not (is_admin or is_lead or is_member):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only team members, team lead, or admins can attach a problem statement to this SPG.",
+        )
+
+    idea_data: dict = {}
+    if payload.idea_id:
+        idea_doc = db.collection("ideas").document(payload.idea_id).get()
+        if not idea_doc.exists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Idea '{payload.idea_id}' not found in the Idea Jar.",
+            )
+        idea_data = idea_doc.to_dict() or {}
+        idea_data["id"] = idea_doc.id
+
+    now_iso = service.utcnow()
+
+    # Update SPG document in Firestore
+    spg_ref = db.collection("spgs").document(spg_id)
+    spg_ref.update({
+        "idea_id": payload.idea_id if payload.idea_id else None,
+        "updated_at": now_iso,
+    })
+
+    # Synchronize with linked event and event matrix
+    event_id = spg.event_id
+    if event_id:
+        try:
+            # 1. Update any registrations matching this SPG or team
+            regs_ref = db.collection("events").document(event_id).collection("registrations")
+            matched_regs = list(regs_ref.where("spg_id", "==", spg_id).get())
+            if not matched_regs and spg.name:
+                matched_regs = list(regs_ref.where("team_name", "==", spg.name).get())
+            if not matched_regs and spg.lead_id:
+                matched_regs = list(regs_ref.where("user_id", "==", spg.lead_id).get())
+
+            for r in matched_regs:
+                r_data = r.to_dict() or {}
+                sub_data = r_data.get("submission") or {}
+                if payload.idea_id:
+                    sub_data["problem_statement_id"] = payload.idea_id
+                elif "problem_statement_id" in sub_data:
+                    sub_data["problem_statement_id"] = None
+
+                r.reference.update({
+                    "idea_id": payload.idea_id if payload.idea_id else None,
+                    "problem_statement_id": payload.idea_id if payload.idea_id else None,
+                    "submission": sub_data,
+                    "updated_at": now_iso.isoformat() if hasattr(now_iso, "isoformat") else str(now_iso),
+                })
+
+            # 2. Update Event Matrix cells if an idea_jar_assignment column exists
+            event_doc = db.collection("events").document(event_id).get()
+            if event_doc.exists:
+                e_data = event_doc.to_dict() or {}
+                cols = e_data.get("matrix_columns") or []
+                idea_col = next((c for c in cols if c.get("object_schema_type") == "idea_jar_assignment"), None)
+                if idea_col:
+                    col_id = idea_col.get("column_id")
+                    m_cells = e_data.get("matrix_cells") or {}
+                    for m_uid in spg.member_ids:
+                        if m_uid:
+                            if payload.idea_id:
+                                m_cells.setdefault(m_uid, {})[col_id] = {
+                                    "schema_type": "idea_jar_assignment",
+                                    "idea_id": payload.idea_id,
+                                    "idea_title": idea_data.get("title") or "Idea",
+                                    "track": str(idea_data.get("track") or "general"),
+                                    "spg_id": spg_id,
+                                    "spg_name": spg.name,
+                                }
+                            else:
+                                if m_uid in m_cells and col_id in m_cells[m_uid]:
+                                    m_cells[m_uid][col_id] = None
+
+                    db.collection("events").document(event_id).update({
+                        "matrix_cells": m_cells,
+                        "updated_at": now_iso.isoformat() if hasattr(now_iso, "isoformat") else str(now_iso),
+                    })
+        except Exception as e:
+            # Non-blocking sync failure logged
+            print(f"Warning: Failed to sync idea to event matrix for SPG {spg_id}: {e}")
+
+    refreshed = service.require_spg(db, spg_id)
+    return _respond(db, refreshed)

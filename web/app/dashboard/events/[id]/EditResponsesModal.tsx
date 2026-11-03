@@ -14,7 +14,8 @@ interface EditResponsesModalProps {
   token: string;
   currentUserId: string;
   initialResponses: Record<string, any>;
-  onSuccess: (updatedResponses: Record<string, any>, updatedCustomResponses?: Record<string, any>) => void;
+  initialTeamName?: string;
+  onSuccess: (updatedResponses: Record<string, any>, updatedCustomResponses?: Record<string, any>, newTeamName?: string) => void;
 }
 
 export default function EditResponsesModal({
@@ -24,22 +25,30 @@ export default function EditResponsesModal({
   token,
   currentUserId,
   initialResponses,
+  initialTeamName,
   onSuccess,
 }: EditResponsesModalProps) {
   const customFields: CustomFieldSchema[] = event.custom_registration_fields || [];
   const [responses, setResponses] = useState<Record<string, any>>(initialResponses);
+  const [teamName, setTeamName] = useState(initialTeamName || "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setResponses(initialResponses);
-  }, [initialResponses]);
+    if (initialTeamName) setTeamName(initialTeamName);
+  }, [initialResponses, initialTeamName]);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (event.participation?.mode === "team" && !teamName.trim()) {
+      setError("Please provide a valid team name.");
+      return;
+    }
 
     // Validate required fields
     for (const f of customFields) {
@@ -54,8 +63,12 @@ export default function EditResponsesModal({
 
     setSubmitting(true);
     try {
-      const res = await api.updateMemberCustomResponses(token, event.id, responses);
-      onSuccess(res.responses, (res as any).custom_responses);
+      const payloadResponses = {
+        ...responses,
+        ...(event.participation?.mode === "team" && teamName.trim() ? { team_name: teamName.trim() } : {}),
+      };
+      const res = await api.updateMemberCustomResponses(token, event.id, payloadResponses);
+      onSuccess(res.responses, (res as any).custom_responses, teamName.trim() || undefined);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update responses.");
@@ -66,14 +79,14 @@ export default function EditResponsesModal({
 
   return (
     <div className={styles.modalBackdrop} onClick={onClose}>
-      <div className={styles.modalContainer} onClick={(e) => e.stopPropagation()}>
+      <div className={styles.modalCard} onClick={(e) => e.stopPropagation()} style={{ maxWidth: "600px", maxHeight: "88vh", overflowY: "auto" }}>
         <div className={styles.modalHeader}>
-          <div>
-            <h2 className={styles.modalTitle}>
+          <div className={styles.modalTitleBlock}>
+            <h2 className={styles.modalHeading}>
               <MemberIcon name="edit" size={18} />
               Edit Registration Responses
             </h2>
-            <p className={styles.modalSubtitle}>
+            <p className={styles.modalSubheading}>
               Update your intake details for {event.title}. Changes will immediately sync to the Event Matrix.
             </p>
           </div>
@@ -89,7 +102,50 @@ export default function EditResponsesModal({
             </div>
           )}
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            {/* Team Name if team-based event */}
+            {event.participation?.mode === "team" && (
+              <div
+                style={{
+                  background: "#16161a",
+                  border: "1px solid #282832",
+                  borderRadius: "8px",
+                  padding: "14px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "8px",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <label className={styles.fieldLabel} style={{ marginBottom: 0 }}>
+                    Team Name <span className={styles.reqAsterisk}>*</span>
+                  </label>
+                  <span
+                    style={{
+                      fontSize: "10.5px",
+                      fontWeight: "750",
+                      padding: "2px 8px",
+                      borderRadius: "4px",
+                      background: "rgba(229, 183, 49, 0.12)",
+                      color: "#e5b731",
+                      border: "1px solid rgba(229, 183, 49, 0.3)",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Team Field
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  value={teamName}
+                  onChange={(e) => setTeamName(e.target.value)}
+                  placeholder="Enter your team name"
+                  className={styles.fieldTextInput}
+                  required
+                />
+              </div>
+            )}
+
             {customFields.map((cf) => (
               <div
                 key={cf.field_id}
@@ -159,7 +215,7 @@ export default function EditResponsesModal({
                       setResponses((prev) => ({ ...prev, [cf.field_id]: e.target.value }))
                     }
                     placeholder={cf.field_type === "url" ? "https://..." : `Enter your ${cf.label.toLowerCase()}`}
-                    className={styles.fieldInput}
+                    className={styles.fieldTextInput}
                   />
                 )}
               </div>
@@ -180,6 +236,7 @@ export default function EditResponsesModal({
               disabled={submitting}
               className={styles.modalSubmitBtn}
             >
+              <MemberIcon name="check" size={14} />
               {submitting ? "Saving Answers..." : "Save Responses"}
             </button>
           </div>

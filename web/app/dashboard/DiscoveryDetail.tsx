@@ -355,7 +355,7 @@ export default function DiscoveryDetail({
               <div className={styles.spgCtaBox}>
                 <h3 className={styles.spgCtaTitle}>WANT TO BUILD THIS?</h3>
                 <p className={styles.spgCtaText}>
-                  Launch a Student Project Group around this proposal. Forms are auto-filled directly from this Idea Jar submission.
+                  Attach this Idea directly to one of your active project groups (SPGs) or hackathon teams to sync with the Event Matrix, or charter a new cluster.
                 </p>
                 <div className={styles.spgActionGroup}>
                   <button
@@ -365,7 +365,7 @@ export default function DiscoveryDetail({
                     id="btn-start-spg-from-idea"
                   >
                     <MemberIcon name="plus" size={15} />
-                    <span>Quick Charter Modal →</span>
+                    <span>Attach to Your Team / SPG →</span>
                   </button>
                   <Link
                     href={`/dashboard/tickets?category=spg_registration&idea=${encodeURIComponent(idea.id)}`}

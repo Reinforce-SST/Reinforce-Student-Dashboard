@@ -132,6 +132,7 @@ export interface EventDocument {
   resources: EventResources;
   stats: EventStats;
   banner_url?: string;
+  submission_config?: import("@/types/event-matrix").SubmissionConfigSchema;
   winners?: EventWinner[];
   status: EventStatus;
   created_by: string;

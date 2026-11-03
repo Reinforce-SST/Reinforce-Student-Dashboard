@@ -5,7 +5,8 @@ import Link from "next/link";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import { useConfirmDialog } from "@/components/dashboard/useConfirmDialog";
 import { useMember } from "@/lib/useMember";
-import { api } from "@/lib/api";
+import { api, type IdeaSummary } from "@/lib/api";
+import AttachProblemModal from "@/components/dashboard/AttachProblemModal";
 import {
   type SPGRecord,
   type SPGReportRecord,
@@ -41,6 +42,10 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
   const [updatingType, setUpdatingType] = useState(false);
   const [typeUpdateError, setTypeUpdateError] = useState("");
 
+  // Idea Jar Problem Statement State
+  const [isAttachProblemModalOpen, setIsAttachProblemModalOpen] = useState(false);
+  const [attachedIdeaDetails, setAttachedIdeaDetails] = useState<IdeaSummary | null>(null);
+
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [reportFormat, setReportFormat] = useState<"form" | "pdf">("form");
@@ -65,6 +70,14 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
       setLoadError("");
       const spgRes = await api.getSpg(token, spgId);
       setSpg(spgRes);
+
+      if (spgRes?.idea_id) {
+        api.getIdea(spgRes.idea_id, token)
+          .then((idea) => setAttachedIdeaDetails(idea as unknown as IdeaSummary))
+          .catch(() => setAttachedIdeaDetails(null));
+      } else {
+        setAttachedIdeaDetails(null);
+      }
 
       if (spgRes?.member_ids?.length) {
         void Promise.all(
@@ -119,9 +132,41 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
   const canSubmitReports = Boolean(
     isTeamMember && spg && (spg.status === "active" || spg.status === "paused")
   );
+  const canEditProblem = Boolean(profile?.is_admin || (isTeamMember && spg && spg.status !== "disbanded"));
   const canEditMilestones = Boolean(
     isTeamMember && spg && (spg.status === "active" || spg.status === "paused")
   );
+
+  const handleAttachProblem = async (ideaId: string | null) => {
+    if (!token || !spg) return;
+    try {
+      await api.attachSpgIdea(token, spg.id, ideaId);
+      setSpg((prev) => (prev ? { ...prev, idea_id: ideaId || undefined } : null));
+      if (ideaId) {
+        try {
+          const freshIdea = await api.getIdea(ideaId, token);
+          setAttachedIdeaDetails(freshIdea as unknown as IdeaSummary);
+        } catch {
+          setAttachedIdeaDetails(null);
+        }
+      } else {
+        setAttachedIdeaDetails(null);
+      }
+      void alert({
+        title: ideaId ? "Problem Attached" : "Problem Detached",
+        message: ideaId
+          ? "The problem statement has been attached to your team and synced with the Event Matrix."
+          : "The problem statement has been detached from your team.",
+        variant: "info",
+      });
+    } catch (err) {
+      await alert({
+        title: "Action Failed",
+        message: err instanceof Error ? err.message : "Failed to update problem statement.",
+        variant: "danger",
+      });
+    }
+  };
 
   const handleToggleMilestone = async (milestoneId: string, currentCompleted: boolean) => {
     if (!token || !canEditMilestones) return;
@@ -983,6 +1028,87 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
 
         {/* Right Sidebar Column */}
         <aside className={styles.sidebarColumn} aria-label="SPG Leadership and Lifecycle">
+          {/* Problem Statement Card */}
+          <div className={styles.sectionCard}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+              <h2 className={styles.sectionTitle} style={{ margin: 0 }}>
+                <MemberIcon name="ideas" size={16} />
+                Problem Statement
+              </h2>
+              {canEditProblem && (
+                <button
+                  type="button"
+                  onClick={() => setIsAttachProblemModalOpen(true)}
+                  style={{
+                    background: "rgba(229, 183, 49, 0.15)",
+                    border: "1px solid rgba(229, 183, 49, 0.35)",
+                    color: "#e5b731",
+                    fontSize: "0.75rem",
+                    fontWeight: "750",
+                    padding: "3px 8px",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                  }}
+                >
+                  {spg.idea_id ? "Change" : "+ Attach"}
+                </button>
+              )}
+            </div>
+
+            {spg.idea_id ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                <div style={{ fontWeight: "750", fontSize: "0.9rem", color: "#ffffff" }}>
+                  {attachedIdeaDetails?.title || "Attached Idea Jar Proposal"}
+                </div>
+                {attachedIdeaDetails?.track && (
+                  <div>
+                    <span className={styles.formatChip} style={{ fontSize: "0.7rem", padding: "2px 6px" }}>
+                      {attachedIdeaDetails.track.toUpperCase()} TRACK
+                    </span>
+                  </div>
+                )}
+                {attachedIdeaDetails?.description && (
+                  <p style={{ fontSize: "0.8rem", color: "#a1a1aa", margin: 0, lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                    {attachedIdeaDetails.description}
+                  </p>
+                )}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "4px" }}>
+                  <Link
+                    href={`/dashboard/ideas/${encodeURIComponent(spg.idea_id)}`}
+                    className={styles.propositionLink}
+                    style={{ fontSize: "0.78rem" }}
+                  >
+                    View Idea Details →
+                  </Link>
+                  {canEditProblem && (
+                    <button
+                      type="button"
+                      onClick={() => void handleAttachProblem(null)}
+                      style={{ background: "transparent", border: "none", color: "#ef4444", fontSize: "0.75rem", cursor: "pointer" }}
+                    >
+                      Detach
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div style={{ fontSize: "0.82rem", color: "#71717a", lineHeight: 1.4 }}>
+                No problem statement attached to this team yet.
+                {canEditProblem && (
+                  <div style={{ marginTop: "8px" }}>
+                    <button
+                      type="button"
+                      onClick={() => setIsAttachProblemModalOpen(true)}
+                      className={styles.reportCtaBtn}
+                      style={{ width: "100%", justifyContent: "center", fontSize: "0.8rem", padding: "6px 12px" }}
+                    >
+                      <MemberIcon name="plus" size={14} /> Attach from Idea Jar
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           {/* Leadership & Collaborators Roster */}
           <div className={styles.sectionCard}>
             <h2 className={styles.sectionTitle}>
@@ -1398,6 +1524,14 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
           </div>
         </div>
       )}
+      <AttachProblemModal
+        isOpen={isAttachProblemModalOpen}
+        onClose={() => setIsAttachProblemModalOpen(false)}
+        token={token}
+        currentIdeaId={spg?.idea_id}
+        onSelectIdea={(ideaId) => void handleAttachProblem(ideaId)}
+        title="Attach Problem Statement to SPG"
+      />
       {DialogComponent}
     </div>
   );

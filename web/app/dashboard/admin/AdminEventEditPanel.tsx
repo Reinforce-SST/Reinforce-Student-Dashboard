@@ -19,6 +19,8 @@ import type {
   EventTrackSchema,
   TeamSettingsSchema,
   TimelineItemSchema,
+  SubmissionConfigSchema,
+  SubmissionCustomField,
 } from "@/types/event-matrix";
 import styles from "./Admin.module.css";
 
@@ -130,6 +132,21 @@ export default function AdminEventEditPanel({
     auto_convert_to_spg: false,
   });
   const [timelineItems, setTimelineItems] = useState<TimelineItemSchema[]>([]);
+  const [submissionConfig, setSubmissionConfig] = useState<SubmissionConfigSchema>({
+    enable_repo_url: true,
+    require_repo_url: false,
+    enable_slides_url: true,
+    require_slides_url: false,
+    enable_demo_url: true,
+    require_demo_url: false,
+    enable_paper_link: true,
+    require_paper_link: false,
+    enable_notes: true,
+    require_notes: false,
+    allow_problem_statement_selection: true,
+    require_problem_statement: false,
+    custom_fields: [],
+  });
 
   // Quick preset adder for registration intake questions
   const addIntakePreset = (preset: "mess" | "tshirt" | "github" | "hardware" | "problem" | "blank") => {
@@ -308,6 +325,23 @@ export default function AdminEventEditPanel({
           auto_convert_to_spg: false,
         });
         setTimelineItems(ev.timeline || []);
+        setSubmissionConfig(
+          ev.submission_config || {
+            enable_repo_url: true,
+            require_repo_url: false,
+            enable_slides_url: true,
+            require_slides_url: false,
+            enable_demo_url: true,
+            require_demo_url: false,
+            enable_paper_link: true,
+            require_paper_link: false,
+            enable_notes: true,
+            require_notes: false,
+            allow_problem_statement_selection: true,
+            require_problem_statement: false,
+            custom_fields: [],
+          }
+        );
       })
       .catch((err) => {
         if (active) setErrorMessage(err instanceof Error ? err.message : "Failed to load event.");
@@ -501,6 +535,7 @@ export default function AdminEventEditPanel({
         allow_open_track_change: allowOpenTrackChange,
         team_settings: teamSettings,
         timeline: timelineItems,
+        submission_config: submissionConfig,
       };
 
       const updated = await api.adminUpdateEvent(token, selectedId, payload);
@@ -1931,6 +1966,241 @@ export default function AdminEventEditPanel({
                 >
                   <MemberIcon name="plus" size={13} /> Add Timeline Milestone
                 </button>
+              </div>
+
+              {/* Section 10: Project Deliverables & Submission Form Setup */}
+              <div className={styles.formSectionHeading}>10. Project Deliverables & Submission Form Setup</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px", background: "#1c1c21", border: "1px solid #31343a", borderRadius: "10px", padding: "16px" }}>
+                <div style={{ fontSize: "11px", fontWeight: "700", color: "#e5b731", textTransform: "uppercase" }}>
+                  Standard Deliverables Configuration
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "12px" }}>
+                  {/* Repo URL */}
+                  <div style={{ background: "#151518", border: "1px solid #2b2e35", borderRadius: "8px", padding: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontWeight: "700", fontSize: "13px", color: "#ffffff" }}>💻 Code Repository URL</span>
+                      <input
+                        type="checkbox"
+                        checked={submissionConfig.enable_repo_url ?? true}
+                        onChange={(e) => setSubmissionConfig((prev) => ({ ...prev, enable_repo_url: e.target.checked }))}
+                      />
+                    </div>
+                    <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "#8c8c98", cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        disabled={!(submissionConfig.enable_repo_url ?? true)}
+                        checked={submissionConfig.require_repo_url ?? false}
+                        onChange={(e) => setSubmissionConfig((prev) => ({ ...prev, require_repo_url: e.target.checked }))}
+                      />
+                      <span>Mandatory to submit</span>
+                    </label>
+                  </div>
+
+                  {/* Slides URL */}
+                  <div style={{ background: "#151518", border: "1px solid #2b2e35", borderRadius: "8px", padding: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontWeight: "700", fontSize: "13px", color: "#ffffff" }}>📊 Presentation Deck / Pitch Slides</span>
+                      <input
+                        type="checkbox"
+                        checked={submissionConfig.enable_slides_url ?? true}
+                        onChange={(e) => setSubmissionConfig((prev) => ({ ...prev, enable_slides_url: e.target.checked }))}
+                      />
+                    </div>
+                    <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "#8c8c98", cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        disabled={!(submissionConfig.enable_slides_url ?? true)}
+                        checked={submissionConfig.require_slides_url ?? false}
+                        onChange={(e) => setSubmissionConfig((prev) => ({ ...prev, require_slides_url: e.target.checked }))}
+                      />
+                      <span>Mandatory to submit</span>
+                    </label>
+                  </div>
+
+                  {/* Live Demo URL */}
+                  <div style={{ background: "#151518", border: "1px solid #2b2e35", borderRadius: "8px", padding: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontWeight: "700", fontSize: "13px", color: "#ffffff" }}>🎥 Live Product Demo Link</span>
+                      <input
+                        type="checkbox"
+                        checked={submissionConfig.enable_demo_url ?? true}
+                        onChange={(e) => setSubmissionConfig((prev) => ({ ...prev, enable_demo_url: e.target.checked }))}
+                      />
+                    </div>
+                    <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "#8c8c98", cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        disabled={!(submissionConfig.enable_demo_url ?? true)}
+                        checked={submissionConfig.require_demo_url ?? false}
+                        onChange={(e) => setSubmissionConfig((prev) => ({ ...prev, require_demo_url: e.target.checked }))}
+                      />
+                      <span>Mandatory to submit</span>
+                    </label>
+                  </div>
+
+                  {/* Research Paper Link */}
+                  <div style={{ background: "#151518", border: "1px solid #2b2e35", borderRadius: "8px", padding: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontWeight: "700", fontSize: "13px", color: "#ffffff" }}>📄 Technical Writeup / Paper Link</span>
+                      <input
+                        type="checkbox"
+                        checked={submissionConfig.enable_paper_link ?? true}
+                        onChange={(e) => setSubmissionConfig((prev) => ({ ...prev, enable_paper_link: e.target.checked }))}
+                      />
+                    </div>
+                    <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "#8c8c98", cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        disabled={!(submissionConfig.enable_paper_link ?? true)}
+                        checked={submissionConfig.require_paper_link ?? false}
+                        onChange={(e) => setSubmissionConfig((prev) => ({ ...prev, require_paper_link: e.target.checked }))}
+                      />
+                      <span>Mandatory to submit</span>
+                    </label>
+                  </div>
+
+                  {/* Submission Notes */}
+                  <div style={{ background: "#151518", border: "1px solid #2b2e35", borderRadius: "8px", padding: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontWeight: "700", fontSize: "13px", color: "#ffffff" }}>📝 Project Brief / Submission Notes</span>
+                      <input
+                        type="checkbox"
+                        checked={submissionConfig.enable_notes ?? true}
+                        onChange={(e) => setSubmissionConfig((prev) => ({ ...prev, enable_notes: e.target.checked }))}
+                      />
+                    </div>
+                    <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "#8c8c98", cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        disabled={!(submissionConfig.enable_notes ?? true)}
+                        checked={submissionConfig.require_notes ?? false}
+                        onChange={(e) => setSubmissionConfig((prev) => ({ ...prev, require_notes: e.target.checked }))}
+                      />
+                      <span>Mandatory to submit</span>
+                    </label>
+                  </div>
+
+                  {/* Idea Jar Picker */}
+                  <div style={{ background: "#151518", border: "1px solid #2b2e35", borderRadius: "8px", padding: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontWeight: "700", fontSize: "13px", color: "#e5b731" }}>💡 Idea Jar Problem Statement Picker</span>
+                      <input
+                        type="checkbox"
+                        checked={submissionConfig.allow_problem_statement_selection ?? true}
+                        onChange={(e) => setSubmissionConfig((prev) => ({ ...prev, allow_problem_statement_selection: e.target.checked }))}
+                      />
+                    </div>
+                    <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "#8c8c98", cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        disabled={!(submissionConfig.allow_problem_statement_selection ?? true)}
+                        checked={submissionConfig.require_problem_statement ?? false}
+                        onChange={(e) => setSubmissionConfig((prev) => ({ ...prev, require_problem_statement: e.target.checked }))}
+                      />
+                      <span>Mandatory for teams to pick a problem</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Custom Deliverables */}
+                <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: "700", color: "#e5b731", textTransform: "uppercase" }}>
+                    Custom Deliverable Fields (e.g. Figma link, Dataset URL, Model weights)
+                  </div>
+
+                  {(submissionConfig.custom_fields || []).map((cf, idx) => (
+                    <div key={cf.field_id || idx} style={{ background: "#151518", border: "1px solid #2b2e35", borderRadius: "8px", padding: "12px", display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr auto auto", gap: "10px", alignItems: "center" }}>
+                      <div>
+                        <label style={{ fontSize: "10px", color: "#8c8c98" }}>Field Label</label>
+                        <input
+                          type="text"
+                          value={cf.label}
+                          placeholder="e.g. Figma Design Link"
+                          onChange={(e) => {
+                            const updated = [...(submissionConfig.custom_fields || [])];
+                            updated[idx] = { ...updated[idx], label: e.target.value };
+                            setSubmissionConfig((prev) => ({ ...prev, custom_fields: updated }));
+                          }}
+                          className={styles.formInput}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: "10px", color: "#8c8c98" }}>Field Type</label>
+                        <select
+                          value={cf.field_type}
+                          onChange={(e) => {
+                            const updated = [...(submissionConfig.custom_fields || [])];
+                            updated[idx] = { ...updated[idx], field_type: e.target.value as "url" | "text" };
+                            setSubmissionConfig((prev) => ({ ...prev, custom_fields: updated }));
+                          }}
+                          className={styles.formSelect}
+                        >
+                          <option value="url">URL Link</option>
+                          <option value="text">Text Input</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: "10px", color: "#8c8c98" }}>Placeholder</label>
+                        <input
+                          type="text"
+                          value={cf.placeholder || ""}
+                          placeholder="https://..."
+                          onChange={(e) => {
+                            const updated = [...(submissionConfig.custom_fields || [])];
+                            updated[idx] = { ...updated[idx], placeholder: e.target.value };
+                            setSubmissionConfig((prev) => ({ ...prev, custom_fields: updated }));
+                          }}
+                          className={styles.formInput}
+                        />
+                      </div>
+                      <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "#d4d4d8", marginTop: "14px", cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={cf.required}
+                          onChange={(e) => {
+                            const updated = [...(submissionConfig.custom_fields || [])];
+                            updated[idx] = { ...updated[idx], required: e.target.checked };
+                            setSubmissionConfig((prev) => ({ ...prev, custom_fields: updated }));
+                          }}
+                        />
+                        <span>Required</span>
+                      </label>
+                      <button
+                        type="button"
+                        style={{ marginTop: "14px", background: "transparent", border: "none", color: "#ef4444", cursor: "pointer" }}
+                        onClick={() => {
+                          const updated = (submissionConfig.custom_fields || []).filter((_, i) => i !== idx);
+                          setSubmissionConfig((prev) => ({ ...prev, custom_fields: updated }));
+                        }}
+                        title="Remove Field"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newField: SubmissionCustomField = {
+                        field_id: `deliverable_${Date.now().toString(36)}`,
+                        label: "New Deliverable Link",
+                        field_type: "url",
+                        placeholder: "https://...",
+                        required: false,
+                      };
+                      setSubmissionConfig((prev) => ({
+                        ...prev,
+                        custom_fields: [...(prev.custom_fields || []), newField],
+                      }));
+                    }}
+                    className={styles.secondaryBtn}
+                    style={{ alignSelf: "flex-start" }}
+                  >
+                    <MemberIcon name="plus" size={12} /> Add Custom Deliverable Field
+                  </button>
+                </div>
               </div>
 
               {/* Submit & Cancel */}

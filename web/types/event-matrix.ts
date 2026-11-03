@@ -41,12 +41,38 @@ export interface TimelineItemSchema {
   status_override?: "upcoming" | "live" | "completed" | null;
 }
 
+export interface SubmissionCustomField {
+  field_id: string;
+  label: string;
+  field_type: "url" | "text";
+  placeholder?: string | null;
+  required: boolean;
+}
+
+export interface SubmissionConfigSchema {
+  enable_repo_url?: boolean;
+  require_repo_url?: boolean;
+  enable_slides_url?: boolean;
+  require_slides_url?: boolean;
+  enable_demo_url?: boolean;
+  require_demo_url?: boolean;
+  enable_paper_link?: boolean;
+  require_paper_link?: boolean;
+  enable_notes?: boolean;
+  require_notes?: boolean;
+  allow_problem_statement_selection?: boolean;
+  require_problem_statement?: boolean;
+  custom_fields?: SubmissionCustomField[];
+}
+
 export interface EventSubmissionPayload {
   repo_url?: string | null;
   slides_url?: string | null;
   demo_url?: string | null;
   paper_link?: string | null;
   notes?: string | null;
+  problem_statement_id?: string | null;
+  custom_fields?: Record<string, any> | null;
 }
 
 export type MatrixSchemaType =
