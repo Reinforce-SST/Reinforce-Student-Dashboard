@@ -10,7 +10,7 @@ import { useMember } from "@/lib/useMember";
 import { useDebounce } from "@/lib/useDebounce";
 import { loadAllSpgs } from "@/lib/memberData";
 import { type SPGRecord } from "@/lib/spgData";
-import { api } from "@/lib/api";
+import { api, type InvitationItem } from "@/lib/api";
 import { appCache } from "@/lib/cache";
 import styles from "./SpgManagement.module.css";
 
@@ -28,6 +28,47 @@ export default function SpgManagementClient() {
       : "MY_SPGS";
 
   const [scopeTab, setScopeTab] = useState<"MY_SPGS" | "PUBLIC_SPGS" | "IDEA_JAR_SPGS">(initialScope);
+  const [spgInvites, setSpgInvites] = useState<InvitationItem[]>([]);
+  const [actionInProgress, setActionInProgress] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+    api.listMyInvitations(token, "pending")
+      .then((invs) => {
+        if (!active) return;
+        setSpgInvites(invs.filter((i) => i.type === "spg"));
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [token]);
+
+  const handleAcceptSpgInvite = async (inv: InvitationItem) => {
+    if (actionInProgress) return;
+    setActionInProgress(inv.id);
+    try {
+      await api.acceptInvitation(token, inv.id);
+      setSpgInvites((prev) => prev.filter((i) => i.id !== inv.id));
+      router.push(`/dashboard/spg/${inv.target_id || inv.spg_id}`);
+    } catch (err) {
+      console.error("Failed to accept SPG invitation", err);
+    } finally {
+      setActionInProgress(null);
+    }
+  };
+
+  const handleDeclineSpgInvite = async (inv: InvitationItem) => {
+    if (actionInProgress) return;
+    setActionInProgress(inv.id);
+    try {
+      await api.declineInvitation(token, inv.id);
+      setSpgInvites((prev) => prev.filter((i) => i.id !== inv.id));
+    } catch (err) {
+      console.error("Failed to decline SPG invitation", err);
+    } finally {
+      setActionInProgress(null);
+    }
+  };
 
   useEffect(() => {
     const t = searchParams.get("tab")?.toLowerCase();
@@ -336,6 +377,126 @@ export default function SpgManagementClient() {
           </button>
         </div>
       </div>
+
+      {/* Incoming SPG Invitations Banner */}
+      {spgInvites.length > 0 && (
+        <div
+          style={{
+            background: "rgba(229, 183, 49, 0.08)",
+            border: "1px solid rgba(229, 183, 49, 0.4)",
+            borderRadius: "10px",
+            padding: "16px 20px",
+            marginBottom: "20px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "12px",
+          }}
+          aria-label="Pending SPG Invitations"
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div
+                style={{
+                  width: "28px",
+                  height: "28px",
+                  borderRadius: "50%",
+                  background: "#e5b731",
+                  color: "#121214",
+                  fontWeight: "800",
+                  fontSize: "13px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                ✉
+              </div>
+              <span style={{ fontSize: "14px", fontWeight: "750", color: "#ffffff" }}>
+                Pending Special Project Group Invitations ({spgInvites.length})
+              </span>
+            </div>
+            <span style={{ fontSize: "12px", color: "#a1a1aa" }}>
+              Accept to collaborate on research, product, or Kaggle initiatives
+            </span>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "10px" }}>
+            {spgInvites.map((inv) => (
+              <div
+                key={inv.id}
+                style={{
+                  background: "#18181c",
+                  border: "1px solid #31343a",
+                  borderRadius: "8px",
+                  padding: "12px 14px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "10px",
+                }}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                  <span style={{ fontSize: "14px", fontWeight: "700", color: "#ffffff" }}>
+                    {inv.target_name || "Special Project Group"}
+                  </span>
+                  <span style={{ fontSize: "11px", color: "#8c8c98" }}>
+                    Invited by {inv.inviter_name} ({inv.inviter_email || "Lead"})
+                  </span>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "auto" }}>
+                  <button
+                    type="button"
+                    disabled={actionInProgress === inv.id}
+                    onClick={() => handleAcceptSpgInvite(inv)}
+                    style={{
+                      flex: 1,
+                      background: "#e5b731",
+                      color: "#121214",
+                      border: "none",
+                      borderRadius: "4px",
+                      padding: "6px 10px",
+                      fontSize: "12px",
+                      fontWeight: "750",
+                      cursor: "pointer",
+                      textAlign: "center",
+                    }}
+                  >
+                    {actionInProgress === inv.id ? "Joining..." : "Accept"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={actionInProgress === inv.id}
+                    onClick={() => handleDeclineSpgInvite(inv)}
+                    style={{
+                      background: "#27272a",
+                      color: "#d4d4d8",
+                      border: "1px solid #3f3f46",
+                      borderRadius: "4px",
+                      padding: "6px 10px",
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Decline
+                  </button>
+                  <Link
+                    href={`/dashboard/spg/${inv.target_id || inv.spg_id}`}
+                    style={{
+                      fontSize: "12px",
+                      color: "#a1a1aa",
+                      padding: "6px 8px",
+                      textDecoration: "underline",
+                    }}
+                  >
+                    View
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Top 4 Schema-Driven Metrics Cards */}
       <section className={styles.metricsGrid} aria-label="SPG Ecosystem Overview Metrics">

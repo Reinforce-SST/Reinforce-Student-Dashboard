@@ -393,6 +393,39 @@ export type StudentProfile = {
   last_login?: string | null;
 };
 
+export type InvitationType = "spg" | "event_team" | "event_spg";
+export type InvitationStatus = "pending" | "accepted" | "declined" | "cancelled" | "expired";
+
+export type InvitationItem = {
+  id: string;
+  type: InvitationType;
+  target_id: string;
+  target_name: string;
+  event_id?: string | null;
+  spg_id?: string | null;
+  team_name?: string | null;
+  inviter_uid: string;
+  inviter_name: string;
+  inviter_email?: string | null;
+  invitee_uid: string;
+  invitee_name: string;
+  invitee_email?: string | null;
+  status: InvitationStatus;
+  role: string;
+  created_at: string;
+  updated_at: string;
+  expires_at?: string | null;
+};
+
+export type CreateInvitationPayload = {
+  type: InvitationType;
+  target_id: string;
+  invitee_uid: string;
+  team_name?: string | null;
+  event_id?: string | null;
+  spg_id?: string | null;
+};
+
 /**
  * The API answers 200 even when the bot could not grant the role — the member
  * is not in the Discord server, the bot is offline, or it lacks permission.
@@ -1926,6 +1959,60 @@ export const api = {
       method: "POST",
     });
     appCache.invalidateTags(["resources", "dashboard"]);
+    return res;
+  },
+
+  /** List invitations received by current logged-in user. */
+  listMyInvitations: async (token: string, status = "pending", type?: string) => {
+    const q = new URLSearchParams();
+    if (status) q.set("status", status);
+    if (type) q.set("type", type);
+    const qs = q.toString() ? `?${q.toString()}` : "";
+    return request<InvitationItem[]>(`/invitations/me${qs}`, token);
+  },
+
+  /** List invitations sent for a specific SPG or Event target. */
+  listTargetInvitations: async (token: string, targetId: string, status?: string) => {
+    const q = new URLSearchParams();
+    if (status) q.set("status", status);
+    const qs = q.toString() ? `?${q.toString()}` : "";
+    return request<InvitationItem[]>(`/invitations/target/${encodeURIComponent(targetId)}${qs}`, token);
+  },
+
+  /** Send an invitation to a student to join an SPG or Event team. */
+  createInvitation: async (token: string, payload: CreateInvitationPayload) => {
+    const res = await request<InvitationItem>("/invitations", token, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    appCache.invalidateTags(["invitations", "spg", "events", "dashboard"]);
+    return res;
+  },
+
+  /** Accept an invitation. */
+  acceptInvitation: async (token: string, id: string) => {
+    const res = await request<InvitationItem>(`/invitations/${encodeURIComponent(id)}/accept`, token, {
+      method: "POST",
+    });
+    appCache.invalidateTags(["invitations", "spg", "events", "dashboard"]);
+    return res;
+  },
+
+  /** Decline an invitation. */
+  declineInvitation: async (token: string, id: string) => {
+    const res = await request<InvitationItem>(`/invitations/${encodeURIComponent(id)}/decline`, token, {
+      method: "POST",
+    });
+    appCache.invalidateTags(["invitations", "spg", "events", "dashboard"]);
+    return res;
+  },
+
+  /** Cancel or revoke an outgoing invitation. */
+  cancelInvitation: async (token: string, id: string) => {
+    const res = await request<{ status: string; id: string }>(`/invitations/${encodeURIComponent(id)}`, token, {
+      method: "DELETE",
+    });
+    appCache.invalidateTags(["invitations", "spg", "events", "dashboard"]);
     return res;
   },
 };

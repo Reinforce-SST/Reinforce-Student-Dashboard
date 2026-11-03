@@ -1,5 +1,5 @@
 import type { ContributionRecord } from "./contributionData";
-import type { EventSummaryItem, TicketSummary } from "./api";
+import type { EventSummaryItem, TicketSummary, InvitationItem } from "./api";
 import { getDashboardEvents } from "./dashboardData";
 
 export type MemberNotification = {
@@ -64,4 +64,27 @@ export function upcomingEventNotices(events: EventSummaryItem[], now: Date): Mem
       href: `/dashboard/events/${encodeURIComponent(event.slug || event.id)}`,
       timestamp: event.schedule.start_time,
     }));
+}
+
+export function invitationNotices(invitations: InvitationItem[]): MemberNotification[] {
+  const notices: MemberNotification[] = [];
+  for (const inv of invitations) {
+    if (inv.status !== "pending") continue;
+    const isEvent = inv.type === "event_team" || inv.type === "event_spg";
+    const title = isEvent ? "Event Team Invitation" : "SPG Invitation";
+    const desc = isEvent
+      ? `${inv.inviter_name} invited you to join ${inv.team_name || "a team"} for ${inv.target_name}`
+      : `${inv.inviter_name} invited you to join ${inv.target_name}`;
+    const href = isEvent && inv.event_id
+      ? `/dashboard/events/${encodeURIComponent(inv.event_id)}`
+      : `/dashboard/spg/${encodeURIComponent(inv.spg_id || inv.target_id)}`;
+    notices.push({
+      key: `invitation:${inv.id}:${inv.status}:${inv.updated_at || inv.created_at}`,
+      title,
+      description: desc,
+      href,
+      timestamp: inv.created_at,
+    });
+  }
+  return notices;
 }

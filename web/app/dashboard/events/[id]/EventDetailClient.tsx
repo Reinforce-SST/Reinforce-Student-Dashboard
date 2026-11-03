@@ -16,6 +16,9 @@ import RsvpIntakeModal from "./RsvpIntakeModal";
 import ProjectSubmissionModal from "./ProjectSubmissionModal";
 import EditResponsesModal from "./EditResponsesModal";
 import AttachProblemModal from "@/components/dashboard/AttachProblemModal";
+import CancelRegistrationModal from "./CancelRegistrationModal";
+import InviteTeammatesModal from "./InviteTeammatesModal";
+import type { InvitationItem } from "@/lib/api";
 import styles from "./EventDetail.module.css";
 
 function formatInline(text: string): React.ReactNode[] {
@@ -197,6 +200,21 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
   const [switchingTrack, setSwitchingTrack] = useState(false);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [memberProfilesMap, setMemberProfilesMap] = useState<Record<string, { full_name?: string; avatar_url?: string }>>({});
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [pendingEventInvite, setPendingEventInvite] = useState<InvitationItem | null>(null);
+  const [invitationBusy, setInvitationBusy] = useState(false);
+
+  useEffect(() => {
+    if (!token || !event?.id) return;
+    let active = true;
+    api.listMyInvitations(token, "pending").then((invs) => {
+      if (!active) return;
+      const match = invs.find((i) => i.target_id === event.id || i.event_id === event.id);
+      setPendingEventInvite(match || null);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [token, event?.id, isRegistered]);
 
   useEffect(() => {
     if (!token || !myRegistration) return;
@@ -317,24 +335,63 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
     return () => { active = false; };
   }, [token, event.id, linkedResourceIdsKey]);
 
+  const handleConfirmCancelRegistration = async () => {
+    setRegistrationBusy(true);
+    try {
+      await api.cancelEventRegistration(token, event.id);
+      setIsRegistered(false);
+      setMyRegistration(null);
+      setRegistrationStatus("");
+      setShowCancelModal(false);
+      const refreshed = await api.getEvent(event.id, token);
+      setRegisteredCount(refreshed.stats?.registered_count ?? Math.max(0, registeredCount - 1));
+    } catch (err) {
+      setRegistrationError(err instanceof Error ? err.message : "Failed to cancel registration.");
+    } finally {
+      setRegistrationBusy(false);
+    }
+  };
+
+  const handleAcceptInvite = async (invId: string) => {
+    setInvitationBusy(true);
+    try {
+      await api.acceptInvitation(token, invId);
+      setPendingEventInvite(null);
+      const [regRes, freshEvent] = await Promise.all([
+        api.myEventRegistration(token, event.id),
+        api.getEvent(event.id, token),
+      ]);
+      if (regRes.is_registered && regRes.registration) {
+        setIsRegistered(true);
+        setMyRegistration(regRes.registration);
+        setRegistrationStatus(regRes.registration.status);
+      }
+      setRegisteredCount(freshEvent.stats?.registered_count ?? registeredCount);
+    } catch (err: unknown) {
+      setRegistrationError(err instanceof Error ? err.message : "Failed to accept invitation.");
+    } finally {
+      setInvitationBusy(false);
+    }
+  };
+
+  const handleDeclineInvite = async (invId: string) => {
+    setInvitationBusy(true);
+    try {
+      await api.declineInvitation(token, invId);
+      setPendingEventInvite(null);
+    } catch (err: unknown) {
+      setRegistrationError(err instanceof Error ? err.message : "Failed to decline invitation.");
+    } finally {
+      setInvitationBusy(false);
+    }
+  };
+
   const handleToggleRsvp = async () => {
     if (registrationBusy || registrationLoading) return;
     setRegistrationError("");
 
     if (isRegistered) {
-      setRegistrationBusy(true);
-      try {
-        await api.cancelEventRegistration(token, event.id);
-        setIsRegistered(false);
-        setMyRegistration(null);
-        setRegistrationStatus("");
-        const refreshed = await api.getEvent(event.id, token);
-        setRegisteredCount(refreshed.stats?.registered_count ?? Math.max(0, registeredCount - 1));
-      } catch (err) {
-        setRegistrationError(err instanceof Error ? err.message : "Failed to cancel registration.");
-      } finally {
-        setRegistrationBusy(false);
-      }
+      setShowCancelModal(true);
       return;
     }
 
@@ -513,6 +570,87 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
           <span className={styles.typeChip}>{(event.event_type || "EVENT").toUpperCase()}</span>
         </div>
       </div>
+
+      {/* Incoming Event Team Invitation Banner */}
+      {pendingEventInvite && !isRegistered && (
+        <div
+          style={{
+            background: "rgba(229, 183, 49, 0.08)",
+            border: "1px solid rgba(229, 183, 49, 0.4)",
+            borderRadius: "10px",
+            padding: "16px 20px",
+            marginBottom: "16px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "14px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div
+              style={{
+                width: "36px",
+                height: "36px",
+                borderRadius: "50%",
+                background: "#e5b731",
+                color: "#141416",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontWeight: "800",
+                fontSize: "15px",
+              }}
+            >
+              ✉
+            </div>
+            <div>
+              <div style={{ fontSize: "14px", fontWeight: "750", color: "#ffffff" }}>
+                Team Invitation: Join &quot;{pendingEventInvite.team_name || "Team"}&quot;
+              </div>
+              <div style={{ fontSize: "12.5px", color: "#a1a1aa" }}>
+                Invited by {pendingEventInvite.inviter_name} ({pendingEventInvite.inviter_email || "Lead"})
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <button
+              type="button"
+              disabled={invitationBusy}
+              onClick={() => handleAcceptInvite(pendingEventInvite.id)}
+              style={{
+                background: "#e5b731",
+                color: "#141416",
+                border: "none",
+                borderRadius: "6px",
+                padding: "8px 16px",
+                fontSize: "13px",
+                fontWeight: "750",
+                cursor: "pointer",
+              }}
+            >
+              {invitationBusy ? "Joining..." : "Accept & Join Team"}
+            </button>
+            <button
+              type="button"
+              disabled={invitationBusy}
+              onClick={() => handleDeclineInvite(pendingEventInvite.id)}
+              style={{
+                background: "#27272a",
+                color: "#d4d4d8",
+                border: "1px solid #3f3f46",
+                borderRadius: "6px",
+                padding: "8px 14px",
+                fontSize: "13px",
+                fontWeight: "600",
+                cursor: "pointer",
+              }}
+            >
+              Decline
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Hero Banner Card */}
       <section className={styles.heroBanner} aria-label="Event Hero Banner">
@@ -843,8 +981,31 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px", marginTop: "14px" }}>
                 {/* Team Roster Column */}
                 <div style={{ background: "#151518", border: "1px solid #2b2e35", borderRadius: "8px", padding: "14px" }}>
-                  <div style={{ fontSize: "11px", fontWeight: "700", color: "#8c8c98", textTransform: "uppercase", marginBottom: "8px" }}>
-                    Team Roster
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                    <div style={{ fontSize: "11px", fontWeight: "700", color: "#8c8c98", textTransform: "uppercase" }}>
+                      Team Roster
+                    </div>
+                    {myRegistration?.user_id === profile?.id && (
+                      <button
+                        type="button"
+                        onClick={() => setShowInviteModal(true)}
+                        style={{
+                          background: "#e5b731",
+                          color: "#121214",
+                          border: "none",
+                          borderRadius: "4px",
+                          padding: "3px 8px",
+                          fontSize: "11px",
+                          fontWeight: "750",
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                        }}
+                      >
+                        <MemberIcon name="plus" size={11} /> Invite Teammates
+                      </button>
+                    )}
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                     {/* Team Leader */}
@@ -1602,6 +1763,40 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
               },
             };
           });
+          api.myEventRegistration(token, event.id).then((fresh) => {
+            if (fresh.is_registered && fresh.registration) {
+              setMyRegistration(fresh.registration);
+            }
+          });
+        }}
+      />
+
+      {/* Cancel Registration Confirmation Modal with SPG Deletion Warning */}
+      <CancelRegistrationModal
+        isOpen={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        onConfirm={handleConfirmCancelRegistration}
+        isTeamLead={myRegistration?.user_id === profile?.id}
+        teamName={myRegistration?.team_name}
+        hasSpg={Boolean(myRegistration?.spg_id)}
+        eventTitle={event.title}
+        loading={registrationBusy}
+      />
+
+      {/* Team Invitation Modal */}
+      <InviteTeammatesModal
+        isOpen={showInviteModal}
+        onClose={() => setShowInviteModal(false)}
+        token={token}
+        type={myRegistration?.spg_id ? "event_spg" : "event_team"}
+        targetId={event.id}
+        targetName={event.title}
+        teamName={myRegistration?.team_name}
+        eventId={event.id}
+        spgId={myRegistration?.spg_id || null}
+        currentMemberUids={myRegistration?.member_uids || [myRegistration?.user_id || ""]}
+        maxTeamSize={event.participation?.max_team_size || 4}
+        onInviteSent={() => {
           api.myEventRegistration(token, event.id).then((fresh) => {
             if (fresh.is_registered && fresh.registration) {
               setMyRegistration(fresh.registration);

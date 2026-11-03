@@ -986,6 +986,20 @@ def cancel_registration(
 
     run_event_transaction(cancel_and_promote)
 
+    # Cancel any pending team invitations issued by this lead
+    try:
+        pending_invs = list(
+            db.collection("invitations")
+            .where("event_id", "==", event_id)
+            .where("inviter_uid", "==", user_uid)
+            .where("status", "==", "pending")
+            .stream()
+        )
+        for pinv in pending_invs:
+            pinv.reference.update({"status": "cancelled", "updated_at": now_timestamp})
+    except Exception:
+        pass
+
     return {"message": "Registration cancelled successfully"}
 
 
