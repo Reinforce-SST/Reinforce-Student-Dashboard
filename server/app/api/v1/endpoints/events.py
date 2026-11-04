@@ -237,14 +237,14 @@ def _check_member_eligibility(
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User {user_uid} was not found",
+            detail="Student profile not found.",
         )
     if eligibility.access_scope.value == "members_only" and not profile.get(
         "is_member", False
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"User {user_uid} is not an eligible club member",
+            detail="This event is open to verified club members only.",
         )
     legacy_default_years = {1, 2, 3, 4}
     batch_year = profile.get("batch_year")
@@ -266,7 +266,7 @@ def _check_member_eligibility(
     ) or (batch_year is None and years_restricted):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"User {user_uid} is not in an allowed graduation batch",
+            detail="You are not in an eligible graduation batch for this event.",
         )
     allowed_tiers = set(eligibility.allowed_tiers)
     if (
@@ -276,7 +276,7 @@ def _check_member_eligibility(
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"User {user_uid} is not in an allowed member tier",
+            detail="You are not in an eligible member tier for this event.",
         )
     allowed_tracks = set(eligibility.allowed_tracks)
     if (
@@ -286,7 +286,7 @@ def _check_member_eligibility(
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"User {user_uid} is not active in an allowed track",
+            detail="You are not active in an eligible track for this event.",
         )
 
 
@@ -675,34 +675,24 @@ def register_for_event(
     for cf in custom_fields:
         f_id = cf.field_id
         if cf.applies_to == "team":
-            val = cleaned_custom_responses.get(f_id)
-            if cf.required and (val is None or (isinstance(val, str) and not val.strip())):
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=f"Field '{cf.label}' ({f_id}) is required.",
-                )
-            if val is not None and cf.field_type == "select" and cf.options:
-                if str(val) not in cf.options:
-                    raise HTTPException(
-                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                        detail=f"Value for '{cf.label}' must be one of: {', '.join(cf.options)}",
-                    )
+            # Team fields are answered on the Team Page / Hub after registration
+            continue
         else:
             # Individual field
-            if event.participation.mode.value == "solo":
+            if event.participation.mode.value == "solo" or member_uids == [user_uid]:
                 val = cleaned_custom_responses.get(f_id)
                 if val is None:
                     val = cleaned_member_responses.get(user_uid, {}).get(f_id)
                 if cf.required and (val is None or (isinstance(val, str) and not val.strip())):
                     raise HTTPException(
                         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                        detail=f"Field '{cf.label}' ({f_id}) is required.",
+                        detail=f"'{cf.label}' is required. Please provide a value.",
                     )
                 if val is not None and cf.field_type == "select" and cf.options:
                     if str(val) not in cf.options:
                         raise HTTPException(
                             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail=f"Value for '{cf.label}' must be one of: {', '.join(cf.options)}",
+                            detail=f"Please select a valid option for '{cf.label}'.",
                         )
                 cleaned_custom_responses[f_id] = val
                 cleaned_member_responses.setdefault(user_uid, {})[f_id] = val
@@ -712,15 +702,17 @@ def register_for_event(
                     if m_val is None:
                         m_val = cleaned_custom_responses.get(f_id)
                     if cf.required and (m_val is None or (isinstance(m_val, str) and not m_val.strip())):
+                        member_label = "for yourself" if m_uid == user_uid else f"for teammate ({member_profiles.get(m_uid, {}).get('display_name') or m_uid})"
+                        detail = f"'{cf.label}' is required {member_label}. Please provide a value." if len(member_uids) > 1 else f"'{cf.label}' is required. Please provide a value."
                         raise HTTPException(
                             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail=f"Individual field '{cf.label}' ({f_id}) is required for member {m_uid}.",
+                            detail=detail,
                         )
                     if m_val is not None and cf.field_type == "select" and cf.options:
                         if str(m_val) not in cf.options:
                             raise HTTPException(
                                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                                detail=f"Value for '{cf.label}' for member {m_uid} must be one of: {', '.join(cf.options)}",
+                                detail=f"Please select a valid option for '{cf.label}'.",
                             )
                     cleaned_member_responses.setdefault(m_uid, {})[f_id] = m_val
 
@@ -812,9 +804,14 @@ def register_for_event(
                     regs_ref, member_uid, transaction=transaction
                 )
             ):
+                detail = (
+                    "You are already registered for this event."
+                    if member_uid == user_uid
+                    else f"{member_profiles.get(member_uid, {}).get('display_name') or member_uid} is already registered for this event."
+                )
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=f"User {member_uid} is already registered for this event",
+                    detail=detail,
                 )
 
         registered = int((fresh.get("stats") or {}).get("registered_count", 0))
@@ -1278,16 +1275,20 @@ def create_or_update_team(
     for cf in custom_fields:
         if cf.applies_to == "team":
             val = cleaned_team_responses.get(cf.field_id)
+            if (val is None or (isinstance(val, str) and not val.strip())) and payload.team_name:
+                if cf.label.strip().lower() in ("team name", "team_name", "squad name", "squad"):
+                    val = payload.team_name.strip()
+                    cleaned_team_responses[cf.field_id] = val
             if cf.required and (val is None or (isinstance(val, str) and not val.strip())):
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=f"Team field '{cf.label}' ({cf.field_id}) is required.",
+                    detail=f"'{cf.label}' is required. Please provide a value.",
                 )
             if val is not None and cf.field_type == "select" and cf.options:
                 if str(val) not in cf.options:
                     raise HTTPException(
                         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                        detail=f"Value for '{cf.label}' must be one of: {', '.join(cf.options)}",
+                        detail=f"Please select a valid option for '{cf.label}'.",
                     )
 
     current_team_id = reg_data.get("team_id")
@@ -3808,9 +3809,7 @@ def submit_event_project(
         .document(event_id)
         .collection(REGISTRATIONS_SUBCOLLECTION)
     )
-    my_regs = list(regs_ref.where("user_id", "==", user_uid).get())
-    if not my_regs:
-        my_regs = list(regs_ref.where("member_uids", "array_contains", user_uid).get())
+    my_regs = _registrations_for_user(regs_ref, user_uid)
 
     active_regs = [r for r in my_regs if _active_registration(r.to_dict() or {})]
     if not active_regs:
@@ -3822,6 +3821,23 @@ def submit_event_project(
     reg_doc = active_regs[0]
     reg_data = reg_doc.to_dict() or {}
     now_timestamp = now_iso()
+
+    # Enforce that required team questions must be filled before submitting deliverables
+    custom_fields = event.custom_registration_fields or []
+    reg_custom_responses = dict(reg_data.get("custom_responses") or {})
+    sub_custom_fields = payload.custom_fields or {}
+    for cf in custom_fields:
+        if cf.applies_to == "team" and cf.required:
+            val = sub_custom_fields.get(cf.field_id)
+            if val is None or (isinstance(val, str) and not val.strip()):
+                val = reg_custom_responses.get(cf.field_id)
+            if val is None or (isinstance(val, str) and not val.strip()):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"'{cf.label}' is required for your team before submitting deliverables. Please provide a value.",
+                )
+            if val is not None:
+                reg_custom_responses[cf.field_id] = val
 
     sub_dict = {
         "repo_url": payload.repo_url,
@@ -3837,6 +3853,7 @@ def submit_event_project(
 
     update_payload: Dict[str, Any] = {
         "submission": sub_dict,
+        "custom_responses": reg_custom_responses,
         "updated_at": now_timestamp,
     }
     if payload.problem_statement_id is not None:
@@ -3940,9 +3957,7 @@ def attach_registration_idea(
         .document(event_id)
         .collection(REGISTRATIONS_SUBCOLLECTION)
     )
-    my_regs = list(regs_ref.where("user_id", "==", user_uid).get())
-    if not my_regs:
-        my_regs = list(regs_ref.where("member_uids", "array_contains", user_uid).get())
+    my_regs = _registrations_for_user(regs_ref, user_uid)
 
     active_regs = [r for r in my_regs if _active_registration(r.to_dict() or {})]
     if not active_regs:
@@ -4053,9 +4068,7 @@ def update_member_custom_responses(
         .document(event_id)
         .collection(REGISTRATIONS_SUBCOLLECTION)
     )
-    my_regs = list(regs_ref.where("user_id", "==", user_uid).get())
-    if not my_regs:
-        my_regs = list(regs_ref.where("member_uids", "array_contains", user_uid).get())
+    my_regs = _registrations_for_user(regs_ref, user_uid)
 
     active_regs = [r for r in my_regs if _active_registration(r.to_dict() or {})]
     if not active_regs:
@@ -4087,11 +4100,23 @@ def update_member_custom_responses(
             custom_responses[k] = v
 
     member_responses[user_uid] = user_responses
-    reg_doc.reference.update({
+    update_data = {
         "member_responses": member_responses,
         "custom_responses": custom_responses,
         "updated_at": now_timestamp,
-    })
+    }
+    reg_doc.reference.update(update_data)
+
+    # Sync team custom responses across teammates in member_uids
+    member_list = reg_data.get("member_uids") or []
+    for m_uid in member_list:
+        if m_uid != reg_doc.id:
+            m_snap = regs_ref.document(m_uid).get()
+            if m_snap.exists:
+                m_snap.reference.update({
+                    "custom_responses": custom_responses,
+                    "updated_at": now_timestamp,
+                })
 
     return {"success": True, "responses": user_responses, "custom_responses": custom_responses}
 

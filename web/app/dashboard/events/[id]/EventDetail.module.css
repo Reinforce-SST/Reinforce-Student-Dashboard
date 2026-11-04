@@ -327,9 +327,18 @@
 }
 
 .regErrorAlert {
-  color: #f87171;
-  font-size: 12px;
-  margin: 4px 0 0;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 6px;
+  color: #fca5a5;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.4;
+  margin: 6px 0 2px;
 }
 
 @media (max-width: 900px) {
@@ -3608,7 +3617,16 @@
 }
 
 .regErrorAlert {
-  color: #f87171;
-  font-size: 12px;
-  margin: 4px 0 0;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 6px;
+  color: #fca5a5;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.4;
+  margin: 6px 0 2px;
 }

@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import type { EventDocument } from "@/lib/api";
 import type { CustomFieldSchema, EventTrackSchema } from "@/types/event-matrix";
 import MemberIcon from "@/components/dashboard/MemberIcon";
-import { api } from "@/lib/api";
+import { api, formatApiErrorMessage } from "@/lib/api";
 import styles from "./EventDetail.module.css";
 
 interface RsvpIntakeModalProps {
@@ -23,7 +23,6 @@ export default function RsvpIntakeModal({
   event,
   token,
   currentUserId,
-  initialTeamName = "",
   onSuccess,
 }: RsvpIntakeModalProps) {
   const isTeam = event.participation?.mode === "team";
@@ -33,7 +32,6 @@ export default function RsvpIntakeModal({
   const [selectedTrackId, setSelectedTrackId] = useState<string>(
     tracks.length > 0 ? tracks[0].track_id : ""
   );
-  const [teamName, setTeamName] = useState(initialTeamName);
   const [individualResponses, setIndividualResponses] = useState<Record<string, any>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +39,7 @@ export default function RsvpIntakeModal({
   if (!isOpen) return null;
 
   // Under register-first, individual RSVP only prompts for individual fields
+  // Team-specific details and questions are handled on the Team Page after registration
   const individualFields = customFields.filter((cf) => cf.applies_to !== "team");
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -52,7 +51,7 @@ export default function RsvpIntakeModal({
       if (ind.required) {
         const val = individualResponses[ind.field_id];
         if (val === undefined || val === null || (typeof val === "string" && !val.trim())) {
-          setError(`Please complete your individual required field: "${ind.label}"`);
+          setError(`'${ind.label}' is required. Please provide a value.`);
           return;
         }
       }
@@ -61,7 +60,6 @@ export default function RsvpIntakeModal({
     setSubmitting(true);
     try {
       const payload: Parameters<typeof api.registerForEvent>[2] = {
-        team_name: isTeam && teamName.trim() ? teamName.trim() : undefined,
         selected_track_id: selectedTrackId || undefined,
         custom_responses: individualResponses,
       };
@@ -70,7 +68,8 @@ export default function RsvpIntakeModal({
       onSuccess(res);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to register for event.");
+      const rawMessage = err instanceof Error ? err.message : "Failed to register for event.";
+      setError(formatApiErrorMessage(rawMessage));
     } finally {
       setSubmitting(false);
     }
@@ -105,7 +104,8 @@ export default function RsvpIntakeModal({
         <form onSubmit={handleSubmit} className={styles.modalFormBody}>
           {error && (
             <div role="alert" className={styles.regErrorAlert}>
-              {error}
+              <MemberIcon name="alert-circle" size={15} />
+              <span>{error}</span>
             </div>
           )}
 
@@ -127,7 +127,7 @@ export default function RsvpIntakeModal({
             >
               <span style={{ fontSize: "16px", lineHeight: "1" }}>ℹ️</span>
               <div>
-                <strong style={{ color: "#E5B731" }}>Register-First Rule:</strong> Every participant registers individually first to answer their own intake questions. Once registered, you will unlock the <strong>Team Formation & Merge Hub</strong> where you can form squads, search registered peers, or merge via code!
+                <strong style={{ color: "#E5B731" }}>Individual RSVP:</strong> You are registering your personal spot for this event. After completing your individual details, you will unlock the <strong>Team Formation & Merge Hub</strong> where you can create your squad, answer team requirements, and invite or merge with peers!
               </div>
             </div>
           )}
@@ -165,27 +165,6 @@ export default function RsvpIntakeModal({
                     </button>
                   );
                 })}
-              </div>
-            </div>
-          )}
-
-          {/* Optional Starter Team Name for Team Events */}
-          {isTeam && (
-            <div className={styles.modalSection}>
-              <label className={styles.modalSectionLabel}>
-                Starter Squad Name (Optional)
-              </label>
-              <div className={styles.teamInputBlock}>
-                <input
-                  type="text"
-                  placeholder="e.g. Neural Knights (Leave blank to decide later)"
-                  value={teamName}
-                  onChange={(e) => setTeamName(e.target.value)}
-                  className={styles.teamFieldInput}
-                />
-                <span className={styles.teamHintText}>
-                  If left blank, you will enter the Registered Pool as a solo participant ready to merge.
-                </span>
               </div>
             </div>
           )}

@@ -5,10 +5,11 @@ import type {
   TimelineItemSchema,
   EventSubmissionPayload,
   SubmissionConfigSchema,
+  CustomFieldSchema,
 } from "@/types/event-matrix";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import AttachProblemModal from "@/components/dashboard/AttachProblemModal";
-import { api, type IdeaSummary } from "@/lib/api";
+import { api, formatApiErrorMessage, type IdeaSummary } from "@/lib/api";
 import { parseDateOrIST } from "@/lib/eventsData";
 import styles from "./EventDetail.module.css";
 
@@ -20,6 +21,8 @@ interface ProjectSubmissionModalProps {
   timeline?: TimelineItemSchema[];
   initialSubmission?: EventSubmissionPayload | null;
   submissionConfig?: SubmissionConfigSchema;
+  teamCustomFields?: CustomFieldSchema[];
+  initialTeamResponses?: Record<string, any>;
   token: string;
   onSuccess: (submission: EventSubmissionPayload) => void;
 }
@@ -32,6 +35,8 @@ export default function ProjectSubmissionModal({
   timeline,
   initialSubmission,
   submissionConfig,
+  teamCustomFields = [],
+  initialTeamResponses = {},
   token,
   onSuccess,
 }: ProjectSubmissionModalProps) {
@@ -45,6 +50,9 @@ export default function ProjectSubmissionModal({
   );
   const [customResponses, setCustomResponses] = useState<Record<string, any>>(
     initialSubmission?.custom_fields || {}
+  );
+  const [teamResponses, setTeamResponses] = useState<Record<string, any>>(
+    initialTeamResponses || {}
   );
 
   const [attachedIdea, setAttachedIdea] = useState<IdeaSummary | null>(null);
@@ -148,10 +156,21 @@ export default function ProjectSubmissionModal({
       return;
     }
 
-    // Custom fields required validation
+    // Team-level custom questions required validation
+    for (const cf of teamCustomFields || []) {
+      if (cf.required) {
+        const val = teamResponses[cf.field_id];
+        if (val === undefined || val === null || (typeof val === "string" && !val.trim())) {
+          setError(`'${cf.label}' is required for your team before submission. Please provide a value.`);
+          return;
+        }
+      }
+    }
+
+    // Custom deliverable fields required validation
     for (const cf of config.custom_fields || []) {
       if (cf.required && !customResponses[cf.field_id]?.trim()) {
-        setError(`Field '${cf.label}' is required.`);
+        setError(`'${cf.label}' is required. Please provide a value.`);
         return;
       }
     }
@@ -160,13 +179,19 @@ export default function ProjectSubmissionModal({
     const hasAnyStandardLink =
       repoUrl.trim() || slidesUrl.trim() || demoUrl.trim() || paperLink.trim() || problemStatementId;
     const hasAnyCustom = Object.values(customResponses).some((v) => typeof v === "string" && v.trim());
-    if (!hasAnyStandardLink && !hasAnyCustom && !notes.trim()) {
+    const hasAnyTeamField = Object.values(teamResponses).some((v) => typeof v === "string" && v.trim());
+    if (!hasAnyStandardLink && !hasAnyCustom && !hasAnyTeamField && !notes.trim()) {
       setError("Please provide at least one submission deliverable or problem statement.");
       return;
     }
 
     setSaving(true);
     setError(null);
+
+    const mergedCustomFields: Record<string, any> = {
+      ...teamResponses,
+      ...customResponses,
+    };
 
     const payload: EventSubmissionPayload = {
       repo_url: (config.enable_repo_url ?? true) ? repoUrl.trim() || undefined : undefined,
@@ -177,7 +202,7 @@ export default function ProjectSubmissionModal({
       problem_statement_id: (config.allow_problem_statement_selection ?? true)
         ? problemStatementId || undefined
         : undefined,
-      custom_fields: customResponses,
+      custom_fields: mergedCustomFields,
     };
 
     try {
@@ -185,7 +210,8 @@ export default function ProjectSubmissionModal({
       onSuccess(res.submission);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to submit deliverables.");
+      const rawMessage = err instanceof Error ? err.message : "Failed to submit deliverables.";
+      setError(formatApiErrorMessage(rawMessage));
     } finally {
       setSaving(false);
     }
@@ -389,6 +415,84 @@ export default function ProjectSubmissionModal({
                     className={styles.fieldTextInput}
                     required={config.require_paper_link}
                   />
+                </div>
+              )}
+
+              {/* Team-Level Intake Questions configured for the event */}
+              {teamCustomFields && teamCustomFields.length > 0 && (
+                <div
+                  style={{
+                    background: "#141417",
+                    border: "1px solid #31343a",
+                    borderRadius: "8px",
+                    padding: "14px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "10px",
+                  }}
+                >
+                  <label className={styles.fieldLabel} style={{ margin: 0, color: "#E5B731" }}>
+                    🏢 Required Team Questions
+                  </label>
+                  {teamCustomFields.map((cf) => (
+                    <div key={cf.field_id} className={styles.intakeFieldItem}>
+                      <label className={styles.fieldLabel}>
+                        {cf.label} {cf.required && <span style={{ color: "#ef4444" }}>*</span>}
+                      </label>
+                      {cf.field_type === "select" ? (
+                        <select
+                          value={teamResponses[cf.field_id] || ""}
+                          onChange={(e) =>
+                            setTeamResponses((prev) => ({
+                              ...prev,
+                              [cf.field_id]: e.target.value,
+                            }))
+                          }
+                          className={styles.fieldSelect}
+                          disabled={deadlinePassed || saving}
+                          required={cf.required}
+                        >
+                          <option value="">-- Select an option --</option>
+                          {(cf.options || []).map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                      ) : cf.field_type === "boolean" ? (
+                        <label className={styles.checkboxLabel}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(teamResponses[cf.field_id])}
+                            onChange={(e) =>
+                              setTeamResponses((prev) => ({
+                                ...prev,
+                                [cf.field_id]: e.target.checked,
+                              }))
+                            }
+                            disabled={deadlinePassed || saving}
+                            className={styles.fieldCheckbox}
+                          />
+                          <span>Yes / Confirm</span>
+                        </label>
+                      ) : (
+                        <input
+                          type={cf.field_type === "url" ? "url" : "text"}
+                          placeholder={cf.field_type === "url" ? "https://..." : `Enter ${cf.label.toLowerCase()}`}
+                          value={teamResponses[cf.field_id] || ""}
+                          onChange={(e) =>
+                            setTeamResponses((prev) => ({
+                              ...prev,
+                              [cf.field_id]: e.target.value,
+                            }))
+                          }
+                          disabled={deadlinePassed || saving}
+                          className={styles.fieldTextInput}
+                          required={cf.required}
+                        />
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
 

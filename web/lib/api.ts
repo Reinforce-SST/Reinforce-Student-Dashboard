@@ -94,6 +94,21 @@ export type EventResourceImport = {
   created: LearningResource[]; already_saved: string[]; skipped: string[];
 };
 
+export function formatApiErrorMessage(message: string): string {
+  if (!message) return "An unexpected error occurred. Please try again.";
+  let cleaned = message.replace(/^\d{3}:\s*/, "").trim();
+  // Strip internal field IDs in parentheses like "(custom_mvzggy2b)" or "(uid_123)"
+  cleaned = cleaned.replace(/\s*\([a-zA-Z0-9_-]+\)/g, "");
+  // Format "Field 'X' is required." -> "'X' is required. Please provide a value."
+  cleaned = cleaned.replace(/^Field\s+('[^']+'|"[^"]+")\s+is\s+required\.?/i, "$1 is required. Please provide a value.");
+  // Format "Team field 'X' is required." -> "'X' is required. Please provide a value."
+  cleaned = cleaned.replace(/^Team\s+field\s+('[^']+'|"[^"]+")\s+is\s+required\.?/i, "$1 is required. Please provide a value.");
+  // Format "Individual field 'X' is required for member Y." -> "'X' is required for Y."
+  cleaned = cleaned.replace(/^Individual\s+field\s+('[^']+'|"[^"]+")\s+is\s+required/i, "$1 is required");
+  cleaned = cleaned.replace(/\s{2,}/g, " ").trim();
+  return cleaned;
+}
+
 /** Nothing should hang the UI forever. Render cold starts are slow but finite. */
 const TIMEOUT_MS = 20_000;
 
@@ -163,7 +178,13 @@ async function request<T>(path: string, token?: string | null, init?: RequestIni
     let detail = `Request failed with status ${res.status}`;
     try {
       const body = await res.json();
-      if (typeof body?.detail === "string") detail = body.detail;
+      if (typeof body?.detail === "string") {
+        detail = formatApiErrorMessage(body.detail);
+      } else if (Array.isArray(body?.detail)) {
+        detail = formatApiErrorMessage(
+          body.detail.map((d: any) => d.msg || d.detail || JSON.stringify(d)).join(". ")
+        );
+      }
     } catch {
       // Non-JSON error body. Keep the status-based message.
     }

@@ -152,7 +152,7 @@ class AdvancedHackathonOpsTests(unittest.TestCase):
                 current_user=LEAD,
             )
         self.assertEqual(ctx.exception.status_code, 422)
-        self.assertIn("mess_vendor", ctx.exception.detail.lower())
+        self.assertIn("mess vendor", ctx.exception.detail.lower())
 
         # 2. Complete registration succeeds
         reg = events.register_for_event(
@@ -426,6 +426,57 @@ class AdvancedHackathonOpsTests(unittest.TestCase):
         self.assertTrue(edit_res["success"])
         self.assertEqual(edit_res["responses"]["mess_vendor"], "Vendor B")
         self.assertEqual(edit_res["custom_responses"]["hardware_req"], "2x Arduino Kit")
+
+    def test_submission_enforces_required_team_fields(self):
+        """Verify that deliverables submission enforces any required team custom fields."""
+        # 1. Update event schema to include a required team-level custom field
+        events_ref = self.db.collection("events")
+        hackathon_data = events_ref.document("hackathon-1").get().to_dict()
+        custom_fields = list(hackathon_data.get("custom_registration_fields") or [])
+        custom_fields.append({
+            "field_id": "team_repo",
+            "label": "Team Repository",
+            "field_type": "url",
+            "required": True,
+            "applies_to": "team",
+            "sync_to_matrix": True,
+        })
+        events_ref.document("hackathon-1").update({"custom_registration_fields": custom_fields})
+
+        # 2. Registration succeeds with only individual custom fields (team field omitted)
+        reg = events.register_for_event(
+            "hackathon-1",
+            payload=events.EventRegisterRequest(
+                member_responses={"uid-lead": {"mess_vendor": "Vendor A"}},
+            ),
+            current_user=LEAD,
+        )
+        self.assertEqual(reg.status, "registered")
+
+        # 3. Submitting without required team field should fail with 422
+        with self.assertRaises(HTTPException) as ctx:
+            events.submit_event_project(
+                "hackathon-1",
+                payload=events.EventSubmissionRequest(
+                    repo_url="https://github.com/test/repo",
+                    custom_fields={},
+                ),
+                current_user=LEAD,
+            )
+        self.assertEqual(ctx.exception.status_code, 422)
+        self.assertIn("team repository", ctx.exception.detail.lower())
+
+        # 4. Submitting with required team field succeeds
+        sub_res = events.submit_event_project(
+            "hackathon-1",
+            payload=events.EventSubmissionRequest(
+                repo_url="https://github.com/test/repo",
+                custom_fields={"team_repo": "https://github.com/org/team-repo"},
+            ),
+            current_user=LEAD,
+        )
+        self.assertTrue(sub_res["success"])
+        self.assertEqual(sub_res["submission"]["custom_fields"]["team_repo"], "https://github.com/org/team-repo")
 
 
 if __name__ == "__main__":

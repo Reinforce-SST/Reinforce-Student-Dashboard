@@ -900,12 +900,8 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                     {!registrationOpen
                       ? "Registration Closed"
                       : isDraftMode
-                      ? event.participation?.mode === "team"
-                        ? "Test Register Team (Draft)"
-                        : "Test RSVP (Draft)"
-                      : event.participation?.mode === "team"
-                      ? "Register Team (RSVP)"
-                      : "RSVP for Event"}
+                      ? "Test Register Now (Draft)"
+                      : "Register Now"}
                   </>
                 )}
               </button>
@@ -1477,6 +1473,69 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                             </div>
                           )}
                         </div>
+
+                        {/* Team Custom Intake Questions (Hardware, Repository, Pitch, etc.) */}
+                        {(() => {
+                          const teamQuestions = (event.custom_registration_fields || []).filter(
+                            (cf) => cf.applies_to === "team"
+                          );
+                          if (teamQuestions.length === 0) return null;
+                          return (
+                            <div style={{ marginTop: "14px", borderTop: "1px solid #23252b", paddingTop: "12px" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                                <span style={{ fontSize: "11px", fontWeight: "800", color: "#8c8c98", textTransform: "uppercase" }}>
+                                  Team Intake Details ({teamQuestions.length})
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowEditResponsesModal(true)}
+                                  style={{
+                                    background: "rgba(229, 183, 49, 0.12)",
+                                    border: "1px solid rgba(229, 183, 49, 0.3)",
+                                    color: "#E5B731",
+                                    fontSize: "11px",
+                                    fontWeight: "750",
+                                    padding: "2px 8px",
+                                    borderRadius: "4px",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  Edit Answers
+                                </button>
+                              </div>
+                              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                {teamQuestions.map((tq) => {
+                                  const val = myRegistration?.custom_responses?.[tq.field_id];
+                                  const hasVal = val !== undefined && val !== null && val !== "";
+                                  return (
+                                    <div
+                                      key={tq.field_id}
+                                      style={{
+                                        background: "#121215",
+                                        padding: "6px 10px",
+                                        borderRadius: "6px",
+                                        border: "1px solid #282a30",
+                                        fontSize: "12px",
+                                      }}
+                                    >
+                                      <div style={{ display: "flex", justifyContent: "space-between", color: "#a1a1aa", fontSize: "11px", marginBottom: "2px" }}>
+                                        <span>{tq.label} {tq.required && <span style={{ color: "#ef4444" }}>*</span>}</span>
+                                        {tq.required && !hasVal && (
+                                          <span style={{ color: "#f87171", fontSize: "10px", fontWeight: "750" }}>
+                                            Required before submit
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div style={{ color: hasVal ? "#ffffff" : "#71717a", fontWeight: hasVal ? "600" : "normal" }}>
+                                        {hasVal ? String(val) : "Not answered yet"}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     ) : (
                       /* Solo State: Create Squad OR Merge via Code */
@@ -2270,6 +2329,8 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
         timeline={event.timeline}
         initialSubmission={myRegistration?.submission}
         submissionConfig={event.submission_config}
+        teamCustomFields={(event.custom_registration_fields || []).filter((cf) => cf.applies_to === "team")}
+        initialTeamResponses={myRegistration?.custom_responses || {}}
         token={token}
         onSuccess={(savedSubmission) => {
           setMyRegistration((prev) => (prev ? { ...prev, submission: savedSubmission } : prev));
