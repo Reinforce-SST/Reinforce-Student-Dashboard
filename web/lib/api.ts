@@ -49,11 +49,22 @@ export type ArticleSummary = {
   paper?: PaperDetails | null;
 };
 export type ArticleDetail = ArticleSummary & { content: string };
+export type CreatorProfile = {
+  uid: string;
+  full_name: string;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  email?: string | null;
+  batch?: string | null;
+  track?: string | null;
+};
 export type IdeaSummary = {
   id: string; title: string; description: string;
   track: string; difficulty?: string | null; is_verified: boolean;
   is_featured?: boolean;
   spg_creation_type?: string | null;
+  created_by_uid?: string;
+  creator_profile?: CreatorProfile | null;
   stats: { upvote_count: number; views_count: number; claims_count: number };
   created_at?: string | null;
   approved_at?: string | null;
@@ -93,6 +104,21 @@ export type LearningResourceFilters = {
 export type EventResourceImport = {
   created: LearningResource[]; already_saved: string[]; skipped: string[];
 };
+
+export function formatApiErrorMessage(message: string): string {
+  if (!message) return "An unexpected error occurred. Please try again.";
+  let cleaned = message.replace(/^\d{3}:\s*/, "").trim();
+  // Strip internal field IDs in parentheses like "(custom_mvzggy2b)" or "(uid_123)"
+  cleaned = cleaned.replace(/\s*\([a-zA-Z0-9_-]+\)/g, "");
+  // Format "Field 'X' is required." -> "'X' is required. Please provide a value."
+  cleaned = cleaned.replace(/^Field\s+('[^']+'|"[^"]+")\s+is\s+required\.?/i, "$1 is required. Please provide a value.");
+  // Format "Team field 'X' is required." -> "'X' is required. Please provide a value."
+  cleaned = cleaned.replace(/^Team\s+field\s+('[^']+'|"[^"]+")\s+is\s+required\.?/i, "$1 is required. Please provide a value.");
+  // Format "Individual field 'X' is required for member Y." -> "'X' is required for Y."
+  cleaned = cleaned.replace(/^Individual\s+field\s+('[^']+'|"[^"]+")\s+is\s+required/i, "$1 is required");
+  cleaned = cleaned.replace(/\s{2,}/g, " ").trim();
+  return cleaned;
+}
 
 /** Nothing should hang the UI forever. Render cold starts are slow but finite. */
 const TIMEOUT_MS = 20_000;
@@ -163,7 +189,13 @@ async function request<T>(path: string, token?: string | null, init?: RequestIni
     let detail = `Request failed with status ${res.status}`;
     try {
       const body = await res.json();
-      if (typeof body?.detail === "string") detail = body.detail;
+      if (typeof body?.detail === "string") {
+        detail = formatApiErrorMessage(body.detail);
+      } else if (Array.isArray(body?.detail)) {
+        detail = formatApiErrorMessage(
+          body.detail.map((d: any) => d.msg || d.detail || JSON.stringify(d)).join(". ")
+        );
+      }
     } catch {
       // Non-JSON error body. Keep the status-based message.
     }
@@ -319,16 +351,44 @@ export type AttendeeProfile = {
   points?: number;
 };
 
+export type TeamInviteInfo = {
+  invite_id: string;
+  from_team_id: string;
+  from_team_name: string;
+  from_leader_uid: string;
+  from_leader_name: string;
+  created_at: string;
+};
+
+export type TeamPoolMemberSummary = {
+  uid: string;
+  full_name: string;
+  email: string;
+  avatar_url?: string | null;
+  batch_year?: number | null;
+  team_id?: string | null;
+  team_name?: string | null;
+  current_team_size: number;
+  is_team_leader: boolean;
+  looking_for_team: boolean;
+};
+
 export type EventRegistration = {
   id: string;
   event_id: string;
   user_id: string;
+  uid?: string;
+  team_id?: string | null;
   team_name?: string | null;
+  is_team_leader?: boolean;
+  looking_for_team?: boolean;
   member_uids: string[];
   spg_id?: string | null;
   spg_status?: string | null;
   custom_responses?: Record<string, any>;
+  team_custom_responses?: Record<string, any>;
   member_responses?: Record<string, Record<string, any>>;
+  pending_invites?: TeamInviteInfo[];
   selected_track_id?: string | null;
   invite_code?: string | null;
   submission?: {
@@ -391,6 +451,39 @@ export type StudentProfile = {
   created_at?: string | null;
   updated_at?: string | null;
   last_login?: string | null;
+};
+
+export type InvitationType = "spg" | "event_team" | "event_spg";
+export type InvitationStatus = "pending" | "accepted" | "declined" | "cancelled" | "expired";
+
+export type InvitationItem = {
+  id: string;
+  type: InvitationType;
+  target_id: string;
+  target_name: string;
+  event_id?: string | null;
+  spg_id?: string | null;
+  team_name?: string | null;
+  inviter_uid: string;
+  inviter_name: string;
+  inviter_email?: string | null;
+  invitee_uid: string;
+  invitee_name: string;
+  invitee_email?: string | null;
+  status: InvitationStatus;
+  role: string;
+  created_at: string;
+  updated_at: string;
+  expires_at?: string | null;
+};
+
+export type CreateInvitationPayload = {
+  type: InvitationType;
+  target_id: string;
+  invitee_uid: string;
+  team_name?: string | null;
+  event_id?: string | null;
+  spg_id?: string | null;
 };
 
 /**
@@ -1251,6 +1344,66 @@ export const api = {
     return res;
   },
 
+  getTeamPool: (token: string, eventId: string, q?: string, onlyLooking?: boolean) => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (onlyLooking) params.set("only_looking", "true");
+    const qs = params.toString();
+    return request<{ members: TeamPoolMemberSummary[]; total: number }>(
+      `/events/${encodeURIComponent(eventId)}/team-pool${qs ? `?${qs}` : ""}`,
+      token
+    );
+  },
+
+  createOrUpdateTeam: (
+    token: string,
+    eventId: string,
+    payload: {
+      team_name: string;
+      selected_track_id?: string | null;
+      team_custom_responses?: Record<string, any>;
+      looking_for_team?: boolean;
+    }
+  ) =>
+    request<EventRegistration>(`/events/${encodeURIComponent(eventId)}/team`, token, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  inviteTeamMember: (token: string, eventId: string, targetUid: string) =>
+    request<{ message: string; invite_id: string }>(
+      `/events/${encodeURIComponent(eventId)}/team/invite`,
+      token,
+      {
+        method: "POST",
+        body: JSON.stringify({ target_uid: targetUid }),
+      }
+    ),
+
+  declineTeamInvite: (token: string, eventId: string, inviteId: string) =>
+    request<{ message: string }>(
+      `/events/${encodeURIComponent(eventId)}/team/invite/${encodeURIComponent(inviteId)}`,
+      token,
+      {
+        method: "DELETE",
+      }
+    ),
+
+  mergeTeam: (
+    token: string,
+    eventId: string,
+    payload: { invite_code?: string; invite_id?: string }
+  ) =>
+    request<EventRegistration>(`/events/${encodeURIComponent(eventId)}/team/merge`, token, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  leaveTeam: (token: string, eventId: string) =>
+    request<EventRegistration>(`/events/${encodeURIComponent(eventId)}/team/leave`, token, {
+      method: "POST",
+    }),
+
   updateRegistrationTrack: (
     token: string,
     eventId: string,
@@ -1926,6 +2079,60 @@ export const api = {
       method: "POST",
     });
     appCache.invalidateTags(["resources", "dashboard"]);
+    return res;
+  },
+
+  /** List invitations received by current logged-in user. */
+  listMyInvitations: async (token: string, status = "pending", type?: string) => {
+    const q = new URLSearchParams();
+    if (status) q.set("status", status);
+    if (type) q.set("type", type);
+    const qs = q.toString() ? `?${q.toString()}` : "";
+    return request<InvitationItem[]>(`/invitations/me${qs}`, token);
+  },
+
+  /** List invitations sent for a specific SPG or Event target. */
+  listTargetInvitations: async (token: string, targetId: string, status?: string) => {
+    const q = new URLSearchParams();
+    if (status) q.set("status", status);
+    const qs = q.toString() ? `?${q.toString()}` : "";
+    return request<InvitationItem[]>(`/invitations/target/${encodeURIComponent(targetId)}${qs}`, token);
+  },
+
+  /** Send an invitation to a student to join an SPG or Event team. */
+  createInvitation: async (token: string, payload: CreateInvitationPayload) => {
+    const res = await request<InvitationItem>("/invitations", token, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    appCache.invalidateTags(["invitations", "spg", "events", "dashboard"]);
+    return res;
+  },
+
+  /** Accept an invitation. */
+  acceptInvitation: async (token: string, id: string) => {
+    const res = await request<InvitationItem>(`/invitations/${encodeURIComponent(id)}/accept`, token, {
+      method: "POST",
+    });
+    appCache.invalidateTags(["invitations", "spg", "events", "dashboard"]);
+    return res;
+  },
+
+  /** Decline an invitation. */
+  declineInvitation: async (token: string, id: string) => {
+    const res = await request<InvitationItem>(`/invitations/${encodeURIComponent(id)}/decline`, token, {
+      method: "POST",
+    });
+    appCache.invalidateTags(["invitations", "spg", "events", "dashboard"]);
+    return res;
+  },
+
+  /** Cancel or revoke an outgoing invitation. */
+  cancelInvitation: async (token: string, id: string) => {
+    const res = await request<{ status: string; id: string }>(`/invitations/${encodeURIComponent(id)}`, token, {
+      method: "DELETE",
+    });
+    appCache.invalidateTags(["invitations", "spg", "events", "dashboard"]);
     return res;
   },
 };

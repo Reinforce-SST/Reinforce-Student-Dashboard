@@ -675,40 +675,110 @@ class EventListResponse(BaseModel):
 # --- Registration Schemas (Pure UIDs) ---
 
 
+class TeamInviteInfo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    invite_id: str
+    from_team_id: str
+    from_team_name: str
+    from_leader_uid: str
+    from_leader_name: str
+    created_at: str
+
+
 class EventRegisterRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     team_name: Optional[NonBlankStr] = None
-    member_uids: List[NonBlankStr] = Field(default_factory=list)
     custom_responses: Dict[str, Any] = Field(default_factory=dict)
-    member_responses: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     selected_track_id: Optional[str] = None
+    # Kept for backward compatibility with existing tests
+    member_uids: List[NonBlankStr] = Field(default_factory=list)
+    member_responses: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
 
 
 class RegistrationDocument(BaseModel):
-    """Registration record stored in events/{event_id}/registrations/{reg_id}."""
+    """Registration record stored in events/{event_id}/registrations/{uid}."""
 
     model_config = ConfigDict(extra="ignore")
 
     id: str
     event_id: str
     user_id: str
+    uid: Optional[str] = None
+    status: str = RegistrationStatus.REGISTERED.value
+
+    # Individual Intake (applies_to: "individual")
+    custom_responses: Dict[str, Any] = Field(default_factory=dict)
+
+    # Team & Merge State
+    team_id: Optional[str] = None
     team_name: Optional[str] = None
+    is_team_leader: bool = False
     member_uids: List[str] = Field(default_factory=list)
+    invite_code: Optional[str] = None
+    looking_for_team: bool = True
+
+    # Team-Level Intake & Track
+    selected_track_id: Optional[str] = None
+    team_custom_responses: Dict[str, Any] = Field(default_factory=dict)
+
+    # Pending Merge/Invite Requests received
+    pending_invites: List[TeamInviteInfo] = Field(default_factory=list)
+
+    # Legacy field backward compatibility
+    member_responses: Optional[Dict[str, Dict[str, Any]]] = None
+
+    # Attendance & Submission Metadata
     spg_id: Optional[str] = None
     spg_status: Optional[str] = None
-    custom_responses: Dict[str, Any] = Field(default_factory=dict)
-    member_responses: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
-    selected_track_id: Optional[str] = None
-    invite_code: Optional[str] = None
     submission: Optional[Dict[str, Any]] = None
-    status: str = RegistrationStatus.REGISTERED.value
     checked_in_at: Optional[str] = None
     checked_in_by: Optional[str] = None
     attendance_note: Optional[str] = None
     registered_at: str
     user_profile: Optional[Dict[str, Any]] = None
     member_profiles: Optional[List[Dict[str, Any]]] = None
+
+
+class CreateOrUpdateTeamRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    team_name: str = Field(..., min_length=2, max_length=60)
+    selected_track_id: Optional[str] = None
+    team_custom_responses: Dict[str, Any] = Field(default_factory=dict)
+    looking_for_team: bool = True
+
+
+class TeamMergeByCodeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    invite_code: Optional[str] = None
+    invite_id: Optional[str] = None
+
+
+class TeamInviteMemberRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_uid: str
+
+
+class TeamPoolMemberSummary(BaseModel):
+    uid: str
+    full_name: str
+    email: str
+    avatar_url: Optional[str] = None
+    batch_year: Optional[int] = None
+    team_id: Optional[str] = None
+    team_name: Optional[str] = None
+    current_team_size: int = 1
+    is_team_leader: bool = False
+    looking_for_team: bool = True
+
+
+class TeamPoolResponse(BaseModel):
+    members: List[TeamPoolMemberSummary]
+    total: int
 
 
 class UpdateRegistrationTrackRequest(BaseModel):

@@ -37,6 +37,7 @@ from app.schemas.events import (
     AssignAllColumnRequest,
     BatchUpdateMatrixRequest,
     CreateMatrixColumnRequest,
+    CreateOrUpdateTeamRequest,
     CustomFieldSchema,
     EventCreate,
     EventDocument,
@@ -78,6 +79,11 @@ from app.schemas.events import (
     RollCallResponse,
     SPGDecisionAction,
     SPGDecisionRequest,
+    TeamInviteInfo,
+    TeamInviteMemberRequest,
+    TeamMergeByCodeRequest,
+    TeamPoolMemberSummary,
+    TeamPoolResponse,
     TeamSettingsSchema,
     TimelineItemSchema,
     UpdateMatrixCellRequest,
@@ -146,6 +152,11 @@ def _parse_utc(value: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+try:
+    from google.cloud.firestore_v1.base_query import FieldFilter
+except Exception:
+    FieldFilter = None
+
 def _active_registration(data: Dict[str, Any]) -> bool:
     return data.get("status") != RegistrationStatus.CANCELLED.value
 
@@ -155,10 +166,23 @@ def _registrations_for_user(
 ) -> List[Any]:
     """Return every registration involving a user, including legacy duplicates."""
     by_id = {}
-    for query in (
-        regs_ref.where("user_id", "==", user_uid),
-        regs_ref.where("member_uids", "array_contains", user_uid),
-    ):
+    try:
+        if FieldFilter is not None:
+            queries = (
+                regs_ref.where(filter=FieldFilter("user_id", "==", user_uid)),
+                regs_ref.where(filter=FieldFilter("member_uids", "array_contains", user_uid)),
+            )
+        else:
+            queries = (
+                regs_ref.where("user_id", "==", user_uid),
+                regs_ref.where("member_uids", "array_contains", user_uid),
+            )
+    except Exception:
+        queries = (
+            regs_ref.where("user_id", "==", user_uid),
+            regs_ref.where("member_uids", "array_contains", user_uid),
+        )
+    for query in queries:
         docs = transaction.get(query) if transaction is not None else query.stream()
         for doc in docs:
             by_id[doc.id] = doc
@@ -213,14 +237,14 @@ def _check_member_eligibility(
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User {user_uid} was not found",
+            detail="Student profile not found.",
         )
     if eligibility.access_scope.value == "members_only" and not profile.get(
         "is_member", False
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"User {user_uid} is not an eligible club member",
+            detail="This event is open to verified club members only.",
         )
     legacy_default_years = {1, 2, 3, 4}
     batch_year = profile.get("batch_year")
@@ -242,7 +266,7 @@ def _check_member_eligibility(
     ) or (batch_year is None and years_restricted):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"User {user_uid} is not in an allowed graduation batch",
+            detail="You are not in an eligible graduation batch for this event.",
         )
     allowed_tiers = set(eligibility.allowed_tiers)
     if (
@@ -252,7 +276,7 @@ def _check_member_eligibility(
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"User {user_uid} is not in an allowed member tier",
+            detail="You are not in an eligible member tier for this event.",
         )
     allowed_tracks = set(eligibility.allowed_tracks)
     if (
@@ -262,7 +286,7 @@ def _check_member_eligibility(
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"User {user_uid} is not active in an allowed track",
+            detail="You are not active in an eligible track for this event.",
         )
 
 
@@ -601,43 +625,45 @@ def register_for_event(
         )
 
     # 2. Check Team vs Solo Participation Rules
-    member_uids = list(set(payload.member_uids))
-    if user_uid not in member_uids:
-        member_uids.append(user_uid)
-
+    payload_members = list(dict.fromkeys(payload.member_uids or []))
+    member_uids = [user_uid] + [m for m in payload_members if m != user_uid]
     if event.participation.mode.value == "solo":
-        member_uids = [user_uid]
+        confirmed_member_uids = [user_uid]
+        invited_uids: List[str] = []
         team_name = None
     else:
-        # Team mode
-        team_name = payload.team_name
-        if not team_name:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Team name is required for team events",
-            )
-        if len(member_uids) < event.participation.min_team_size:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Minimum team size is {event.participation.min_team_size}",
-            )
-        if len(member_uids) > event.participation.max_team_size:
+        # Team mode: under Register-First, individual RSVP does not require upfront team_name
+        team_name = payload.team_name.strip() if payload.team_name else None
+        invited_uids = [m for m in payload_members if m and m != user_uid]
+        total_intended = 1 + len(invited_uids)
+        if total_intended > event.participation.max_team_size:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Maximum team size is {event.participation.max_team_size}",
             )
+        confirmed_member_uids = [user_uid]
 
     # 3. Check every participant's profile and event eligibility.
     member_profiles = {}
-    for member_uid in member_uids:
-        user_doc = db.collection(USERS_COLLECTION).document(member_uid).get()
-        profile = user_doc.to_dict() if user_doc.exists else {}
-        member_profiles[member_uid] = profile
-        _check_member_eligibility(
-            event,
-            member_uid,
-            profile,
-        )
+    user_doc = db.collection(USERS_COLLECTION).document(user_uid).get()
+    user_profile = user_doc.to_dict() if user_doc.exists else {}
+    member_profiles[user_uid] = user_profile
+    _check_member_eligibility(event, user_uid, user_profile)
+
+    invitee_profiles: Dict[str, Dict[str, Any]] = {}
+    for inv_uid in invited_uids:
+        i_doc = db.collection(USERS_COLLECTION).document(inv_uid).get()
+        if not i_doc.exists:
+            matches = list(db.collection(USERS_COLLECTION).where("email", "==", inv_uid).limit(1).stream())
+            if not matches:
+                matches = list(db.collection(USERS_COLLECTION).where("firebase_uid", "==", inv_uid).limit(1).stream())
+            if matches:
+                i_doc = matches[0]
+        i_data = i_doc.to_dict() if i_doc and i_doc.exists else {}
+        actual_inv_uid = i_doc.id if i_doc and i_doc.exists else inv_uid
+        _check_member_eligibility(event, actual_inv_uid, i_data)
+        invitee_profiles[actual_inv_uid] = i_data
+        member_profiles[actual_inv_uid] = i_data
 
     # 4. Validate custom intake fields (individual vs team applies_to)
     custom_fields = event.custom_registration_fields or []
@@ -649,34 +675,24 @@ def register_for_event(
     for cf in custom_fields:
         f_id = cf.field_id
         if cf.applies_to == "team":
-            val = cleaned_custom_responses.get(f_id)
-            if cf.required and (val is None or (isinstance(val, str) and not val.strip())):
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=f"Field '{cf.label}' ({f_id}) is required.",
-                )
-            if val is not None and cf.field_type == "select" and cf.options:
-                if str(val) not in cf.options:
-                    raise HTTPException(
-                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                        detail=f"Value for '{cf.label}' must be one of: {', '.join(cf.options)}",
-                    )
+            # Team fields are answered on the Team Page / Hub after registration
+            continue
         else:
             # Individual field
-            if event.participation.mode.value == "solo":
+            if event.participation.mode.value == "solo" or member_uids == [user_uid]:
                 val = cleaned_custom_responses.get(f_id)
                 if val is None:
                     val = cleaned_member_responses.get(user_uid, {}).get(f_id)
                 if cf.required and (val is None or (isinstance(val, str) and not val.strip())):
                     raise HTTPException(
                         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                        detail=f"Field '{cf.label}' ({f_id}) is required.",
+                        detail=f"'{cf.label}' is required. Please provide a value.",
                     )
                 if val is not None and cf.field_type == "select" and cf.options:
                     if str(val) not in cf.options:
                         raise HTTPException(
                             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail=f"Value for '{cf.label}' must be one of: {', '.join(cf.options)}",
+                            detail=f"Please select a valid option for '{cf.label}'.",
                         )
                 cleaned_custom_responses[f_id] = val
                 cleaned_member_responses.setdefault(user_uid, {})[f_id] = val
@@ -686,15 +702,17 @@ def register_for_event(
                     if m_val is None:
                         m_val = cleaned_custom_responses.get(f_id)
                     if cf.required and (m_val is None or (isinstance(m_val, str) and not m_val.strip())):
+                        member_label = "for yourself" if m_uid == user_uid else f"for teammate ({member_profiles.get(m_uid, {}).get('display_name') or m_uid})"
+                        detail = f"'{cf.label}' is required {member_label}. Please provide a value." if len(member_uids) > 1 else f"'{cf.label}' is required. Please provide a value."
                         raise HTTPException(
                             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail=f"Individual field '{cf.label}' ({f_id}) is required for member {m_uid}.",
+                            detail=detail,
                         )
                     if m_val is not None and cf.field_type == "select" and cf.options:
                         if str(m_val) not in cf.options:
                             raise HTTPException(
                                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                                detail=f"Value for '{cf.label}' for member {m_uid} must be one of: {', '.join(cf.options)}",
+                                detail=f"Please select a valid option for '{cf.label}'.",
                             )
                     cleaned_member_responses.setdefault(m_uid, {})[f_id] = m_val
 
@@ -714,7 +732,7 @@ def register_for_event(
         .document(event_id)
         .collection(REGISTRATIONS_SUBCOLLECTION)
     )
-    reg_id = f"reg_{uuid.uuid4().hex[:10]}"
+    reg_id = user_uid
     now_timestamp = now_iso()
     event_ref = db.collection(EVENTS_COLLECTION).document(event_id)
     reg_ref = regs_ref.document(reg_id)
@@ -744,20 +762,16 @@ def register_for_event(
                 detail="Event participation changed; submit a solo registration.",
             )
         if fresh_event.participation.mode.value == "team":
-            if not team_name:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="Team name is required for team events",
-                )
-            if not (
-                fresh_event.participation.min_team_size
-                <= len(member_uids)
-                <= fresh_event.participation.max_team_size
-            ):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Event team-size rules changed; review the registration.",
-                )
+            if team_name and len(member_uids) > 1:
+                if not (
+                    fresh_event.participation.min_team_size
+                    <= len(member_uids)
+                    <= fresh_event.participation.max_team_size
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Event team-size rules changed; review the registration.",
+                    )
             if fresh_event.team_settings and fresh_event.team_settings.lock_rosters_at:
                 lock_dt = _parse_utc(str(fresh_event.team_settings.lock_rosters_at))
                 if lock_dt <= datetime.now(timezone.utc) and not is_admin_user(current_user):
@@ -779,25 +793,30 @@ def register_for_event(
                         detail=f"Track '{fresh_track.name}' has reached its maximum capacity of {fresh_track.max_teams} teams.",
                     )
 
-        for member_uid in member_uids:
+        for member_uid in confirmed_member_uids:
             _check_member_eligibility(
                 fresh_event, member_uid, member_profiles[member_uid]
             )
-        for member_uid in member_uids:
+        for member_uid in confirmed_member_uids:
             if any(
                 _active_registration(doc.to_dict() or {})
                 for doc in _registrations_for_user(
                     regs_ref, member_uid, transaction=transaction
                 )
             ):
+                detail = (
+                    "You are already registered for this event."
+                    if member_uid == user_uid
+                    else f"{member_profiles.get(member_uid, {}).get('display_name') or member_uid} is already registered for this event."
+                )
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=f"User {member_uid} is already registered for this event",
+                    detail=detail,
                 )
 
         registered = int((fresh.get("stats") or {}).get("registered_count", 0))
         maximum = fresh_event.participation.max_participants
-        fits = maximum is None or registered + len(member_uids) <= maximum
+        fits = maximum is None or registered + len(confirmed_member_uids) <= maximum
         reg_status = (
             RegistrationStatus.REGISTERED.value
             if fits
@@ -810,22 +829,31 @@ def register_for_event(
         ) and fits
         if should_spawn_spg and team_name:
             spg_id, spg_data = _event_spg_data(
-                fresh_event, event_id, user_uid, member_uids, team_name
+                fresh_event, event_id, user_uid, confirmed_member_uids, team_name
             )
             transaction.set(db.collection(SPGS_COLLECTION).document(spg_id), spg_data)
 
+        team_id = f"team_{uuid.uuid4().hex[:8]}" if team_name else None
+        is_team_leader = bool(team_name)
         invite_code = secrets.token_hex(3).upper() if team_name else None
+        looking_for_team = True if fresh_event.participation.mode.value == "team" else False
 
         registration_data = {
-            "id": reg_id,
+            "id": user_uid,
+            "uid": user_uid,
             "event_id": event_id,
             "user_id": user_uid,
+            "team_id": team_id,
             "team_name": team_name,
-            "member_uids": member_uids,
+            "is_team_leader": is_team_leader,
+            "looking_for_team": looking_for_team,
+            "member_uids": confirmed_member_uids,
             "spg_id": spg_id,
             "spg_status": None,
             "custom_responses": cleaned_custom_responses,
+            "team_custom_responses": {},
             "member_responses": cleaned_member_responses,
+            "pending_invites": [],
             "selected_track_id": selected_track_id,
             "invite_code": invite_code,
             "submission": None,
@@ -839,13 +867,45 @@ def register_for_event(
             transaction.update(
                 event_ref,
                 {
-                    "stats.registered_count": registered + len(member_uids),
+                    "stats.registered_count": registered + len(confirmed_member_uids),
                     "updated_at": now_timestamp,
                 },
             )
         return registration_data
 
     registration_data = run_event_transaction(reserve)
+
+    # Issue formal pending invitations for each invited squad teammate
+    if invited_uids:
+        now_ts = now_iso()
+        inviter_name = user_profile.get("full_name") or "Team Lead"
+        inviter_email = user_profile.get("email") or ""
+        spawned_spg_id = registration_data.get("spg_id")
+
+        for inv_uid in invited_uids:
+            inv_p = invitee_profiles.get(inv_uid, {})
+            inv_id = f"inv_{uuid.uuid4().hex[:12]}"
+            inv_doc = {
+                "id": inv_id,
+                "type": "event_spg" if spawned_spg_id else "event_team",
+                "target_id": spawned_spg_id if spawned_spg_id else event_id,
+                "target_name": team_name or event.title,
+                "event_id": event_id,
+                "spg_id": spawned_spg_id,
+                "team_name": team_name,
+                "inviter_uid": user_uid,
+                "inviter_name": inviter_name,
+                "inviter_email": inviter_email,
+                "invitee_uid": inv_uid,
+                "invitee_name": inv_p.get("full_name") or "Club Member",
+                "invitee_email": inv_p.get("email") or "",
+                "status": "pending",
+                "role": "member",
+                "created_at": now_ts,
+                "updated_at": now_ts,
+            }
+            db.collection("invitations").document(inv_id).set(inv_doc)
+
     _hydrate_single_registration_profiles(registration_data)
 
     return RegistrationDocument.model_validate(registration_data)
@@ -871,18 +931,19 @@ def cancel_registration(
         all_user_regs = _registrations_for_user(
             regs_ref, user_uid, transaction=transaction
         )
-        active_leads = [
+        active_regs = [
             doc for doc in all_user_regs if _active_registration(doc.to_dict() or {})
         ]
-        if not active_leads:
+        if not active_regs:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="No registration found where you are the lead/registrant",
+                detail="No registration found where you are registered",
             )
 
-        reg_doc = active_leads[0]
+        reg_doc = active_regs[0]
         reg_data = reg_doc.to_dict() or {}
         prev_status = reg_data.get("status")
+        is_lead = reg_data.get("user_id") == user_uid
         event_ref = db.collection(EVENTS_COLLECTION).document(event_id)
         event_snap = event_ref.get(transaction=transaction)
         fresh = event_snap.to_dict() or {}
@@ -898,26 +959,64 @@ def cancel_registration(
 
         current_count = int((fresh.get("stats") or {}).get("registered_count", 0))
 
-        waitlist = []
-        if prev_status in {
-            RegistrationStatus.REGISTERED.value,
-            RegistrationStatus.CHECKED_IN.value,
-        }:
-            waitlist_docs = list(
-                transaction.get(
-                    regs_ref.where("status", "==", RegistrationStatus.WAITLISTED.value)
-                )
-            )
-            waitlist = sorted(
-                waitlist_docs,
-                key=lambda d: (d.to_dict() or {}).get("registered_at") or "",
-            )[:1]
-
         spg_ref = None
         spg_snap = None
         if reg_data.get("spg_id"):
             spg_ref = db.collection(SPGS_COLLECTION).document(reg_data["spg_id"])
             spg_snap = spg_ref.get(transaction=transaction)
+
+        if not is_lead:
+            # User is a non-lead teammate leaving the team
+            current_members = reg_data.get("member_uids") or []
+            new_members = [u for u in current_members if u != user_uid]
+            transaction.update(
+                reg_doc.reference,
+                {
+                    "member_uids": new_members,
+                    "updated_at": now_timestamp,
+                },
+            )
+            if spg_ref and spg_snap and spg_snap.exists:
+                spg_data = spg_snap.to_dict() or {}
+                new_spg_members = [m for m in (spg_data.get("member_ids") or []) if m != user_uid]
+                transaction.update(
+                    spg_ref,
+                    {"member_ids": new_spg_members, "updated_at": now_timestamp},
+                )
+
+            if prev_status in {
+                RegistrationStatus.REGISTERED.value,
+                RegistrationStatus.CHECKED_IN.value,
+            }:
+                updated_count = max(0, current_count - 1)
+                transaction.update(
+                    event_ref,
+                    {
+                        "stats.registered_count": updated_count,
+                        "updated_at": now_timestamp,
+                    },
+                )
+            return
+
+        # User is the team lead or solo registrant: cancel entire registration and disband SPG
+        waitlist = []
+        if prev_status in {
+            RegistrationStatus.REGISTERED.value,
+            RegistrationStatus.CHECKED_IN.value,
+        }:
+            try:
+                waitlist_query = (
+                    regs_ref.where(filter=FieldFilter("status", "==", RegistrationStatus.WAITLISTED.value))
+                    if FieldFilter
+                    else regs_ref.where("status", "==", RegistrationStatus.WAITLISTED.value)
+                )
+            except Exception:
+                waitlist_query = regs_ref.where("status", "==", RegistrationStatus.WAITLISTED.value)
+            waitlist_docs = list(transaction.get(waitlist_query))
+            waitlist = sorted(
+                waitlist_docs,
+                key=lambda d: (d.to_dict() or {}).get("registered_at") or "",
+            )[:1]
 
         transaction.update(
             reg_doc.reference,
@@ -986,7 +1085,598 @@ def cancel_registration(
 
     run_event_transaction(cancel_and_promote)
 
+    # Cancel any invitations associated with this action
+    try:
+        inv_col = db.collection("invitations")
+        try:
+            inv_query = (
+                inv_col.where(filter=FieldFilter("event_id", "==", event_id))
+                if FieldFilter
+                else inv_col.where("event_id", "==", event_id)
+            )
+        except Exception:
+            inv_query = inv_col.where("event_id", "==", event_id)
+        for pinv in inv_query.stream():
+            p_data = pinv.to_dict() or {}
+            # Lead cancels all pending invitations they sent
+            if p_data.get("inviter_uid") == user_uid and p_data.get("status") == "pending":
+                pinv.reference.update({"status": "cancelled", "updated_at": now_timestamp})
+            # Member leaving cancels their invitation for this event
+            elif p_data.get("invitee_uid") == user_uid and p_data.get("status") in ("accepted", "pending"):
+                pinv.reference.update({"status": "cancelled", "updated_at": now_timestamp})
+    except Exception:
+        pass
+
     return {"message": "Registration cancelled successfully"}
+
+
+# --- Team Formation & Squad Merging Endpoints ---
+
+
+@router.get("/{id}/team-pool", response_model=TeamPoolResponse)
+def get_team_pool(
+    id: str,
+    q: Optional[str] = None,
+    only_looking: bool = False,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Query registered participants for this event who can be invited/merged into teams."""
+    user_uid = get_user_uid(current_user)
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event = _doc_to_event_document(event_doc)
+
+    regs_ref = (
+        db.collection(EVENTS_COLLECTION)
+        .document(event_id)
+        .collection(REGISTRATIONS_SUBCOLLECTION)
+    )
+
+    caller_regs = _registrations_for_user(regs_ref, user_uid)
+    caller_reg = next((r.to_dict() or {} for r in caller_regs if _active_registration(r.to_dict() or {})), None)
+    caller_team_id = caller_reg.get("team_id") if caller_reg else None
+    caller_team_members = set(caller_reg.get("member_uids") or [user_uid]) if caller_reg else {user_uid}
+
+    all_regs = regs_ref.stream()
+    candidate_regs: List[Dict[str, Any]] = []
+    uids_to_fetch: Set[str] = set()
+
+    for doc in all_regs:
+        rdata = doc.to_dict() or {}
+        r_status = rdata.get("status")
+        if r_status not in {RegistrationStatus.REGISTERED.value, RegistrationStatus.CHECKED_IN.value}:
+            continue
+        r_uid = rdata.get("uid") or rdata.get("user_id") or doc.id
+        if r_uid == user_uid or r_uid in caller_team_members:
+            continue
+        if caller_team_id and rdata.get("team_id") == caller_team_id:
+            continue
+
+        m_uids = rdata.get("member_uids") or [r_uid]
+        team_size = len(m_uids) if rdata.get("team_id") else 1
+        if team_size >= event.participation.max_team_size:
+            continue
+
+        is_looking = bool(rdata.get("looking_for_team", True))
+        if only_looking and not is_looking:
+            continue
+
+        rdata["_uid"] = r_uid
+        rdata["_team_size"] = team_size
+        candidate_regs.append(rdata)
+        uids_to_fetch.add(r_uid)
+
+    profiles_map: Dict[str, Dict[str, Any]] = {}
+    if uids_to_fetch:
+        refs = [db.collection(USERS_COLLECTION).document(u) for u in uids_to_fetch]
+        try:
+            snaps = db.get_all(refs)
+            for snap in snaps:
+                if snap.exists:
+                    profiles_map[snap.id] = snap.to_dict() or {}
+        except Exception:
+            for u in uids_to_fetch:
+                snap = db.collection(USERS_COLLECTION).document(u).get()
+                if snap.exists:
+                    profiles_map[u] = snap.to_dict() or {}
+
+    query_str = (q or "").strip().lower()
+    results: List[TeamPoolMemberSummary] = []
+
+    for rdata in candidate_regs:
+        r_uid = rdata["_uid"]
+        prof = profiles_map.get(r_uid, {})
+        full_name = prof.get("full_name") or prof.get("display_name") or "Club Member"
+        email = prof.get("email") or ""
+        batch_year = prof.get("batch_year")
+
+        if query_str:
+            match = (
+                query_str in full_name.lower()
+                or query_str in email.lower()
+                or query_str in str(batch_year or "")
+                or query_str in (rdata.get("team_name") or "").lower()
+            )
+            if not match:
+                continue
+
+        results.append(
+            TeamPoolMemberSummary(
+                uid=r_uid,
+                full_name=full_name,
+                email=email,
+                avatar_url=prof.get("avatar_url"),
+                batch_year=batch_year,
+                team_id=rdata.get("team_id"),
+                team_name=rdata.get("team_name"),
+                current_team_size=rdata["_team_size"],
+                is_team_leader=bool(rdata.get("is_team_leader", False)),
+                looking_for_team=bool(rdata.get("looking_for_team", True)),
+            )
+        )
+
+    return TeamPoolResponse(members=results, total=len(results))
+
+
+@router.post("/{id}/team", response_model=RegistrationDocument)
+def create_or_update_team(
+    id: str,
+    payload: CreateOrUpdateTeamRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Create a squad (if solo) or update team settings (name, track, custom fields) if team leader."""
+    user_uid = get_user_uid(current_user)
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event = _doc_to_event_document(event_doc)
+
+    if event.participation.mode.value != "team":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Team management is only available for team events.",
+        )
+
+    if event.team_settings and event.team_settings.lock_rosters_at:
+        lock_dt = _parse_utc(str(event.team_settings.lock_rosters_at))
+        if lock_dt <= datetime.now(timezone.utc) and not is_admin_user(current_user):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Team rosters and configuration are locked for this event.",
+            )
+
+    regs_ref = (
+        db.collection(EVENTS_COLLECTION)
+        .document(event_id)
+        .collection(REGISTRATIONS_SUBCOLLECTION)
+    )
+
+    my_regs = _registrations_for_user(regs_ref, user_uid)
+    active_regs = [r for r in my_regs if _active_registration(r.to_dict() or {})]
+    if not active_regs:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="You must register for this event before managing a squad.",
+        )
+
+    my_reg_doc = active_regs[0]
+    reg_data = my_reg_doc.to_dict() or {}
+    now_ts = now_iso()
+
+    if payload.selected_track_id:
+        track_exists = any(t.track_id == payload.selected_track_id for t in (event.event_tracks or []))
+        if not track_exists:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Track '{payload.selected_track_id}' is not a valid track for this event.",
+            )
+
+    custom_fields = event.custom_registration_fields or []
+    cleaned_team_responses: Dict[str, Any] = dict(payload.team_custom_responses or {})
+    for cf in custom_fields:
+        if cf.applies_to == "team":
+            val = cleaned_team_responses.get(cf.field_id)
+            if (val is None or (isinstance(val, str) and not val.strip())) and payload.team_name:
+                if cf.label.strip().lower() in ("team name", "team_name", "squad name", "squad"):
+                    val = payload.team_name.strip()
+                    cleaned_team_responses[cf.field_id] = val
+            if cf.required and (val is None or (isinstance(val, str) and not val.strip())):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"'{cf.label}' is required. Please provide a value.",
+                )
+            if val is not None and cf.field_type == "select" and cf.options:
+                if str(val) not in cf.options:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail=f"Please select a valid option for '{cf.label}'.",
+                    )
+
+    current_team_id = reg_data.get("team_id")
+    current_members = reg_data.get("member_uids") or [user_uid]
+
+    if current_team_id:
+        if not reg_data.get("is_team_leader") and len(current_members) > 1:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the team leader can modify team settings.",
+            )
+        team_id = current_team_id
+        invite_code = reg_data.get("invite_code") or secrets.token_hex(3).upper()
+    else:
+        team_id = f"team_{uuid.uuid4().hex[:8]}"
+        invite_code = secrets.token_hex(3).upper()
+
+    update_payload = {
+        "team_id": team_id,
+        "team_name": payload.team_name.strip(),
+        "invite_code": invite_code,
+        "selected_track_id": payload.selected_track_id,
+        "team_custom_responses": cleaned_team_responses,
+        "looking_for_team": payload.looking_for_team,
+        "updated_at": now_ts,
+    }
+
+    for m_uid in current_members:
+        m_doc = regs_ref.document(m_uid).get()
+        if m_doc.exists:
+            m_update = dict(update_payload)
+            m_update["is_team_leader"] = (m_uid == user_uid) if not current_team_id else (m_doc.to_dict() or {}).get("is_team_leader", False)
+            if not current_team_id and m_uid == user_uid:
+                m_update["is_team_leader"] = True
+            m_doc.reference.update(m_update)
+
+    fresh_caller = regs_ref.document(my_reg_doc.id).get().to_dict() or {}
+    fresh_caller["id"] = my_reg_doc.id
+    _hydrate_single_registration_profiles(fresh_caller)
+    return RegistrationDocument.model_validate(fresh_caller)
+
+
+@router.post("/{id}/team/invite")
+def invite_team_member(
+    id: str,
+    payload: TeamInviteMemberRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Send an invitation to another registered participant (or their team leader) to merge squads."""
+    user_uid = get_user_uid(current_user)
+    target_uid = payload.target_uid
+    if user_uid == target_uid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot invite yourself.",
+        )
+
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event = _doc_to_event_document(event_doc)
+
+    regs_ref = (
+        db.collection(EVENTS_COLLECTION)
+        .document(event_id)
+        .collection(REGISTRATIONS_SUBCOLLECTION)
+    )
+
+    caller_regs = [r for r in _registrations_for_user(regs_ref, user_uid) if _active_registration(r.to_dict() or {})]
+    if not caller_regs:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="You must be registered for this event to invite teammates.",
+        )
+    caller_reg_doc = caller_regs[0]
+    caller_reg = caller_reg_doc.to_dict() or {}
+    caller_members = caller_reg.get("member_uids") or [user_uid]
+    if len(caller_members) > 1 and not caller_reg.get("is_team_leader"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the team leader can send invitations.",
+        )
+
+    caller_team_id = caller_reg.get("team_id")
+    caller_team_name = caller_reg.get("team_name")
+    if not caller_team_id or not caller_team_name:
+        caller_team_id = f"team_{uuid.uuid4().hex[:8]}"
+        caller_team_name = f"Team {user_uid[:5]}"
+        caller_code = secrets.token_hex(3).upper()
+        caller_reg_doc.reference.update({
+            "team_id": caller_team_id,
+            "team_name": caller_team_name,
+            "invite_code": caller_code,
+            "is_team_leader": True,
+            "member_uids": [user_uid],
+            "updated_at": now_iso(),
+        })
+        caller_members = [user_uid]
+
+    target_regs = [r for r in _registrations_for_user(regs_ref, target_uid) if _active_registration(r.to_dict() or {})]
+    if not target_regs:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Target user is not registered for this event.",
+        )
+    target_reg_doc = target_regs[0]
+    target_data = target_reg_doc.to_dict() or {}
+    target_members = target_data.get("member_uids") or [target_uid]
+
+    combined_size = len(caller_members) + (len(target_members) if target_data.get("team_id") else 1)
+    if combined_size > event.participation.max_team_size:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Combined squad size ({combined_size}) would exceed event maximum ({event.participation.max_team_size}).",
+        )
+
+    dest_doc = target_reg_doc
+    if target_data.get("team_id") and not target_data.get("is_team_leader") and len(target_members) > 1:
+        for m_uid in target_members:
+            m_snap = regs_ref.document(m_uid).get()
+            if m_snap.exists and (m_snap.to_dict() or {}).get("is_team_leader"):
+                dest_doc = m_snap
+                break
+
+    dest_data = dest_doc.to_dict() or {}
+    existing_invites = dest_data.get("pending_invites") or []
+    if any(inv.get("from_team_id") == caller_team_id for inv in existing_invites):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An invitation from your team has already been sent to this participant/squad.",
+        )
+
+    caller_user_doc = db.collection(USERS_COLLECTION).document(user_uid).get()
+    caller_profile = caller_user_doc.to_dict() if caller_user_doc.exists else {}
+
+    new_invite = {
+        "invite_id": f"tinv_{uuid.uuid4().hex[:10]}",
+        "from_team_id": caller_team_id,
+        "from_team_name": caller_team_name,
+        "from_leader_uid": user_uid,
+        "from_leader_name": caller_profile.get("full_name") or "Team Leader",
+        "created_at": now_iso(),
+    }
+    existing_invites.append(new_invite)
+    dest_doc.reference.update({
+        "pending_invites": existing_invites,
+        "updated_at": now_iso(),
+    })
+
+    return {"message": "Merge invitation sent successfully.", "invite_id": new_invite["invite_id"]}
+
+
+@router.delete("/{id}/team/invite/{invite_id}")
+def decline_team_invite(
+    id: str,
+    invite_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Decline and remove an incoming team merge invitation."""
+    user_uid = get_user_uid(current_user)
+    regs_ref = (
+        db.collection(EVENTS_COLLECTION)
+        .document(id)
+        .collection(REGISTRATIONS_SUBCOLLECTION)
+    )
+    my_regs = [r for r in _registrations_for_user(regs_ref, user_uid) if _active_registration(r.to_dict() or {})]
+    if not my_regs:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registration not found.")
+
+    reg_doc = my_regs[0]
+    reg_data = reg_doc.to_dict() or {}
+    invites = reg_data.get("pending_invites") or []
+    filtered = [i for i in invites if i.get("invite_id") != invite_id]
+    reg_doc.reference.update({
+        "pending_invites": filtered,
+        "updated_at": now_iso(),
+    })
+    return {"message": "Invitation dismissed."}
+
+
+@router.post("/{id}/team/merge", response_model=RegistrationDocument)
+def merge_team(
+    id: str,
+    payload: TeamMergeByCodeRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Merge current user (or their squad) into another team via invite_code or invite_id."""
+    user_uid = get_user_uid(current_user)
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event = _doc_to_event_document(event_doc)
+
+    if event.team_settings and event.team_settings.lock_rosters_at:
+        lock_dt = _parse_utc(str(event.team_settings.lock_rosters_at))
+        if lock_dt <= datetime.now(timezone.utc) and not is_admin_user(current_user):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Team rosters are locked for this event.",
+            )
+
+    regs_ref = (
+        db.collection(EVENTS_COLLECTION)
+        .document(event_id)
+        .collection(REGISTRATIONS_SUBCOLLECTION)
+    )
+
+    my_regs = [r for r in _registrations_for_user(regs_ref, user_uid) if _active_registration(r.to_dict() or {})]
+    if not my_regs:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="You must be registered for this event to join or merge teams.",
+        )
+
+    caller_reg_doc = my_regs[0]
+    caller_data = caller_reg_doc.to_dict() or {}
+    caller_members = caller_data.get("member_uids") or [user_uid]
+
+    if len(caller_members) > 1 and not caller_data.get("is_team_leader"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the team leader can merge this squad into another team. Non-leaders must leave their current squad first to join another team solo.",
+        )
+
+    target_reg_doc = None
+    target_data = None
+    matching_invite_id = None
+
+    if payload.invite_code:
+        code = payload.invite_code.strip().upper()
+        matches = list(regs_ref.where("invite_code", "==", code).get())
+        active_matches = [m for m in matches if _active_registration(m.to_dict() or {})]
+        if not active_matches:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Invalid team invite code. No matching active squad found.",
+            )
+        target_reg_doc = active_matches[0]
+        target_data = target_reg_doc.to_dict() or {}
+    elif payload.invite_id:
+        matching_invite_id = payload.invite_id
+        pending = caller_data.get("pending_invites") or []
+        invite_obj = next((inv for inv in pending if inv.get("invite_id") == matching_invite_id), None)
+        if not invite_obj:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Invitation not found or expired.",
+            )
+        from_team_id = invite_obj.get("from_team_id")
+        matches = list(regs_ref.where("team_id", "==", from_team_id).get())
+        active_matches = [m for m in matches if _active_registration(m.to_dict() or {})]
+        if not active_matches:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Host team no longer exists or is inactive.",
+            )
+        target_reg_doc = active_matches[0]
+        target_data = target_reg_doc.to_dict() or {}
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either invite_code or invite_id must be provided to merge teams.",
+        )
+
+    target_team_id = target_data.get("team_id")
+    if caller_data.get("team_id") and caller_data.get("team_id") == target_team_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You are already in this squad.",
+        )
+
+    target_members = target_data.get("member_uids") or [target_data.get("user_id") or target_reg_doc.id]
+    combined_members = list(dict.fromkeys(target_members + caller_members))
+    combined_size = len(combined_members)
+
+    if combined_size > event.participation.max_team_size:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Combined squad size ({combined_size}) exceeds the maximum allowed team size ({event.participation.max_team_size}).",
+        )
+
+    now_ts = now_iso()
+    host_team_name = target_data.get("team_name")
+    host_track_id = target_data.get("selected_track_id") or caller_data.get("selected_track_id")
+    host_code = target_data.get("invite_code")
+    host_team_responses = target_data.get("team_custom_responses") or caller_data.get("team_custom_responses") or {}
+    host_leader_uid = target_data.get("user_id") if target_data.get("is_team_leader") else target_members[0]
+
+    is_now_full = combined_size >= event.participation.max_team_size
+    next_looking_for_team = False if is_now_full else bool(target_data.get("looking_for_team", True))
+
+    shared_update = {
+        "team_id": target_team_id,
+        "team_name": host_team_name,
+        "invite_code": host_code,
+        "selected_track_id": host_track_id,
+        "team_custom_responses": host_team_responses,
+        "member_uids": combined_members,
+        "looking_for_team": next_looking_for_team,
+        "updated_at": now_ts,
+    }
+
+    for m_uid in combined_members:
+        m_snap = regs_ref.document(m_uid).get()
+        if m_snap.exists:
+            m_dict = dict(shared_update)
+            m_dict["is_team_leader"] = (m_uid == host_leader_uid)
+            if m_uid == user_uid and matching_invite_id:
+                curr_invites = (m_snap.to_dict() or {}).get("pending_invites") or []
+                m_dict["pending_invites"] = [i for i in curr_invites if i.get("invite_id") != matching_invite_id]
+            m_snap.reference.update(m_dict)
+
+    fresh_caller = regs_ref.document(caller_reg_doc.id).get().to_dict() or {}
+    fresh_caller["id"] = caller_reg_doc.id
+    _hydrate_single_registration_profiles(fresh_caller)
+    return RegistrationDocument.model_validate(fresh_caller)
+
+
+@router.post("/{id}/team/leave", response_model=RegistrationDocument)
+def leave_team(
+    id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Leave current squad back to solo registered state without cancelling event RSVP."""
+    user_uid = get_user_uid(current_user)
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event = _doc_to_event_document(event_doc)
+
+    if event.team_settings and event.team_settings.lock_rosters_at:
+        lock_dt = _parse_utc(str(event.team_settings.lock_rosters_at))
+        if lock_dt <= datetime.now(timezone.utc) and not is_admin_user(current_user):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Team rosters are locked for this event. Leaving squads is not permitted.",
+            )
+
+    regs_ref = (
+        db.collection(EVENTS_COLLECTION)
+        .document(event_id)
+        .collection(REGISTRATIONS_SUBCOLLECTION)
+    )
+
+    my_regs = [r for r in _registrations_for_user(regs_ref, user_uid) if _active_registration(r.to_dict() or {})]
+    if not my_regs:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Registration not found.",
+        )
+
+    caller_doc = my_regs[0]
+    caller_data = caller_doc.to_dict() or {}
+    if not caller_data.get("team_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You are not currently in a team.",
+        )
+
+    now_ts = now_iso()
+    curr_members = caller_data.get("member_uids") or [user_uid]
+    remaining = [m for m in curr_members if m != user_uid]
+
+    if remaining:
+        for rem_uid in remaining:
+            r_snap = regs_ref.document(rem_uid).get()
+            if r_snap.exists:
+                r_update: Dict[str, Any] = {
+                    "member_uids": remaining,
+                    "updated_at": now_ts,
+                    "looking_for_team": True,
+                }
+                if caller_data.get("is_team_leader") and rem_uid == remaining[0]:
+                    r_update["is_team_leader"] = True
+                r_snap.reference.update(r_update)
+
+    caller_doc.reference.update({
+        "team_id": None,
+        "team_name": None,
+        "invite_code": None,
+        "is_team_leader": False,
+        "member_uids": [user_uid],
+        "team_custom_responses": {},
+        "looking_for_team": True,
+        "updated_at": now_ts,
+    })
+
+    fresh_caller = regs_ref.document(caller_doc.id).get().to_dict() or {}
+    fresh_caller["id"] = caller_doc.id
+    _hydrate_single_registration_profiles(fresh_caller)
+    return RegistrationDocument.model_validate(fresh_caller)
 
 
 # --- Feedback Endpoints ---
@@ -3119,9 +3809,7 @@ def submit_event_project(
         .document(event_id)
         .collection(REGISTRATIONS_SUBCOLLECTION)
     )
-    my_regs = list(regs_ref.where("user_id", "==", user_uid).get())
-    if not my_regs:
-        my_regs = list(regs_ref.where("member_uids", "array_contains", user_uid).get())
+    my_regs = _registrations_for_user(regs_ref, user_uid)
 
     active_regs = [r for r in my_regs if _active_registration(r.to_dict() or {})]
     if not active_regs:
@@ -3133,6 +3821,23 @@ def submit_event_project(
     reg_doc = active_regs[0]
     reg_data = reg_doc.to_dict() or {}
     now_timestamp = now_iso()
+
+    # Enforce that required team questions must be filled before submitting deliverables
+    custom_fields = event.custom_registration_fields or []
+    reg_custom_responses = dict(reg_data.get("custom_responses") or {})
+    sub_custom_fields = payload.custom_fields or {}
+    for cf in custom_fields:
+        if cf.applies_to == "team" and cf.required:
+            val = sub_custom_fields.get(cf.field_id)
+            if val is None or (isinstance(val, str) and not val.strip()):
+                val = reg_custom_responses.get(cf.field_id)
+            if val is None or (isinstance(val, str) and not val.strip()):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"'{cf.label}' is required for your team before submitting deliverables. Please provide a value.",
+                )
+            if val is not None:
+                reg_custom_responses[cf.field_id] = val
 
     sub_dict = {
         "repo_url": payload.repo_url,
@@ -3148,6 +3853,7 @@ def submit_event_project(
 
     update_payload: Dict[str, Any] = {
         "submission": sub_dict,
+        "custom_responses": reg_custom_responses,
         "updated_at": now_timestamp,
     }
     if payload.problem_statement_id is not None:
@@ -3155,6 +3861,14 @@ def submit_event_project(
         update_payload["problem_statement_id"] = payload.problem_statement_id
 
     reg_doc.reference.update(update_payload)
+
+    # Refinement 3: Sync submission across all registration docs in member_uids
+    member_list = reg_data.get("member_uids") or []
+    for m_uid in member_list:
+        if m_uid != reg_doc.id:
+            m_snap = regs_ref.document(m_uid).get()
+            if m_snap.exists:
+                m_snap.reference.update(update_payload)
 
     # Sync idea to linked SPG if problem_statement_id was provided
     if payload.problem_statement_id is not None:
@@ -3243,9 +3957,7 @@ def attach_registration_idea(
         .document(event_id)
         .collection(REGISTRATIONS_SUBCOLLECTION)
     )
-    my_regs = list(regs_ref.where("user_id", "==", user_uid).get())
-    if not my_regs:
-        my_regs = list(regs_ref.where("member_uids", "array_contains", user_uid).get())
+    my_regs = _registrations_for_user(regs_ref, user_uid)
 
     active_regs = [r for r in my_regs if _active_registration(r.to_dict() or {})]
     if not active_regs:
@@ -3356,9 +4068,7 @@ def update_member_custom_responses(
         .document(event_id)
         .collection(REGISTRATIONS_SUBCOLLECTION)
     )
-    my_regs = list(regs_ref.where("user_id", "==", user_uid).get())
-    if not my_regs:
-        my_regs = list(regs_ref.where("member_uids", "array_contains", user_uid).get())
+    my_regs = _registrations_for_user(regs_ref, user_uid)
 
     active_regs = [r for r in my_regs if _active_registration(r.to_dict() or {})]
     if not active_regs:
@@ -3390,11 +4100,23 @@ def update_member_custom_responses(
             custom_responses[k] = v
 
     member_responses[user_uid] = user_responses
-    reg_doc.reference.update({
+    update_data = {
         "member_responses": member_responses,
         "custom_responses": custom_responses,
         "updated_at": now_timestamp,
-    })
+    }
+    reg_doc.reference.update(update_data)
+
+    # Sync team custom responses across teammates in member_uids
+    member_list = reg_data.get("member_uids") or []
+    for m_uid in member_list:
+        if m_uid != reg_doc.id:
+            m_snap = regs_ref.document(m_uid).get()
+            if m_snap.exists:
+                m_snap.reference.update({
+                    "custom_responses": custom_responses,
+                    "updated_at": now_timestamp,
+                })
 
     return {"success": True, "responses": user_responses, "custom_responses": custom_responses}
 

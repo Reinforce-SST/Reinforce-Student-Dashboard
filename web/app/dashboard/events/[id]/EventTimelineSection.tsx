@@ -2,12 +2,14 @@
 
 import React, { useState, useEffect } from "react";
 import type { TimelineItemSchema } from "@/types/event-matrix";
+import { parseDateOrIST } from "@/lib/eventsData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import styles from "./EventDetail.module.css";
 
 function formatMilestoneTime(startStr: string, endStr?: string | null): string {
   try {
-    const start = new Date(startStr);
+    const start = parseDateOrIST(startStr);
+    if (!start) return startStr;
     const startPart = start.toLocaleDateString("en-IN", {
       timeZone: "Asia/Kolkata",
       month: "short",
@@ -17,7 +19,8 @@ function formatMilestoneTime(startStr: string, endStr?: string | null): string {
       hour12: true,
     });
     if (!endStr) return startPart;
-    const end = new Date(endStr);
+    const end = parseDateOrIST(endStr);
+    if (!end) return startPart;
     const endPart = end.toLocaleTimeString("en-IN", {
       timeZone: "Asia/Kolkata",
       hour: "numeric",
@@ -54,16 +57,16 @@ export default function EventTimelineSection({
 
   // Sort chronologically by start_time
   const sorted = [...timeline].sort((a, b) => {
-    const tA = new Date(a.start_time).getTime();
-    const tB = new Date(b.start_time).getTime();
+    const tA = parseDateOrIST(a.start_time)?.getTime() ?? 0;
+    const tB = parseDateOrIST(b.start_time)?.getTime() ?? 0;
     return tA - tB;
   });
 
   return (
     <div className={styles.timelineStepperContainer}>
       {sorted.map((item, index) => {
-        const startMs = new Date(item.start_time).getTime();
-        const endMs = item.end_time ? new Date(item.end_time).getTime() : startMs + 3600000;
+        const startMs = parseDateOrIST(item.start_time)?.getTime() ?? 0;
+        const endMs = item.end_time ? (parseDateOrIST(item.end_time)?.getTime() ?? startMs + 3600000) : startMs + 3600000;
 
         let status: "completed" | "in_progress" | "upcoming" = "upcoming";
         if (item.status_override) {

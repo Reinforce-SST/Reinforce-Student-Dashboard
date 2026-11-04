@@ -40,15 +40,18 @@ def ensure_app():
     """Initialise the Firebase Admin app once, and return it."""
     global _app
     if _app is None:
-        if firebase_admin._apps:
+        try:
             _app = firebase_admin.get_app()
-        else:
-            settings = get_settings()
-            cred_path = _resolve_credentials_path(settings.firebase_credentials_path)
-            cred = credentials.Certificate(cred_path)
-            _app = firebase_admin.initialize_app(
-                cred, {"storageBucket": settings.firebase_storage_bucket}
-            )
+        except Exception:
+            try:
+                settings = get_settings()
+                cred_path = _resolve_credentials_path(settings.firebase_credentials_path)
+                cred = credentials.Certificate(cred_path)
+                _app = firebase_admin.initialize_app(
+                    cred, {"storageBucket": settings.firebase_storage_bucket}
+                )
+            except ValueError:
+                _app = firebase_admin.get_app()
     return _app
 
 

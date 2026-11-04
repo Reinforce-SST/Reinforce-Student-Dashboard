@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { useMember } from "@/lib/useMember";
 import { loadAllEvents } from "@/lib/memberData";
 import { appCache } from "@/lib/cache";
+import { parseDateOrIST } from "@/lib/eventsData";
+import { api, type InvitationItem } from "@/lib/api";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import PaginationBar from "@/components/dashboard/PaginationBar";
 import LoadingBar from "@/components/dashboard/LoadingBar";
@@ -32,13 +34,15 @@ export type CalendarEventItem = {
 };
 
 function mapEventToCalendarItem(ev: any, now = Date.now(), isAdmin = false): CalendarEventItem {
-  const start = new Date(ev.schedule.start_time);
+  const start = parseDateOrIST(ev.schedule.start_time) || new Date(ev.schedule.start_time);
   const startMs = start.getTime();
-  const endMs = ev.schedule.end_time
-    ? new Date(ev.schedule.end_time).getTime()
-    : (Number.isFinite(startMs)
-        ? startMs + (ev.schedule.duration_minutes ? ev.schedule.duration_minutes * 60_000 : 7_200_000)
-        : null);
+  const end = ev.schedule.end_time ? parseDateOrIST(ev.schedule.end_time) : null;
+  const endMs =
+    end !== null && end !== undefined
+      ? end.getTime()
+      : (Number.isFinite(startMs)
+          ? startMs + (ev.schedule.duration_minutes ? ev.schedule.duration_minutes * 60_000 : 7_200_000)
+          : null);
 
   const isCompleted = ev.status === "completed" || (endMs !== null && endMs <= now);
   const isDraft = ev.status === "draft";
@@ -46,10 +50,11 @@ function mapEventToCalendarItem(ev: any, now = Date.now(), isAdmin = false): Cal
     (ev.status === "ongoing" || (Number.isFinite(startMs) && startMs <= now && (endMs !== null ? endMs > now : true)));
   const isEnded = isCompleted;
 
-  const monthStr = start.toLocaleString("en-US", { month: "short" }).toUpperCase();
-  const dayNum = start.getDate();
-  const yearNum = start.getFullYear();
+  const monthStr = start.toLocaleString("en-US", { timeZone: "Asia/Kolkata", month: "short" }).toUpperCase();
+  const dayNum = parseInt(start.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric" }), 10);
+  const yearNum = parseInt(start.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", year: "numeric" }), 10);
   const timeStr = start.toLocaleString("en-US", {
+    timeZone: "Asia/Kolkata",
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
@@ -116,6 +121,47 @@ export default function EventsManagementClient() {
   });
   const [loading, setLoading] = useState(() => !appCache.has("events:all"));
   const [loadError, setLoadError] = useState("");
+  const [eventInvites, setEventInvites] = useState<InvitationItem[]>([]);
+  const [actionInProgress, setActionInProgress] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+    api.listMyInvitations(token, "pending")
+      .then((invs) => {
+        if (!active) return;
+        setEventInvites(invs.filter((i) => i.type === "event_team" || i.type === "event_spg"));
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [token]);
+
+  const handleAcceptInvite = async (inv: InvitationItem) => {
+    if (actionInProgress) return;
+    setActionInProgress(inv.id);
+    try {
+      await api.acceptInvitation(token, inv.id);
+      setEventInvites((prev) => prev.filter((i) => i.id !== inv.id));
+      router.push(`/dashboard/events/${inv.target_id || inv.event_id}`);
+    } catch (err) {
+      console.error("Failed to accept invitation", err);
+    } finally {
+      setActionInProgress(null);
+    }
+  };
+
+  const handleDeclineInvite = async (inv: InvitationItem) => {
+    if (actionInProgress) return;
+    setActionInProgress(inv.id);
+    try {
+      await api.declineInvitation(token, inv.id);
+      setEventInvites((prev) => prev.filter((i) => i.id !== inv.id));
+    } catch (err) {
+      console.error("Failed to decline invitation", err);
+    } finally {
+      setActionInProgress(null);
+    }
+  };
 
   // Current calendar month view (default to current date)
   const [currentCalendarDate, setCurrentCalendarDate] = useState(() => new Date());
@@ -330,6 +376,129 @@ export default function EventsManagementClient() {
           })}
         </div>
       </div>
+
+      {/* Incoming Event Team Invitations Banner */}
+      {eventInvites.length > 0 && (
+        <div
+          style={{
+            background: "rgba(229, 183, 49, 0.08)",
+            border: "1px solid rgba(229, 183, 49, 0.4)",
+            borderRadius: "10px",
+            padding: "16px 20px",
+            marginBottom: "20px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "12px",
+          }}
+          aria-label="Pending Event Invitations"
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div
+                style={{
+                  width: "28px",
+                  height: "28px",
+                  borderRadius: "50%",
+                  background: "#e5b731",
+                  color: "#121214",
+                  fontWeight: "800",
+                  fontSize: "13px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                ✉
+              </div>
+              <span style={{ fontSize: "14px", fontWeight: "750", color: "#ffffff" }}>
+                Pending Event Team Invitations ({eventInvites.length})
+              </span>
+            </div>
+            <span style={{ fontSize: "12px", color: "#a1a1aa" }}>
+              Accept to join your squad and unlock team features on the event page
+            </span>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "10px" }}>
+            {eventInvites.map((inv) => (
+              <div
+                key={inv.id}
+                style={{
+                  background: "#18181c",
+                  border: "1px solid #31343a",
+                  borderRadius: "8px",
+                  padding: "12px 14px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "10px",
+                }}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                  <span style={{ fontSize: "14px", fontWeight: "700", color: "#ffffff" }}>
+                    {inv.target_name || "Event Team"}
+                  </span>
+                  <span style={{ fontSize: "12px", color: "#e5b731", fontWeight: "600" }}>
+                    Team: {inv.team_name || "Team"}
+                  </span>
+                  <span style={{ fontSize: "11px", color: "#8c8c98" }}>
+                    Invited by {inv.inviter_name} ({inv.inviter_email || "Lead"})
+                  </span>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "auto" }}>
+                  <button
+                    type="button"
+                    disabled={actionInProgress === inv.id}
+                    onClick={() => handleAcceptInvite(inv)}
+                    style={{
+                      flex: 1,
+                      background: "#e5b731",
+                      color: "#121214",
+                      border: "none",
+                      borderRadius: "4px",
+                      padding: "6px 10px",
+                      fontSize: "12px",
+                      fontWeight: "750",
+                      cursor: "pointer",
+                      textAlign: "center",
+                    }}
+                  >
+                    {actionInProgress === inv.id ? "Joining..." : "Accept"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={actionInProgress === inv.id}
+                    onClick={() => handleDeclineInvite(inv)}
+                    style={{
+                      background: "#27272a",
+                      color: "#d4d4d8",
+                      border: "1px solid #3f3f46",
+                      borderRadius: "4px",
+                      padding: "6px 10px",
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Decline
+                  </button>
+                  <Link
+                    href={`/dashboard/events/${inv.target_id || inv.event_id}`}
+                    style={{
+                      fontSize: "12px",
+                      color: "#a1a1aa",
+                      padding: "6px 8px",
+                      textDecoration: "underline",
+                    }}
+                  >
+                    View
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Main 2-Column Content */}
       <div className={styles.mainLayout}>

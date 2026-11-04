@@ -3,7 +3,13 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { api, type EventSummaryItem, type EventDocument, type LearningResource, type ResourceType } from "@/lib/api";
-import { getEventGraduationBatches } from "@/lib/eventsData";
+import {
+  getEventGraduationBatches,
+  toISTInputString,
+  fromISTInputString,
+  parseDateOrIST,
+  formatEventDisplayDate,
+} from "@/lib/eventsData";
 import {
   RESOURCE_TYPES,
   eventResourceCategoryPath,
@@ -23,38 +29,6 @@ import type {
   SubmissionCustomField,
 } from "@/types/event-matrix";
 import styles from "./Admin.module.css";
-
-function formatDateTimeInput(isoStr?: string | null): string {
-  if (!isoStr) return "";
-  try {
-    const d = new Date(isoStr);
-    if (isNaN(d.getTime())) return "";
-    return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-      .toISOString()
-      .slice(0, 16);
-  } catch {
-    return "";
-  }
-}
-
-function formatEventDisplayDate(startStr?: string | null): string {
-  if (!startStr) return "Date TBD";
-  try {
-    const d = new Date(startStr);
-    if (isNaN(d.getTime())) return startStr;
-    return d.toLocaleDateString("en-IN", {
-      timeZone: "Asia/Kolkata",
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    });
-  } catch {
-    return startStr;
-  }
-}
 
 export default function AdminEventEditPanel({
   token,
@@ -284,9 +258,9 @@ export default function AdminEventEditPanel({
         setRoom(ev.venue_info?.room || "");
         setMeetingUrl(ev.venue_info?.meeting_url || "");
 
-        setStartDateTime(formatDateTimeInput(ev.schedule?.start_time));
-        setEndDateTime(formatDateTimeInput(ev.schedule?.end_time));
-        setRegDeadline(formatDateTimeInput(ev.schedule?.registration_deadline));
+        setStartDateTime(ev.schedule?.start_time || "");
+        setEndDateTime(ev.schedule?.end_time || "");
+        setRegDeadline(ev.schedule?.registration_deadline || "");
 
         setDescription(ev.description || "");
         setDetailedInfo(ev.detailed_info || "");
@@ -459,11 +433,11 @@ export default function AdminEventEditPanel({
     setErrorMessage(null);
 
     try {
-      const startDateObj = new Date(startDateTime);
-      const endDateObj = endDateTime ? new Date(endDateTime) : null;
-      const deadlineDateObj = regDeadline ? new Date(regDeadline) : null;
+      const startDateObj = parseDateOrIST(startDateTime);
+      const endDateObj = endDateTime ? parseDateOrIST(endDateTime) : null;
+      const deadlineDateObj = regDeadline ? parseDateOrIST(regDeadline) : null;
 
-      if (Number.isNaN(startDateObj.getTime()) || (endDateObj && Number.isNaN(endDateObj.getTime()))) {
+      if (!startDateObj || Number.isNaN(startDateObj.getTime()) || (endDateObj && Number.isNaN(endDateObj.getTime()))) {
         throw new Error("Enter valid event dates.");
       }
       if (endDateObj && endDateObj <= startDateObj) {
@@ -1042,8 +1016,8 @@ export default function AdminEventEditPanel({
                   <label className={styles.formLabel}>Start Date & Time</label>
                   <input
                     type="datetime-local"
-                    value={startDateTime}
-                    onChange={(e) => setStartDateTime(e.target.value)}
+                    value={toISTInputString(startDateTime)}
+                    onChange={(e) => setStartDateTime(fromISTInputString(e.target.value))}
                     className={styles.formInput}
                     required
                   />
@@ -1052,8 +1026,8 @@ export default function AdminEventEditPanel({
                   <label className={styles.formLabel}>End Date & Time</label>
                   <input
                     type="datetime-local"
-                    value={endDateTime}
-                    onChange={(e) => setEndDateTime(e.target.value)}
+                    value={toISTInputString(endDateTime)}
+                    onChange={(e) => setEndDateTime(fromISTInputString(e.target.value))}
                     className={styles.formInput}
                   />
                 </div>
@@ -1061,8 +1035,8 @@ export default function AdminEventEditPanel({
                   <label className={styles.formLabel}>Registration Deadline</label>
                   <input
                     type="datetime-local"
-                    value={regDeadline}
-                    onChange={(e) => setRegDeadline(e.target.value)}
+                    value={toISTInputString(regDeadline)}
+                    onChange={(e) => setRegDeadline(fromISTInputString(e.target.value))}
                     className={styles.formInput}
                   />
                 </div>
@@ -1787,9 +1761,9 @@ export default function AdminEventEditPanel({
                   </label>
                   <input
                     type="datetime-local"
-                    value={formatDateTimeInput(teamSettings.lock_rosters_at)}
+                    value={toISTInputString(teamSettings.lock_rosters_at)}
                     onChange={(e) => {
-                      const val = e.target.value ? new Date(e.target.value).toISOString() : null;
+                      const val = e.target.value ? fromISTInputString(e.target.value) : null;
                       setTeamSettings((prev) => ({ ...prev, lock_rosters_at: val }));
                     }}
                     className={styles.formInput}
@@ -1852,9 +1826,9 @@ export default function AdminEventEditPanel({
                         <label style={{ fontSize: "11px", color: "#8c8c98" }}>Start Time</label>
                         <input
                           type="datetime-local"
-                          value={formatDateTimeInput(item.start_time)}
+                          value={toISTInputString(item.start_time)}
                           onChange={(e) => {
-                            const val = e.target.value ? new Date(e.target.value).toISOString() : "";
+                            const val = e.target.value ? fromISTInputString(e.target.value) : "";
                             setTimelineItems((prev) =>
                               prev.map((m, i) => (i === idx ? { ...m, start_time: val } : m))
                             );
@@ -1867,9 +1841,9 @@ export default function AdminEventEditPanel({
                         <label style={{ fontSize: "11px", color: "#8c8c98" }}>End Time (Optional)</label>
                         <input
                           type="datetime-local"
-                          value={formatDateTimeInput(item.end_time)}
+                          value={toISTInputString(item.end_time)}
                           onChange={(e) => {
-                            const val = e.target.value ? new Date(e.target.value).toISOString() : undefined;
+                            const val = e.target.value ? fromISTInputString(e.target.value) : undefined;
                             setTimelineItems((prev) =>
                               prev.map((m, i) => (i === idx ? { ...m, end_time: val } : m))
                             );
@@ -1956,7 +1930,7 @@ export default function AdminEventEditPanel({
                       {
                         id: `milestone_${Date.now().toString(36)}`,
                         title: "New Milestone",
-                        start_time: new Date().toISOString(),
+                        start_time: startDateTime || new Date().toISOString(),
                         is_submission_deadline: false,
                       },
                     ])

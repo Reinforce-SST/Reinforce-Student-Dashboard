@@ -1,14 +1,20 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useMember } from "@/lib/useMember";
 import { api } from "@/lib/api";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import MemberPicker, { type PickedMember } from "@/components/dashboard/MemberPicker";
-import { type EventDocument, type LearningResource, type EventRegistration, type IdeaSummary } from "@/lib/api";
+import {
+  type EventDocument,
+  type LearningResource,
+  type EventRegistration,
+  type IdeaSummary,
+  type TeamPoolMemberSummary,
+} from "@/lib/api";
 import type { EventSubmissionPayload, TimelineItemSchema } from "@/types/event-matrix";
-import { formatEventDuration, getEventGraduationBatches } from "@/lib/eventsData";
+import { formatEventDuration, getEventGraduationBatches, parseDateOrIST } from "@/lib/eventsData";
 import EventAttendeesPanel from "./EventAttendeesPanel";
 import EventAttendancePanel from "./EventAttendancePanel";
 import EventTimelineSection from "./EventTimelineSection";
@@ -16,6 +22,9 @@ import RsvpIntakeModal from "./RsvpIntakeModal";
 import ProjectSubmissionModal from "./ProjectSubmissionModal";
 import EditResponsesModal from "./EditResponsesModal";
 import AttachProblemModal from "@/components/dashboard/AttachProblemModal";
+import CancelRegistrationModal from "./CancelRegistrationModal";
+import InviteTeammatesModal from "./InviteTeammatesModal";
+import type { InvitationItem } from "@/lib/api";
 import styles from "./EventDetail.module.css";
 
 function formatInline(text: string): React.ReactNode[] {
@@ -197,6 +206,199 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
   const [switchingTrack, setSwitchingTrack] = useState(false);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [memberProfilesMap, setMemberProfilesMap] = useState<Record<string, { full_name?: string; avatar_url?: string }>>({});
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [pendingEventInvite, setPendingEventInvite] = useState<InvitationItem | null>(null);
+  const [invitationBusy, setInvitationBusy] = useState(false);
+  const [outgoingTeamInvites, setOutgoingTeamInvites] = useState<InvitationItem[]>([]);
+
+  // Team Formation & Merge Hub State
+  const [squadNameInput, setSquadNameInput] = useState("");
+  const [squadTrackInput, setSquadTrackInput] = useState("");
+  const [squadSubmitting, setSquadSubmitting] = useState(false);
+  const [squadActionError, setSquadActionError] = useState<string | null>(null);
+
+  const [joinCodeInput, setJoinCodeInput] = useState("");
+  const [joinCodeBusy, setJoinCodeBusy] = useState(false);
+  const [joinCodeError, setJoinCodeError] = useState<string | null>(null);
+
+  const [poolQuery, setPoolQuery] = useState("");
+  const [debouncedPoolQuery, setDebouncedPoolQuery] = useState("");
+  const [onlyLooking, setOnlyLooking] = useState(false);
+  const [poolMembers, setPoolMembers] = useState<TeamPoolMemberSummary[]>([]);
+  const [poolLoading, setPoolLoading] = useState(false);
+  const [poolError, setPoolError] = useState<string | null>(null);
+  const [invitingUid, setInvitingUid] = useState<string | null>(null);
+  const [inviteSuccessMap, setInviteSuccessMap] = useState<Record<string, boolean>>({});
+  const [mergeBusyId, setMergeBusyId] = useState<string | null>(null);
+
+  // Debounced search query for registered peers pool
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedPoolQuery(poolQuery.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [poolQuery]);
+
+  const eventIdStr = event?.id || "";
+  const tokenStr = token || "";
+
+  // Registered peers pool query with strict primitive dependency guardrail
+  useEffect(() => {
+    if (!tokenStr || !eventIdStr || !isRegistered || event.participation?.mode !== "team") {
+      setPoolMembers([]);
+      return;
+    }
+    let active = true;
+    setPoolLoading(true);
+    setPoolError(null);
+    api
+      .getTeamPool(tokenStr, eventIdStr, debouncedPoolQuery || undefined, onlyLooking)
+      .then((res) => {
+        if (!active) return;
+        setPoolMembers(res.members || []);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setPoolError(err instanceof Error ? err.message : "Failed to load registered peers pool.");
+      })
+      .finally(() => {
+        if (!active) return;
+        setPoolLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [tokenStr, eventIdStr, debouncedPoolQuery, onlyLooking, isRegistered]);
+
+  const refreshRegistration = useCallback(async () => {
+    if (!tokenStr || !eventIdStr) return;
+    try {
+      const res = await api.myEventRegistration(tokenStr, eventIdStr);
+      setIsRegistered(res.is_registered);
+      setMyRegistration(res.registration);
+      setRegistrationStatus(res.registration?.status || "");
+    } catch (e) {
+      console.error(e);
+    }
+  }, [tokenStr, eventIdStr]);
+
+  const handleCreateSquad = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tokenStr || !eventIdStr || !squadNameInput.trim()) return;
+    setSquadSubmitting(true);
+    setSquadActionError(null);
+    try {
+      const updated = await api.createOrUpdateTeam(tokenStr, eventIdStr, {
+        team_name: squadNameInput.trim(),
+        selected_track_id: squadTrackInput || undefined,
+        looking_for_team: true,
+      });
+      setMyRegistration(updated);
+      setSquadNameInput("");
+      await refreshRegistration();
+    } catch (err) {
+      setSquadActionError(err instanceof Error ? err.message : "Failed to create squad.");
+    } finally {
+      setSquadSubmitting(false);
+    }
+  };
+
+  const handleJoinByCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tokenStr || !eventIdStr || !joinCodeInput.trim()) return;
+    setJoinCodeBusy(true);
+    setJoinCodeError(null);
+    try {
+      const updated = await api.mergeTeam(tokenStr, eventIdStr, {
+        invite_code: joinCodeInput.trim().toUpperCase(),
+      });
+      setMyRegistration(updated);
+      setJoinCodeInput("");
+      await refreshRegistration();
+    } catch (err) {
+      setJoinCodeError(err instanceof Error ? err.message : "Failed to join squad.");
+    } finally {
+      setJoinCodeBusy(false);
+    }
+  };
+
+  const handleAcceptMergeInvite = async (inviteId: string) => {
+    if (!tokenStr || !eventIdStr) return;
+    setMergeBusyId(inviteId);
+    try {
+      const updated = await api.mergeTeam(tokenStr, eventIdStr, { invite_id: inviteId });
+      setMyRegistration(updated);
+      await refreshRegistration();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to accept merge invite.");
+    } finally {
+      setMergeBusyId(null);
+    }
+  };
+
+  const handleDeclineMergeInvite = async (inviteId: string) => {
+    if (!tokenStr || !eventIdStr) return;
+    try {
+      await api.declineTeamInvite(tokenStr, eventIdStr, inviteId);
+      await refreshRegistration();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleInviteCandidate = async (targetUid: string) => {
+    if (!tokenStr || !eventIdStr) return;
+    setInvitingUid(targetUid);
+    try {
+      await api.inviteTeamMember(tokenStr, eventIdStr, targetUid);
+      setInviteSuccessMap((prev) => ({ ...prev, [targetUid]: true }));
+      await refreshRegistration();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to send merge invite.");
+    } finally {
+      setInvitingUid(null);
+    }
+  };
+
+  const handleLeaveSquad = async () => {
+    if (!tokenStr || !eventIdStr) return;
+    const confirmed = window.confirm(
+      "Are you sure you want to leave your current squad? You will return to solo registered state without cancelling your event RSVP."
+    );
+    if (!confirmed) return;
+    setRegistrationBusy(true);
+    try {
+      const updated = await api.leaveTeam(tokenStr, eventIdStr);
+      setMyRegistration(updated);
+      await refreshRegistration();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to leave squad.");
+    } finally {
+      setRegistrationBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!token || !event?.id || !isRegistered) return;
+    let active = true;
+    api.listTargetInvitations(token, event.id, "pending").then((invs) => {
+      if (!active) return;
+      setOutgoingTeamInvites(invs);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [token, event?.id, isRegistered, showInviteModal]);
+
+  useEffect(() => {
+    if (!token || !event?.id) return;
+    let active = true;
+    api.listMyInvitations(token, "pending").then((invs) => {
+      if (!active) return;
+      const match = invs.find((i) => i.target_id === event.id || i.event_id === event.id);
+      setPendingEventInvite(match || null);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [token, event?.id, isRegistered]);
 
   useEffect(() => {
     if (!token || !myRegistration) return;
@@ -240,13 +442,13 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
     if (!event.timeline || event.timeline.length === 0 || !currentTime) return null;
     const now = currentTime;
     const sorted = [...event.timeline].sort(
-      (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+      (a, b) => (parseDateOrIST(a.start_time)?.getTime() ?? 0) - (parseDateOrIST(b.start_time)?.getTime() ?? 0)
     );
     // 1. Current in-progress milestone
     const current = sorted.find((m) => {
       if (m.status_override === "live") return true;
-      const s = new Date(m.start_time).getTime();
-      const e = m.end_time ? new Date(m.end_time).getTime() : s + 3600000;
+      const s = parseDateOrIST(m.start_time)?.getTime() ?? 0;
+      const e = m.end_time ? (parseDateOrIST(m.end_time)?.getTime() ?? s + 3600000) : s + 3600000;
       return now >= s && now <= e;
     });
     if (current) return { item: current, isCurrent: true };
@@ -254,7 +456,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
     // 2. Next upcoming milestone
     const upcoming = sorted.find((m) => {
       if (m.status_override === "upcoming") return true;
-      const s = new Date(m.start_time).getTime();
+      const s = parseDateOrIST(m.start_time)?.getTime() ?? 0;
       return s > now;
     });
     if (upcoming) return { item: upcoming, isCurrent: false };
@@ -264,7 +466,8 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
 
   useEffect(() => {
     const deadline = event.schedule?.registration_deadline;
-    const check = () => setDeadlinePassed(Boolean(deadline && Date.parse(deadline) <= Date.now()));
+    const deadlineTime = parseDateOrIST(deadline)?.getTime();
+    const check = () => setDeadlinePassed(Boolean(deadlineTime && deadlineTime <= Date.now()));
     const initial = setTimeout(check, 0);
     const interval = setInterval(check, 60_000);
     return () => { clearTimeout(initial); clearInterval(interval); };
@@ -316,24 +519,66 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
     return () => { active = false; };
   }, [token, event.id, linkedResourceIdsKey]);
 
+  const handleConfirmCancelRegistration = async () => {
+    setRegistrationBusy(true);
+    setRegistrationError("");
+    try {
+      await api.cancelEventRegistration(token, event.id);
+      setIsRegistered(false);
+      setMyRegistration(null);
+      setRegistrationStatus("");
+      setOutgoingTeamInvites([]);
+      setTeammates([]);
+      setShowCancelModal(false);
+      const refreshed = await api.getEvent(event.id, token);
+      setRegisteredCount(refreshed.stats?.registered_count ?? Math.max(0, registeredCount - 1));
+    } catch (err) {
+      setRegistrationError(err instanceof Error ? err.message : "Failed to cancel registration.");
+    } finally {
+      setRegistrationBusy(false);
+    }
+  };
+
+  const handleAcceptInvite = async (invId: string) => {
+    setInvitationBusy(true);
+    try {
+      await api.acceptInvitation(token, invId);
+      setPendingEventInvite(null);
+      const [regRes, freshEvent] = await Promise.all([
+        api.myEventRegistration(token, event.id),
+        api.getEvent(event.id, token),
+      ]);
+      if (regRes.is_registered && regRes.registration) {
+        setIsRegistered(true);
+        setMyRegistration(regRes.registration);
+        setRegistrationStatus(regRes.registration.status);
+      }
+      setRegisteredCount(freshEvent.stats?.registered_count ?? registeredCount);
+    } catch (err: unknown) {
+      setRegistrationError(err instanceof Error ? err.message : "Failed to accept invitation.");
+    } finally {
+      setInvitationBusy(false);
+    }
+  };
+
+  const handleDeclineInvite = async (invId: string) => {
+    setInvitationBusy(true);
+    try {
+      await api.declineInvitation(token, invId);
+      setPendingEventInvite(null);
+    } catch (err: unknown) {
+      setRegistrationError(err instanceof Error ? err.message : "Failed to decline invitation.");
+    } finally {
+      setInvitationBusy(false);
+    }
+  };
+
   const handleToggleRsvp = async () => {
     if (registrationBusy || registrationLoading) return;
     setRegistrationError("");
 
     if (isRegistered) {
-      setRegistrationBusy(true);
-      try {
-        await api.cancelEventRegistration(token, event.id);
-        setIsRegistered(false);
-        setMyRegistration(null);
-        setRegistrationStatus("");
-        const refreshed = await api.getEvent(event.id, token);
-        setRegisteredCount(refreshed.stats?.registered_count ?? Math.max(0, registeredCount - 1));
-      } catch (err) {
-        setRegistrationError(err instanceof Error ? err.message : "Failed to cancel registration.");
-      } finally {
-        setRegistrationBusy(false);
-      }
+      setShowCancelModal(true);
       return;
     }
 
@@ -453,28 +698,30 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
   };
 
   const formattedStartTime = event.schedule?.start_time
-    ? new Date(event.schedule.start_time).toLocaleString("en-US", {
+    ? (parseDateOrIST(event.schedule.start_time)?.toLocaleString("en-US", {
+        timeZone: "Asia/Kolkata",
         weekday: "short",
         month: "short",
         day: "numeric",
         hour: "2-digit",
         minute: "2-digit",
         timeZoneName: "short",
-      })
+      }) ?? "TBD")
     : "TBD";
 
   const formattedDeadline = event.schedule?.registration_deadline
-    ? new Date(event.schedule.registration_deadline).toLocaleString("en-US", {
+    ? (parseDateOrIST(event.schedule.registration_deadline)?.toLocaleString("en-US", {
+        timeZone: "Asia/Kolkata",
         month: "short",
         day: "numeric",
         hour: "2-digit",
         minute: "2-digit",
-      })
+      }) ?? "No deadline specified")
     : "No deadline specified";
 
   const durationMinutes = event.schedule?.duration_minutes ?? (
     event.schedule?.start_time && event.schedule?.end_time
-      ? Math.max(0, Math.round((new Date(event.schedule.end_time).getTime() - new Date(event.schedule.start_time).getTime()) / 60000))
+      ? Math.max(0, Math.round(((parseDateOrIST(event.schedule.end_time)?.getTime() ?? 0) - (parseDateOrIST(event.schedule.start_time)?.getTime() ?? 0)) / 60000))
       : null
   );
 
@@ -510,6 +757,87 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
           <span className={styles.typeChip}>{(event.event_type || "EVENT").toUpperCase()}</span>
         </div>
       </div>
+
+      {/* Incoming Event Team Invitation Banner */}
+      {pendingEventInvite && !isRegistered && (
+        <div
+          style={{
+            background: "rgba(229, 183, 49, 0.08)",
+            border: "1px solid rgba(229, 183, 49, 0.4)",
+            borderRadius: "10px",
+            padding: "16px 20px",
+            marginBottom: "16px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "14px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div
+              style={{
+                width: "36px",
+                height: "36px",
+                borderRadius: "50%",
+                background: "#e5b731",
+                color: "#141416",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontWeight: "800",
+                fontSize: "15px",
+              }}
+            >
+              ✉
+            </div>
+            <div>
+              <div style={{ fontSize: "14px", fontWeight: "750", color: "#ffffff" }}>
+                Team Invitation: Join &quot;{pendingEventInvite.team_name || "Team"}&quot;
+              </div>
+              <div style={{ fontSize: "12.5px", color: "#a1a1aa" }}>
+                Invited by {pendingEventInvite.inviter_name} ({pendingEventInvite.inviter_email || "Lead"})
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <button
+              type="button"
+              disabled={invitationBusy}
+              onClick={() => handleAcceptInvite(pendingEventInvite.id)}
+              style={{
+                background: "#e5b731",
+                color: "#141416",
+                border: "none",
+                borderRadius: "6px",
+                padding: "8px 16px",
+                fontSize: "13px",
+                fontWeight: "750",
+                cursor: "pointer",
+              }}
+            >
+              {invitationBusy ? "Joining..." : "Accept & Join Team"}
+            </button>
+            <button
+              type="button"
+              disabled={invitationBusy}
+              onClick={() => handleDeclineInvite(pendingEventInvite.id)}
+              style={{
+                background: "#27272a",
+                color: "#d4d4d8",
+                border: "1px solid #3f3f46",
+                borderRadius: "6px",
+                padding: "8px 14px",
+                fontSize: "13px",
+                fontWeight: "600",
+                cursor: "pointer",
+              }}
+            >
+              Decline
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Hero Banner Card */}
       <section className={styles.heroBanner} aria-label="Event Hero Banner">
@@ -576,7 +904,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                         ? "Test Register Team (Draft)"
                         : "Test RSVP (Draft)"
                       : event.participation?.mode === "team"
-                      ? "Register Team (RSVP)"
+                      ? "Register Team"
                       : "RSVP for Event"}
                   </>
                 )}
@@ -666,9 +994,9 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                   <div className={styles.rosterLockWarning}>
                     <MemberIcon name="clock" size={12} />
                     <span>
-                      {currentTime > 0 && currentTime >= new Date(event.team_settings.lock_rosters_at).getTime()
+                      {currentTime > 0 && currentTime >= (parseDateOrIST(event.team_settings.lock_rosters_at)?.getTime() ?? 0)
                         ? "🔒 Rosters Locked"
-                        : `Rosters lock ${new Date(event.team_settings.lock_rosters_at).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`}
+                        : `Rosters lock ${parseDateOrIST(event.team_settings.lock_rosters_at)?.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) ?? ""}`}
                     </span>
                   </div>
                 )}
@@ -801,178 +1129,642 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
         <div className={styles.mainGrid}>
         {/* Left Main Column */}
         <div className={styles.contentColumn}>
-          {/* Team Participation Box (For Team-based events) */}
-          {isRegistered && (event.participation?.mode === "team" || Boolean(myRegistration?.team_name)) && (
-            <section className={styles.deliverablesCard} style={{ borderColor: "#3f424c", marginBottom: "16px" }} aria-label="Your Registered Team">
-              <div className={styles.deliverablesHeader}>
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                  <h2 className={styles.sectionTitle} style={{ margin: 0 }}>
-                    <MemberIcon name="users" size={18} />
-                    Your Team: <span style={{ color: "#e5b731" }}>{myRegistration?.team_name || "Registered Team"}</span>
-                  </h2>
-                  <span
-                    className={styles.deliverablesStatusTag}
-                    style={{
-                      background: "rgba(229, 183, 49, 0.12)",
-                      color: "#e5b731",
-                      border: "1px solid rgba(229, 183, 49, 0.3)",
-                    }}
-                  >
-                    👥 Team Participation ({myRegistration?.member_uids?.length || 1} Members)
-                  </span>
-                </div>
+          {/* Phase 2: Team Formation & Merge Hub (For Team Events) */}
+          {isRegistered && (event.participation?.mode === "team" || Boolean(myRegistration?.team_id || myRegistration?.team_name)) && (() => {
+            const hasSquad = Boolean(myRegistration?.team_id);
+            const isLeader = Boolean(myRegistration?.is_team_leader);
+            const squadMembers = myRegistration?.member_uids || (profile?.id ? [profile.id] : []);
+            const squadSize = hasSquad ? squadMembers.length : 1;
+            const isEligibleSquad = squadSize >= minTeamSize;
+            const isFullSquad = squadSize >= maxTeamSize;
+            const pendingInvites = myRegistration?.pending_invites || [];
 
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  {myRegistration?.spg_id && (
-                    <Link
-                      href={`/dashboard/spg/${encodeURIComponent(myRegistration.spg_id)}`}
-                      className={styles.openSubmissionModalBtn}
-                      style={{ textDecoration: "none", background: "rgba(229, 183, 49, 0.15)", color: "#e5b731", border: "1px solid rgba(229, 183, 49, 0.3)" }}
-                    >
-                      <MemberIcon name="sparkles" size={13} />
-                      View Team SPG →
-                    </Link>
-                  )}
-                </div>
-              </div>
+            return (
+              <section
+                className={styles.deliverablesCard}
+                style={{ borderColor: "#3f424c", marginBottom: "16px", background: "#141416" }}
+                aria-label="Team Formation and Merge Hub"
+              >
+                {/* 1. Squad Status Header */}
+                <div className={styles.deliverablesHeader} style={{ flexWrap: "wrap", gap: "10px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                    <h2 className={styles.sectionTitle} style={{ margin: 0 }}>
+                      <MemberIcon name="users" size={18} />
+                      {hasSquad ? (
+                        <>
+                          Squad: <span style={{ color: "#E5B731" }}>{myRegistration?.team_name || "Active Squad"}</span>
+                        </>
+                      ) : (
+                        <span>Solo Participant <span style={{ color: "#a1a1aa", fontSize: "14px", fontWeight: "normal" }}>(Registered Pool)</span></span>
+                      )}
+                    </h2>
 
-              {/* Team Details Grid: Roster, Invite Code, Problem Statement */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px", marginTop: "14px" }}>
-                {/* Team Roster Column */}
-                <div style={{ background: "#151518", border: "1px solid #2b2e35", borderRadius: "8px", padding: "14px" }}>
-                  <div style={{ fontSize: "11px", fontWeight: "700", color: "#8c8c98", textTransform: "uppercase", marginBottom: "8px" }}>
-                    Team Roster
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                    {/* Team Leader */}
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#1c1c22", padding: "8px 10px", borderRadius: "6px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "#e5b731", color: "#000", fontWeight: "800", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          L
-                        </div>
-                        <span style={{ fontSize: "13px", fontWeight: "700", color: "#ffffff" }}>
-                          {(() => {
-                            const leadUid = myRegistration?.user_id || "";
-                            if (leadUid === profile?.id) return `${profile.full_name || "You"} (You)`;
-                            if (myRegistration?.user_profile?.full_name && myRegistration.user_profile.full_name !== leadUid) {
-                              return myRegistration.user_profile.full_name;
-                            }
-                            return memberProfilesMap[leadUid]?.full_name || "Team Lead";
-                          })()}
-                        </span>
-                      </div>
-                      <span style={{ fontSize: "10px", fontWeight: "800", background: "rgba(229, 183, 49, 0.2)", color: "#e5b731", padding: "2px 6px", borderRadius: "4px" }}>
-                        LEAD
-                      </span>
-                    </div>
-
-                    {/* Teammates */}
-                    {(myRegistration?.member_profiles?.length ? myRegistration.member_profiles : (myRegistration?.member_uids || []).filter(u => u !== myRegistration?.user_id).map(u => ({ id: u, full_name: u, email: "" }))).map((m: any, idx: number) => {
-                      const uid = m.id || m;
-                      if (uid === myRegistration?.user_id) return null;
-                      const rawName = m.full_name || uid;
-                      const displayName =
-                        rawName && rawName !== uid
-                          ? rawName
-                          : uid === profile?.id
-                          ? profile.full_name || "You"
-                          : memberProfilesMap[uid]?.full_name || "Team Member";
-                      return (
-                        <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#1c1c22", padding: "8px 10px", borderRadius: "6px" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                            <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "#2b2e35", color: "#d4d4d8", fontWeight: "700", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                              {displayName.slice(0, 1).toUpperCase()}
-                            </div>
-                            <span style={{ fontSize: "13px", color: "#e4e4e7" }}>
-                              {displayName} {uid === profile?.id && "(You)"}
-                            </span>
-                          </div>
-                          <span style={{ fontSize: "10px", color: "#8c8c98" }}>MEMBER</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Team Controls & Problem Statement */}
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                  {/* Team Invite Code */}
-                  {myRegistration?.invite_code && (
-                    <div style={{ background: "#151518", border: "1px solid #2b2e35", borderRadius: "8px", padding: "14px" }}>
-                      <div style={{ fontSize: "11px", fontWeight: "700", color: "#8c8c98", textTransform: "uppercase", marginBottom: "6px" }}>
-                        Team Invite Code
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                        <code style={{ fontSize: "14px", fontWeight: "750", background: "#0c0c0e", padding: "6px 12px", borderRadius: "6px", color: "#e5b731", border: "1px solid #31343a", letterSpacing: "0.08em" }}>
-                          {myRegistration.invite_code}
-                        </code>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (myRegistration?.invite_code) {
-                              navigator.clipboard.writeText(myRegistration.invite_code);
-                              setCopiedCode(true);
-                              setTimeout(() => setCopiedCode(false), 2000);
-                            }
-                          }}
-                          className={styles.copyCodeBtn}
-                          style={{ padding: "6px 12px", fontSize: "12px" }}
-                        >
-                          <MemberIcon name="tag" size={12} />
-                          {copiedCode ? "Copied!" : "Copy Code"}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Attached Problem Statement from Idea Jar */}
-                  <div style={{ background: "#151518", border: "1px solid #2b2e35", borderRadius: "8px", padding: "14px", flex: 1 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                      <div style={{ fontSize: "11px", fontWeight: "700", color: "#8c8c98", textTransform: "uppercase" }}>
-                        Problem Statement (Idea Jar)
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowAttachModal(true)}
+                    {/* Status Badge */}
+                    {!hasSquad || (squadSize === 1 && minTeamSize > 1) ? (
+                      <span
                         style={{
-                          background: "rgba(229, 183, 49, 0.12)",
-                          border: "1px solid rgba(229, 183, 49, 0.3)",
-                          color: "#e5b731",
-                          fontSize: "11px",
-                          fontWeight: "750",
+                          background: "rgba(229, 183, 49, 0.15)",
+                          color: "#E5B731",
+                          border: "1px solid rgba(229, 183, 49, 0.4)",
                           padding: "3px 8px",
                           borderRadius: "4px",
-                          cursor: "pointer",
+                          fontSize: "11px",
+                          fontWeight: "800",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
                         }}
                       >
-                        {attachedIdea ? "Change Problem" : "+ Pick Problem"}
-                      </button>
-                    </div>
-
-                    {attachedIdea ? (
-                      <div>
-                        <div style={{ fontWeight: "750", fontSize: "13px", color: "#ffffff", marginTop: "4px" }}>
-                          {attachedIdea.title}
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "6px" }}>
-                          <span style={{ fontSize: "10px", fontWeight: "750", background: "rgba(229, 183, 49, 0.15)", color: "#e5b731", padding: "2px 6px", borderRadius: "4px", textTransform: "uppercase" }}>
-                            {attachedIdea.track || "GENERAL"}
-                          </span>
-                          <Link href={`/dashboard/ideas/${encodeURIComponent(attachedIdea.id)}`} style={{ fontSize: "11.5px", color: "#a1a1aa", textDecoration: "underline" }}>
-                            View in Idea Jar →
-                          </Link>
-                        </div>
-                      </div>
+                        ⚠️ SOLO / UNASSIGNED (1/{minTeamSize} min required)
+                      </span>
+                    ) : !isEligibleSquad ? (
+                      <span
+                        style={{
+                          background: "rgba(245, 158, 11, 0.15)",
+                          color: "#f59e0b",
+                          border: "1px solid rgba(245, 158, 11, 0.4)",
+                          padding: "3px 8px",
+                          borderRadius: "4px",
+                          fontSize: "11px",
+                          fontWeight: "800",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                        }}
+                      >
+                        ⏳ SQUAD FORMING ({squadSize}/{minTeamSize} min required)
+                      </span>
                     ) : (
-                      <p style={{ margin: "4px 0 0 0", fontSize: "12px", color: "#71717a" }}>
-                        No problem statement attached to this team yet. Choose an approved problem from the Idea Jar to sync with the Event Matrix.
-                      </p>
+                      <span
+                        style={{
+                          background: "rgba(74, 222, 128, 0.15)",
+                          color: "#4ade80",
+                          border: "1px solid rgba(74, 222, 128, 0.4)",
+                          padding: "3px 8px",
+                          borderRadius: "4px",
+                          fontSize: "11px",
+                          fontWeight: "800",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                        }}
+                      >
+                        ✓ ELIGIBLE SQUAD ({squadSize}/{maxTeamSize} Members)
+                      </span>
                     )}
                   </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    {myRegistration?.spg_id && (
+                      <Link
+                        href={`/dashboard/spg/${encodeURIComponent(myRegistration.spg_id)}`}
+                        className={styles.openSubmissionModalBtn}
+                        style={{ textDecoration: "none", background: "rgba(229, 183, 49, 0.15)", color: "#e5b731", border: "1px solid rgba(229, 183, 49, 0.3)" }}
+                      >
+                        <MemberIcon name="sparkles" size={13} />
+                        View Team SPG →
+                      </Link>
+                    )}
+
+                    {hasSquad && (
+                      <button
+                        type="button"
+                        onClick={handleLeaveSquad}
+                        style={{
+                          background: "rgba(244, 63, 94, 0.12)",
+                          color: "#f43f5e",
+                          border: "1px solid rgba(244, 63, 94, 0.3)",
+                          borderRadius: "6px",
+                          padding: "6px 10px",
+                          fontSize: "11.5px",
+                          fontWeight: "750",
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "5px",
+                        }}
+                      >
+                        Leave Squad
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRegistrationError("");
+                        setShowCancelModal(true);
+                      }}
+                      style={{
+                        background: "rgba(248, 113, 113, 0.1)",
+                        color: "#f87171",
+                        border: "1px solid rgba(248, 113, 113, 0.25)",
+                        borderRadius: "6px",
+                        padding: "6px 10px",
+                        fontSize: "11.5px",
+                        fontWeight: "700",
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "5px",
+                      }}
+                    >
+                      <MemberIcon name="trash" size={12} />
+                      Cancel RSVP
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </section>
-          )}
+
+                {/* 2. Incoming Merge Invites Tray */}
+                {pendingInvites.length > 0 && (
+                  <div
+                    style={{
+                      background: "rgba(229, 183, 49, 0.08)",
+                      border: "1px solid rgba(229, 183, 49, 0.4)",
+                      borderRadius: "8px",
+                      padding: "12px 14px",
+                      marginTop: "12px",
+                    }}
+                  >
+                    <div style={{ fontSize: "11.5px", fontWeight: "800", color: "#E5B731", textTransform: "uppercase", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                      <span>✉</span> Incoming Squad Merge Invites ({pendingInvites.length})
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                      {pendingInvites.map((inv) => (
+                        <div
+                          key={inv.invite_id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            flexWrap: "wrap",
+                            gap: "8px",
+                            background: "#1c1c22",
+                            border: "1px solid #31343a",
+                            padding: "8px 12px",
+                            borderRadius: "6px",
+                          }}
+                        >
+                          <div>
+                            <span style={{ fontWeight: "750", color: "#ffffff", fontSize: "13px" }}>
+                              &quot;{inv.from_team_name}&quot;
+                            </span>
+                            <span style={{ fontSize: "12px", color: "#a1a1aa", marginLeft: "6px" }}>
+                              invited you to merge (Leader: {inv.from_leader_name})
+                            </span>
+                          </div>
+                          <div style={{ display: "flex", gap: "6px" }}>
+                            <button
+                              type="button"
+                              disabled={mergeBusyId === inv.invite_id}
+                              onClick={() => handleAcceptMergeInvite(inv.invite_id)}
+                              style={{
+                                background: "#E5B731",
+                                color: "#121214",
+                                border: "none",
+                                borderRadius: "4px",
+                                padding: "4px 10px",
+                                fontSize: "11.5px",
+                                fontWeight: "800",
+                                cursor: "pointer",
+                              }}
+                            >
+                              {mergeBusyId === inv.invite_id ? "Merging..." : "Accept & Merge"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeclineMergeInvite(inv.invite_id)}
+                              style={{
+                                background: "rgba(255, 255, 255, 0.08)",
+                                color: "#a1a1aa",
+                                border: "1px solid rgba(255, 255, 255, 0.15)",
+                                borderRadius: "4px",
+                                padding: "4px 10px",
+                                fontSize: "11.5px",
+                                fontWeight: "700",
+                                cursor: "pointer",
+                              }}
+                            >
+                              Dismiss
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. Main Two-Column Formation Grid */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "16px", marginTop: "14px" }}>
+                  
+                  {/* Left Column: My Squad or Create/Join */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                    {hasSquad ? (
+                      <div style={{ background: "#151518", border: "1px solid #2b2e35", borderRadius: "8px", padding: "14px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                          <span style={{ fontSize: "11px", fontWeight: "800", color: "#8c8c98", textTransform: "uppercase" }}>
+                            Squad Roster ({squadSize}/{maxTeamSize})
+                          </span>
+                          {myRegistration?.selected_track_id && (
+                            <span style={{ fontSize: "10.5px", fontWeight: "750", background: "rgba(229, 183, 49, 0.15)", color: "#E5B731", padding: "2px 6px", borderRadius: "4px" }}>
+                              Track: {myRegistration.selected_track_id}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Monospace Invite Code */}
+                        {myRegistration?.invite_code && (
+                          <div style={{ background: "#0e0e11", border: "1px solid #282a30", borderRadius: "6px", padding: "8px 12px", marginBottom: "12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                            <div>
+                              <div style={{ fontSize: "10px", color: "#71717a", textTransform: "uppercase", fontWeight: "700" }}>Squad Invite Code</div>
+                              <code style={{ fontSize: "16px", fontWeight: "850", color: "#E5B731", letterSpacing: "0.1em" }}>
+                                {myRegistration.invite_code}
+                              </code>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (myRegistration?.invite_code) {
+                                  navigator.clipboard.writeText(myRegistration.invite_code);
+                                  setCopiedCode(true);
+                                  setTimeout(() => setCopiedCode(false), 2000);
+                                }
+                              }}
+                              className={styles.copyCodeBtn}
+                              style={{ padding: "5px 10px", fontSize: "11.5px" }}
+                            >
+                              {copiedCode ? "✓ Copied" : "Copy Code 📋"}
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Roster List */}
+                        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                          {squadMembers.map((uid) => {
+                            const isThisLeader = (myRegistration?.user_id === uid && myRegistration.is_team_leader) || (squadMembers[0] === uid && !myRegistration?.user_id);
+                            const prof = memberProfilesMap[uid] || myRegistration?.member_profiles?.find((p) => p.id === uid);
+                            const name = uid === profile?.id ? `${profile.full_name || "You"} (You)` : (prof?.full_name || `Member ${uid.slice(0, 5)}`);
+                            return (
+                              <div
+                                key={uid}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  background: "#1c1c22",
+                                  padding: "7px 10px",
+                                  borderRadius: "6px",
+                                }}
+                              >
+                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                  <div
+                                    style={{
+                                      width: "24px",
+                                      height: "24px",
+                                      borderRadius: "50%",
+                                      background: isThisLeader ? "#E5B731" : "#2b2e35",
+                                      color: isThisLeader ? "#141416" : "#ffffff",
+                                      fontWeight: "800",
+                                      fontSize: "11px",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                    }}
+                                  >
+                                    {isThisLeader ? "L" : "M"}
+                                  </div>
+                                  <span style={{ fontSize: "13px", fontWeight: isThisLeader ? "750" : "500", color: "#ffffff" }}>
+                                    {name}
+                                  </span>
+                                </div>
+                                <span style={{ fontSize: "10px", fontWeight: "750", color: isThisLeader ? "#E5B731" : "#71717a" }}>
+                                  {isThisLeader ? "LEADER" : "MEMBER"}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Problem Statement Card */}
+                        <div style={{ marginTop: "14px", borderTop: "1px solid #23252b", paddingTop: "12px" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                            <span style={{ fontSize: "11px", fontWeight: "800", color: "#8c8c98", textTransform: "uppercase" }}>
+                              Problem Statement (Idea Jar)
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setShowAttachModal(true)}
+                              style={{
+                                background: "rgba(229, 183, 49, 0.12)",
+                                border: "1px solid rgba(229, 183, 49, 0.3)",
+                                color: "#E5B731",
+                                fontSize: "11px",
+                                fontWeight: "750",
+                                padding: "2px 8px",
+                                borderRadius: "4px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              {attachedIdea ? "Change" : "+ Pick Problem"}
+                            </button>
+                          </div>
+                          {attachedIdea ? (
+                            <div style={{ fontSize: "12.5px", color: "#e4e4e7" }}>
+                              <strong style={{ color: "#ffffff" }}>{attachedIdea.title}</strong>
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: "12px", color: "#71717a" }}>
+                              No problem statement linked yet. Pick an approved problem to sync to Matrix.
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Team Custom Intake Questions (Hardware, Repository, Pitch, etc.) */}
+                        {(() => {
+                          const teamQuestions = (event.custom_registration_fields || []).filter(
+                            (cf) => cf.applies_to === "team"
+                          );
+                          if (teamQuestions.length === 0) return null;
+                          return (
+                            <div style={{ marginTop: "14px", borderTop: "1px solid #23252b", paddingTop: "12px" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                                <span style={{ fontSize: "11px", fontWeight: "800", color: "#8c8c98", textTransform: "uppercase" }}>
+                                  Team Intake Details ({teamQuestions.length})
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowEditResponsesModal(true)}
+                                  style={{
+                                    background: "rgba(229, 183, 49, 0.12)",
+                                    border: "1px solid rgba(229, 183, 49, 0.3)",
+                                    color: "#E5B731",
+                                    fontSize: "11px",
+                                    fontWeight: "750",
+                                    padding: "2px 8px",
+                                    borderRadius: "4px",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  Edit Answers
+                                </button>
+                              </div>
+                              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                {teamQuestions.map((tq) => {
+                                  const val = myRegistration?.custom_responses?.[tq.field_id];
+                                  const hasVal = val !== undefined && val !== null && val !== "";
+                                  return (
+                                    <div
+                                      key={tq.field_id}
+                                      style={{
+                                        background: "#121215",
+                                        padding: "6px 10px",
+                                        borderRadius: "6px",
+                                        border: "1px solid #282a30",
+                                        fontSize: "12px",
+                                      }}
+                                    >
+                                      <div style={{ display: "flex", justifyContent: "space-between", color: "#a1a1aa", fontSize: "11px", marginBottom: "2px" }}>
+                                        <span>{tq.label} {tq.required && <span style={{ color: "#ef4444" }}>*</span>}</span>
+                                        {tq.required && !hasVal && (
+                                          <span style={{ color: "#f87171", fontSize: "10px", fontWeight: "750" }}>
+                                            Required before submit
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div style={{ color: hasVal ? "#ffffff" : "#71717a", fontWeight: hasVal ? "600" : "normal" }}>
+                                        {hasVal ? String(val) : "Not answered yet"}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    ) : (
+                      /* Solo State: Create Squad OR Merge via Code */
+                      <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                        {/* Option A: Create Squad */}
+                        <div style={{ background: "#151518", border: "1px solid #2b2e35", borderRadius: "8px", padding: "14px" }}>
+                          <div style={{ fontSize: "11px", fontWeight: "800", color: "#8c8c98", textTransform: "uppercase", marginBottom: "10px" }}>
+                            Option A: Create Your Squad
+                          </div>
+                          {squadActionError && (
+                            <div style={{ color: "#f87171", fontSize: "12px", marginBottom: "8px" }}>
+                              {squadActionError}
+                            </div>
+                          )}
+                          <form onSubmit={handleCreateSquad} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                            <input
+                              type="text"
+                              placeholder="Squad Name (e.g. Cyber Knights)"
+                              value={squadNameInput}
+                              onChange={(e) => setSquadNameInput(e.target.value)}
+                              className={styles.teamFieldInput}
+                              required
+                            />
+                            {event.event_tracks && event.event_tracks.length > 0 && (
+                              <select
+                                value={squadTrackInput}
+                                onChange={(e) => setSquadTrackInput(e.target.value)}
+                                className={styles.fieldSelect}
+                              >
+                                <option value="">-- Choose Track (Optional) --</option>
+                                {event.event_tracks.map((t) => (
+                                  <option key={t.track_id} value={t.track_id}>{t.name}</option>
+                                ))}
+                              </select>
+                            )}
+                            <button
+                              type="submit"
+                              disabled={squadSubmitting || !squadNameInput.trim()}
+                              style={{
+                                background: "#E5B731",
+                                color: "#121214",
+                                border: "none",
+                                borderRadius: "6px",
+                                padding: "8px 14px",
+                                fontSize: "12px",
+                                fontWeight: "800",
+                                cursor: "pointer",
+                                marginTop: "4px",
+                              }}
+                            >
+                              {squadSubmitting ? "Creating Squad..." : "Create Squad & Get Code →"}
+                            </button>
+                          </form>
+                        </div>
+
+                        {/* Option B: Join via Code */}
+                        <div style={{ background: "#151518", border: "1px solid #2b2e35", borderRadius: "8px", padding: "14px" }}>
+                          <div style={{ fontSize: "11px", fontWeight: "800", color: "#8c8c98", textTransform: "uppercase", marginBottom: "10px" }}>
+                            Option B: Join Squad with Code
+                          </div>
+                          {joinCodeError && (
+                            <div style={{ color: "#f87171", fontSize: "12px", marginBottom: "8px" }}>
+                              {joinCodeError}
+                            </div>
+                          )}
+                          <form onSubmit={handleJoinByCode} style={{ display: "flex", gap: "8px" }}>
+                            <input
+                              type="text"
+                              placeholder="6-Digit Team Code"
+                              maxLength={6}
+                              value={joinCodeInput}
+                              onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                              className={styles.teamFieldInput}
+                              style={{ textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: "750" }}
+                              required
+                            />
+                            <button
+                              type="submit"
+                              disabled={joinCodeBusy || joinCodeInput.trim().length !== 6}
+                              style={{
+                                background: "rgba(229, 183, 49, 0.15)",
+                                color: "#E5B731",
+                                border: "1px solid rgba(229, 183, 49, 0.4)",
+                                borderRadius: "6px",
+                                padding: "8px 14px",
+                                fontSize: "12px",
+                                fontWeight: "800",
+                                cursor: "pointer",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {joinCodeBusy ? "Joining..." : "Join Squad"}
+                            </button>
+                          </form>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right Column: Scoped Registered Peers Pool ("Find & Merge Registered Peers") */}
+                  <div style={{ background: "#151518", border: "1px solid #2b2e35", borderRadius: "8px", padding: "14px", display: "flex", flexDirection: "column" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", flexWrap: "wrap", gap: "6px" }}>
+                      <span style={{ fontSize: "11px", fontWeight: "800", color: "#8c8c98", textTransform: "uppercase" }}>
+                        Find & Merge Registered Peers
+                      </span>
+                      <label style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "11.5px", color: "#a1a1aa", cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={onlyLooking}
+                          onChange={(e) => setOnlyLooking(e.target.checked)}
+                          style={{ accentColor: "#E5B731" }}
+                        />
+                        Looking for squad only
+                      </label>
+                    </div>
+
+                    {/* Search Input */}
+                    <div style={{ position: "relative", marginBottom: "10px" }}>
+                      <input
+                        type="text"
+                        placeholder="Search registered peers by name or email..."
+                        value={poolQuery}
+                        onChange={(e) => setPoolQuery(e.target.value)}
+                        className={styles.teamFieldInput}
+                        style={{ paddingLeft: "10px", fontSize: "12.5px" }}
+                      />
+                    </div>
+
+                    {/* Pool Listing */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: "8px", flex: 1, maxHeight: "320px", overflowY: "auto" }}>
+                      {poolLoading ? (
+                        <div style={{ padding: "16px", textAlign: "center", color: "#71717a", fontSize: "12.5px" }}>
+                          Scanning registered attendees...
+                        </div>
+                      ) : poolError ? (
+                        <div style={{ padding: "12px", color: "#f87171", fontSize: "12px" }}>
+                          {poolError}
+                        </div>
+                      ) : poolMembers.length === 0 ? (
+                        <div style={{ padding: "20px", textAlign: "center", color: "#71717a", fontSize: "12.5px" }}>
+                          No matching registered peers found.
+                        </div>
+                      ) : (
+                        poolMembers.map((cand) => {
+                          const candTeamSize = cand.current_team_size || 1;
+                          const combinedSize = squadSize + candTeamSize;
+                          const isOverflow = combinedSize > maxTeamSize;
+                          const wasInvited = Boolean(inviteSuccessMap[cand.uid]);
+
+                          return (
+                            <div
+                              key={cand.uid}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                background: "#1c1c22",
+                                border: "1px solid #282a30",
+                                padding: "8px 10px",
+                                borderRadius: "6px",
+                                gap: "10px",
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+                                <div
+                                  style={{
+                                    width: "28px",
+                                    height: "28px",
+                                    borderRadius: "50%",
+                                    background: "#2b2e35",
+                                    color: "#E5B731",
+                                    fontWeight: "800",
+                                    fontSize: "12px",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {(cand.full_name || "M").slice(0, 1).toUpperCase()}
+                                </div>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontSize: "13px", fontWeight: "700", color: "#ffffff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {cand.full_name}
+                                  </div>
+                                  <div style={{ fontSize: "11px", color: "#8c8c98" }}>
+                                    {cand.team_name ? (
+                                      <span>Squad: &quot;{cand.team_name}&quot; ({candTeamSize}/{maxTeamSize})</span>
+                                    ) : (
+                                      <span>Solo Attendee • 1/{maxTeamSize}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                disabled={isOverflow || wasInvited || invitingUid === cand.uid}
+                                onClick={() => handleInviteCandidate(cand.uid)}
+                                title={isOverflow ? `Combined size (${combinedSize}) exceeds cap of ${maxTeamSize}` : undefined}
+                                style={{
+                                  background: wasInvited ? "rgba(74, 222, 128, 0.15)" : isOverflow ? "#1e1e24" : "rgba(229, 183, 49, 0.15)",
+                                  color: wasInvited ? "#4ade80" : isOverflow ? "#52525b" : "#E5B731",
+                                  border: `1px solid ${wasInvited ? "rgba(74, 222, 128, 0.3)" : isOverflow ? "#2e2e36" : "rgba(229, 183, 49, 0.3)"}`,
+                                  borderRadius: "4px",
+                                  padding: "4px 8px",
+                                  fontSize: "11px",
+                                  fontWeight: "750",
+                                  cursor: isOverflow || wasInvited ? "not-allowed" : "pointer",
+                                  whiteSpace: "nowrap",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {wasInvited ? "✓ Invited" : isOverflow ? "Cap Full" : invitingUid === cand.uid ? "Inviting..." : "+ Invite to Merge"}
+                              </button>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            );
+          })()}
 
           {/* Project Deliverables Card (For Registered Attendees) */}
           {isRegistered && (() => {
@@ -1517,7 +2309,6 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
         token={token}
         currentUserId={profile?.id || ""}
         initialTeamName={teamName}
-        initialTeammates={teammates}
         onSuccess={(res: any) => {
           setIsRegistered(true);
           setRegistrationStatus(res?.status || "registered");
@@ -1542,6 +2333,8 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
         timeline={event.timeline}
         initialSubmission={myRegistration?.submission}
         submissionConfig={event.submission_config}
+        teamCustomFields={(event.custom_registration_fields || []).filter((cf) => cf.applies_to === "team")}
+        initialTeamResponses={myRegistration?.custom_responses || {}}
         token={token}
         onSuccess={(savedSubmission) => {
           setMyRegistration((prev) => (prev ? { ...prev, submission: savedSubmission } : prev));
@@ -1604,6 +2397,44 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
               setMyRegistration(fresh.registration);
             }
           });
+        }}
+      />
+
+      {/* Cancel Registration Confirmation Modal with SPG Deletion Warning */}
+      <CancelRegistrationModal
+        isOpen={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        onConfirm={handleConfirmCancelRegistration}
+        isTeamLead={myRegistration?.user_id === profile?.id}
+        teamName={myRegistration?.team_name}
+        hasSpg={Boolean(myRegistration?.spg_id)}
+        eventTitle={event.title}
+        loading={registrationBusy}
+        error={registrationError}
+      />
+
+      {/* Team Invitation Modal */}
+      <InviteTeammatesModal
+        isOpen={showInviteModal}
+        onClose={() => setShowInviteModal(false)}
+        token={token}
+        type={myRegistration?.spg_id ? "event_spg" : "event_team"}
+        targetId={event.id}
+        targetName={event.title}
+        teamName={myRegistration?.team_name}
+        eventId={event.id}
+        spgId={myRegistration?.spg_id || null}
+        currentMemberUids={myRegistration?.member_uids || [myRegistration?.user_id || ""]}
+        maxTeamSize={event.participation?.max_team_size || 4}
+        onInviteSent={() => {
+          api.myEventRegistration(token, event.id).then((fresh) => {
+            if (fresh.is_registered && fresh.registration) {
+              setMyRegistration(fresh.registration);
+            }
+          });
+          api.listTargetInvitations(token, event.id, "pending").then((invs) => {
+            setOutgoingTeamInvites(invs);
+          }).catch(() => {});
         }}
       />
     </div>

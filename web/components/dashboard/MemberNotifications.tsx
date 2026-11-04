@@ -4,13 +4,14 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { ContributionRecord } from "@/lib/contributionData";
-import { memberUpdates, upcomingEventNotices, type MemberNotification } from "@/lib/notifications";
+import { memberUpdates, upcomingEventNotices, invitationNotices, type MemberNotification } from "@/lib/notifications";
 import { useMember } from "@/lib/useMember";
 import MemberIcon from "./MemberIcon";
 import styles from "./MemberNotifications.module.css";
 
 type Feed = {
   identity: string;
+  invitations: MemberNotification[];
   updates: MemberNotification[];
   events: MemberNotification[];
   failures: number;
@@ -52,14 +53,16 @@ export default function MemberNotifications() {
   useEffect(() => {
     let active = true;
     const load = async () => {
-      const [tickets, contributions, events] = await Promise.allSettled([
+      const [tickets, contributions, events, invs] = await Promise.allSettled([
         api.myTickets(token),
         api.getMyContributions<ContributionRecord>(token, 50),
         api.listEvents(token, { timeline: "upcoming", limit: 100 }),
+        api.listMyInvitations(token, "pending"),
       ]);
       if (!active) return;
       setFeed({
         identity,
+        invitations: invitationNotices(invs.status === "fulfilled" ? invs.value : []),
         updates: memberUpdates(
           tickets.status === "fulfilled" ? tickets.value : [],
           contributions.status === "fulfilled" ? contributions.value.items : [],
@@ -103,7 +106,7 @@ export default function MemberNotifications() {
 
   const current = feed?.identity === identity ? feed : null;
   const unread = current && seen?.identity === identity
-    ? current.updates.filter(item => !seen.keys.includes(item.key)).length : 0;
+    ? [...current.invitations, ...current.updates].filter(item => !seen.keys.includes(item.key)).length : 0;
 
   return <div className={styles.wrap} ref={container}>
     <button type="button" className={styles.trigger} aria-label={unread ? `Notifications, ${unread} new` : "Notifications"} aria-expanded={open} aria-controls="member-notifications" onClick={() => { setOpen(value => !value); if (!open) setAttempt(value => value + 1); }}>
@@ -114,6 +117,7 @@ export default function MemberNotifications() {
       <header className={styles.panelHeader}><div><span className={styles.eyebrow}>Your activity</span><h2>Notifications</h2></div><button type="button" className={styles.close} onClick={() => setOpen(false)} aria-label="Close notifications"><MemberIcon name="close" size={18} /></button></header>
       {!current ? <p className={styles.message} role="status">Loading updates…</p> : <>
         {current.failures > 0 && <p className={styles.warning} role="alert">{current.failures === 3 ? "Updates could not load." : "Some updates could not load."} <button type="button" onClick={() => { setFeed(null); setAttempt(value => value + 1); }}>Retry</button></p>}
+        {current.invitations.length > 0 && <div className={styles.group}><h3>Pending Invitations</h3><NoticeList items={current.invitations} onNavigate={() => setOpen(false)} /></div>}
         {current.updates.length > 0 && <div className={styles.group}><h3>Ticket &amp; contribution updates</h3><NoticeList items={current.updates} onNavigate={() => setOpen(false)} /></div>}
         {current.events.length > 0 && <div className={styles.group}><h3>Coming up this week</h3><NoticeList items={current.events} onNavigate={() => setOpen(false)} /></div>}
         {current.failures === 0 && current.updates.length === 0 && current.events.length === 0 && <p className={styles.message}>No updates yet. New ticket decisions, contribution reviews, and upcoming events will appear here.</p>}

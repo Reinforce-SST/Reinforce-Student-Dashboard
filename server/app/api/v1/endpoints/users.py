@@ -1,3 +1,7 @@
+try:
+    from google.cloud.firestore_v1.base_query import FieldFilter
+except Exception:
+    FieldFilter = None
 """Unified Users & Students API endpoints.
 
 Implements the specification in server/plan.md (Single Source of Truth: users/{uid}).
@@ -77,12 +81,12 @@ def _normalize_points(points_raw: Any) -> TrackPoints:
 
 def _get_user_live_points(uid: str) -> Optional[TrackPoints]:
     try:
-        docs = (
-            db.collection("contributions")
-            .where("user_id", "==", uid)
-            .where("status", "==", "approved")
-            .stream()
-        )
+        query = db.collection("contributions")
+        if FieldFilter is not None:
+            query = query.where(filter=FieldFilter("user_id", "==", uid)).where(filter=FieldFilter("status", "==", "approved"))
+        else:
+            query = query.where("user_id", "==", uid).where("status", "==", "approved")
+        docs = query.stream()
         totals = {"total": 0, "research": 0, "product": 0, "kaggle": 0, "misc": 0}
         valid_tracks = ("research", "product", "kaggle", "misc")
         has_contrib = False
