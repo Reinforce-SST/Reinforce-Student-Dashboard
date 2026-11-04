@@ -319,16 +319,44 @@ export type AttendeeProfile = {
   points?: number;
 };
 
+export type TeamInviteInfo = {
+  invite_id: string;
+  from_team_id: string;
+  from_team_name: string;
+  from_leader_uid: string;
+  from_leader_name: string;
+  created_at: string;
+};
+
+export type TeamPoolMemberSummary = {
+  uid: string;
+  full_name: string;
+  email: string;
+  avatar_url?: string | null;
+  batch_year?: number | null;
+  team_id?: string | null;
+  team_name?: string | null;
+  current_team_size: number;
+  is_team_leader: boolean;
+  looking_for_team: boolean;
+};
+
 export type EventRegistration = {
   id: string;
   event_id: string;
   user_id: string;
+  uid?: string;
+  team_id?: string | null;
   team_name?: string | null;
+  is_team_leader?: boolean;
+  looking_for_team?: boolean;
   member_uids: string[];
   spg_id?: string | null;
   spg_status?: string | null;
   custom_responses?: Record<string, any>;
+  team_custom_responses?: Record<string, any>;
   member_responses?: Record<string, Record<string, any>>;
+  pending_invites?: TeamInviteInfo[];
   selected_track_id?: string | null;
   invite_code?: string | null;
   submission?: {
@@ -1283,6 +1311,66 @@ export const api = {
     appCache.invalidateTags(["events", "dashboard", `event:${id}`]);
     return res;
   },
+
+  getTeamPool: (token: string, eventId: string, q?: string, onlyLooking?: boolean) => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (onlyLooking) params.set("only_looking", "true");
+    const qs = params.toString();
+    return request<{ members: TeamPoolMemberSummary[]; total: number }>(
+      `/events/${encodeURIComponent(eventId)}/team-pool${qs ? `?${qs}` : ""}`,
+      token
+    );
+  },
+
+  createOrUpdateTeam: (
+    token: string,
+    eventId: string,
+    payload: {
+      team_name: string;
+      selected_track_id?: string | null;
+      team_custom_responses?: Record<string, any>;
+      looking_for_team?: boolean;
+    }
+  ) =>
+    request<EventRegistration>(`/events/${encodeURIComponent(eventId)}/team`, token, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  inviteTeamMember: (token: string, eventId: string, targetUid: string) =>
+    request<{ message: string; invite_id: string }>(
+      `/events/${encodeURIComponent(eventId)}/team/invite`,
+      token,
+      {
+        method: "POST",
+        body: JSON.stringify({ target_uid: targetUid }),
+      }
+    ),
+
+  declineTeamInvite: (token: string, eventId: string, inviteId: string) =>
+    request<{ message: string }>(
+      `/events/${encodeURIComponent(eventId)}/team/invite/${encodeURIComponent(inviteId)}`,
+      token,
+      {
+        method: "DELETE",
+      }
+    ),
+
+  mergeTeam: (
+    token: string,
+    eventId: string,
+    payload: { invite_code?: string; invite_id?: string }
+  ) =>
+    request<EventRegistration>(`/events/${encodeURIComponent(eventId)}/team/merge`, token, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  leaveTeam: (token: string, eventId: string) =>
+    request<EventRegistration>(`/events/${encodeURIComponent(eventId)}/team/leave`, token, {
+      method: "POST",
+    }),
 
   updateRegistrationTrack: (
     token: string,

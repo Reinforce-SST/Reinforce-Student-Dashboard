@@ -3,7 +3,6 @@
 import React, { useState } from "react";
 import type { EventDocument } from "@/lib/api";
 import type { CustomFieldSchema, EventTrackSchema } from "@/types/event-matrix";
-import MemberPicker, { type PickedMember } from "@/components/dashboard/MemberPicker";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import { api } from "@/lib/api";
 import styles from "./EventDetail.module.css";
@@ -15,7 +14,6 @@ interface RsvpIntakeModalProps {
   token: string;
   currentUserId: string;
   initialTeamName?: string;
-  initialTeammates?: PickedMember[];
   onSuccess: (result: { status: string; registration?: any }) => void;
 }
 
@@ -26,13 +24,9 @@ export default function RsvpIntakeModal({
   token,
   currentUserId,
   initialTeamName = "",
-  initialTeammates = [],
   onSuccess,
 }: RsvpIntakeModalProps) {
   const isTeam = event.participation?.mode === "team";
-  const minTeamSize = Math.max(1, event.participation?.min_team_size ?? 1);
-  const maxTeamSize = Math.max(1, event.participation?.max_team_size ?? 1);
-
   const tracks: EventTrackSchema[] = event.event_tracks || [];
   const customFields: CustomFieldSchema[] = event.custom_registration_fields || [];
 
@@ -40,56 +34,24 @@ export default function RsvpIntakeModal({
     tracks.length > 0 ? tracks[0].track_id : ""
   );
   const [teamName, setTeamName] = useState(initialTeamName);
-  const [teammates, setTeammates] = useState<PickedMember[]>(initialTeammates);
-
-  // Field responses: team-level and individual-level for current user
-  const [teamResponses, setTeamResponses] = useState<Record<string, any>>({});
   const [individualResponses, setIndividualResponses] = useState<Record<string, any>>({});
-
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const teamFields = customFields.filter((cf) => cf.applies_to === "team");
-  const individualFields = customFields.filter((cf) => cf.applies_to === "individual");
+  // Under register-first, individual RSVP only prompts for individual fields
+  const individualFields = customFields.filter((cf) => cf.applies_to !== "team");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    // Validation
-    if (isTeam && !teamName.trim()) {
-      setError("Please provide a team name.");
-      return;
-    }
-
-    const memberUids = teammates.map((t) => t.id);
-    if (isTeam && memberUids.length + 1 < minTeamSize) {
-      setError(
-        `This event requires teams of at least ${minTeamSize}. Add ${
-          minTeamSize - 1 - memberUids.length
-        } more ${minTeamSize - 1 - memberUids.length === 1 ? "teammate" : "teammates"}.`
-      );
-      return;
-    }
-
-    // Validate required team fields
-    for (const tf of teamFields) {
-      if (tf.required) {
-        const val = teamResponses[tf.field_id];
-        if (val === undefined || val === null || val === "") {
-          setError(`Please complete the required field: "${tf.label}"`);
-          return;
-        }
-      }
-    }
-
     // Validate required individual fields
     for (const ind of individualFields) {
       if (ind.required) {
         const val = individualResponses[ind.field_id];
-        if (val === undefined || val === null || val === "") {
+        if (val === undefined || val === null || (typeof val === "string" && !val.trim())) {
           setError(`Please complete your individual required field: "${ind.label}"`);
           return;
         }
@@ -99,14 +61,9 @@ export default function RsvpIntakeModal({
     setSubmitting(true);
     try {
       const payload: Parameters<typeof api.registerForEvent>[2] = {
-        team_name: isTeam ? teamName.trim() : undefined,
-        member_uids: isTeam && memberUids.length > 0 ? memberUids : undefined,
+        team_name: isTeam && teamName.trim() ? teamName.trim() : undefined,
         selected_track_id: selectedTrackId || undefined,
-        custom_responses: Object.keys(teamResponses).length > 0 ? teamResponses : undefined,
-        member_responses:
-          Object.keys(individualResponses).length > 0 && currentUserId
-            ? { [currentUserId]: individualResponses }
-            : undefined,
+        custom_responses: individualResponses,
       };
 
       const res = await api.registerForEvent(token, event.id, payload);
@@ -131,7 +88,7 @@ export default function RsvpIntakeModal({
         <div className={styles.modalHeader}>
           <div className={styles.modalTitleBlock}>
             <h2 id="modal-title" className={styles.modalHeading}>
-              Event Registration Intake
+              Event Registration
             </h2>
             <p className={styles.modalSubheading}>{event.title}</p>
           </div>
@@ -149,6 +106,29 @@ export default function RsvpIntakeModal({
           {error && (
             <div role="alert" className={styles.regErrorAlert}>
               {error}
+            </div>
+          )}
+
+          {/* Register-First Guidance Banner */}
+          {isTeam && (
+            <div
+              style={{
+                background: "rgba(229, 183, 49, 0.08)",
+                border: "1px solid rgba(229, 183, 49, 0.3)",
+                borderRadius: "8px",
+                padding: "12px 14px",
+                fontSize: "12.5px",
+                color: "#e4e4e7",
+                lineHeight: "1.5",
+                display: "flex",
+                gap: "10px",
+                alignItems: "flex-start",
+              }}
+            >
+              <span style={{ fontSize: "16px", lineHeight: "1" }}>ℹ️</span>
+              <div>
+                <strong style={{ color: "#E5B731" }}>Register-First Rule:</strong> Every participant registers individually first to answer their own intake questions. Once registered, you will unlock the <strong>Team Formation & Merge Hub</strong> where you can form squads, search registered peers, or merge via code!
+              </div>
             </div>
           )}
 
@@ -189,108 +169,23 @@ export default function RsvpIntakeModal({
             </div>
           )}
 
-          {/* Team Configuration */}
+          {/* Optional Starter Team Name for Team Events */}
           {isTeam && (
             <div className={styles.modalSection}>
               <label className={styles.modalSectionLabel}>
-                Team Registration Details <span className={styles.reqAsterisk}>*</span>
+                Starter Squad Name (Optional)
               </label>
               <div className={styles.teamInputBlock}>
                 <input
                   type="text"
-                  placeholder="Team Name"
+                  placeholder="e.g. Neural Knights (Leave blank to decide later)"
                   value={teamName}
                   onChange={(e) => setTeamName(e.target.value)}
                   className={styles.teamFieldInput}
-                  required
                 />
-
-                {maxTeamSize > 1 && (
-                  <MemberPicker
-                    token={token}
-                    label="Invite Teammates"
-                    selected={teammates}
-                    onChange={setTeammates}
-                    excludeIds={currentUserId ? [currentUserId] : []}
-                    max={maxTeamSize - 1}
-                  />
-                )}
                 <span className={styles.teamHintText}>
-                  You are registered automatically as the team lead. Teammates added here will receive invitations and must accept them to join your squad roster. Teams require {minTeamSize === maxTeamSize ? `${maxTeamSize} members.` : `${minTeamSize}–${maxTeamSize} members.`}
+                  If left blank, you will enter the Registered Pool as a solo participant ready to merge.
                 </span>
-              </div>
-            </div>
-          )}
-
-          {/* Team-Level Intake Questions */}
-          {teamFields.length > 0 && (
-            <div className={styles.modalSection}>
-              <label className={styles.modalSectionLabel}>
-                Team / Project Intake Questions
-              </label>
-              <div className={styles.intakeFieldsStack}>
-                {teamFields.map((field) => (
-                  <div key={field.field_id} className={styles.intakeFieldItem}>
-                    <label className={styles.fieldLabel}>
-                      {field.label}
-                      {field.required && <span className={styles.reqAsterisk}> *</span>}
-                    </label>
-
-                    {field.field_type === "select" ? (
-                      <select
-                        value={teamResponses[field.field_id] || ""}
-                        onChange={(e) =>
-                          setTeamResponses((prev) => ({
-                            ...prev,
-                            [field.field_id]: e.target.value,
-                          }))
-                        }
-                        className={styles.fieldSelect}
-                        required={field.required}
-                      >
-                        <option value="">-- Select an option --</option>
-                        {(field.options || []).map((opt) => (
-                          <option key={opt} value={opt}>
-                            {opt}
-                          </option>
-                        ))}
-                      </select>
-                    ) : field.field_type === "boolean" ? (
-                      <label className={styles.checkboxLabel}>
-                        <input
-                          type="checkbox"
-                          checked={Boolean(teamResponses[field.field_id])}
-                          onChange={(e) =>
-                            setTeamResponses((prev) => ({
-                              ...prev,
-                              [field.field_id]: e.target.checked,
-                            }))
-                          }
-                          className={styles.fieldCheckbox}
-                        />
-                        <span>Yes / Confirm</span>
-                      </label>
-                    ) : (
-                      <input
-                        type={field.field_type === "url" ? "url" : "text"}
-                        placeholder={
-                          field.field_type === "url"
-                            ? "https://..."
-                            : `Enter ${field.label.toLowerCase()}`
-                        }
-                        value={teamResponses[field.field_id] || ""}
-                        onChange={(e) =>
-                          setTeamResponses((prev) => ({
-                            ...prev,
-                            [field.field_id]: e.target.value,
-                          }))
-                        }
-                        className={styles.fieldTextInput}
-                        required={field.required}
-                      />
-                    )}
-                  </div>
-                ))}
               </div>
             </div>
           )}
