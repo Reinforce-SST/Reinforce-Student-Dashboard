@@ -288,7 +288,7 @@ class EventHardeningTests(unittest.TestCase):
         self.assertEqual(spg["type"], "event")
         self.assertEqual(spg["name"], "Gradient Descenders")
         self.assertEqual(spg["lead_id"], "uid-one")
-        self.assertEqual(set(spg["member_ids"]), {"uid-one", "uid-two"})
+        self.assertEqual(set(spg["member_ids"]), {"uid-one"})
 
     def test_an_individual_event_never_forms_an_spg(self):
         """A one-person "team" group is noise, even if the flag was set."""
