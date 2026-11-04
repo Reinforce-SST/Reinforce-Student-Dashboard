@@ -641,7 +641,7 @@ def register_for_event(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Maximum team size is {event.participation.max_team_size}",
             )
-        confirmed_member_uids = [user_uid]
+        confirmed_member_uids = [user_uid] + invited_uids
 
     # 3. Check every participant's profile and event eligibility.
     member_profiles = {}

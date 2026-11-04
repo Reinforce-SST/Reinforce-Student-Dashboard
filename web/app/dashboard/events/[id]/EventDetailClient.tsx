@@ -900,8 +900,12 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                     {!registrationOpen
                       ? "Registration Closed"
                       : isDraftMode
-                      ? "Test Register Now (Draft)"
-                      : "Register Now"}
+                      ? event.participation?.mode === "team"
+                        ? "Test Register Team (Draft)"
+                        : "Test RSVP (Draft)"
+                      : event.participation?.mode === "team"
+                      ? "Register Team"
+                      : "RSVP for Event"}
                   </>
                 )}
               </button>

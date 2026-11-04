@@ -117,6 +117,19 @@ class IdeaDocument(BaseModel):
     approved_at: Optional[str] = None
 
 
+class CreatorProfile(BaseModel):
+    """Author profile information for an Idea proposal."""
+    model_config = ConfigDict(extra="ignore")
+
+    uid: str
+    full_name: str
+    display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    email: Optional[str] = None
+    batch: Optional[str] = None
+    track: Optional[str] = None
+
+
 class IdeaSummary(BaseModel):
     """Idea card summary in discovery feeds and list views."""
     id: str
@@ -133,6 +146,7 @@ class IdeaSummary(BaseModel):
     approved_at: Optional[str] = None
     is_upvoted: Optional[bool] = None
     status: Optional[str] = None
+    creator_profile: Optional[CreatorProfile] = None
 
 
 class IdeaDetail(IdeaSummary):

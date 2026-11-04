@@ -6,10 +6,45 @@ import { api, ApiError, type IdeaDetail, type IdeaSummary } from "@/lib/api";
 import { useMember } from "@/lib/useMember";
 import { useDebounce } from "@/lib/useDebounce";
 import MemberIcon from "@/components/dashboard/MemberIcon";
+import ArticleMarkdown from "@/components/dashboard/ArticleMarkdown";
 import LoadingBar from "@/components/dashboard/LoadingBar";
 import PaginationBar from "@/components/dashboard/PaginationBar";
 import { appCache } from "@/lib/cache";
 import styles from "./IdeaJar.module.css";
+
+function IdeaAuthorRow({ idea }: { idea: IdeaSummary | IdeaDetail }) {
+  const profile = idea.creator_profile;
+  const name = profile?.full_name || profile?.display_name || "Club Member";
+  const avatar = profile?.avatar_url;
+  const initial = (name || "M").charAt(0).toUpperCase();
+
+  return (
+    <div className={styles.authorRow}>
+      {avatar ? (
+        <img
+          src={avatar}
+          alt=""
+          className={styles.authorAvatar}
+          onError={(e) => {
+            (e.currentTarget as HTMLElement).style.display = "none";
+            const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+            if (fallback) fallback.style.display = "inline-flex";
+          }}
+        />
+      ) : null}
+      <span
+        className={styles.authorAvatarFallback}
+        style={{ display: avatar ? "none" : "inline-flex" }}
+      >
+        {initial}
+      </span>
+      <div className={styles.authorMeta}>
+        <span className={styles.authorLabel}>Suggested by</span>
+        <span className={styles.authorName}>{name}</span>
+      </div>
+    </div>
+  );
+}
 
 const TRACK_OPTIONS = [
   { id: "all", label: "All Tracks" },
@@ -316,7 +351,10 @@ export default function IdeaJarClient() {
                 {drawn.difficulty && <span className={styles.difficultyTag}>{drawn.difficulty}</span>}
               </div>
               <h2 className={styles.drawnTitle}>{drawn.title}</h2>
-              <p className={styles.ideaDescription}>{drawn.description}</p>
+              <IdeaAuthorRow idea={drawn} />
+              <div className={styles.ideaDescription}>
+                <ArticleMarkdown content={drawn.description} />
+              </div>
               <div className={styles.drawnActions}>
                 <Link href={`/dashboard/ideas/${encodeURIComponent(drawn.id)}`} className={styles.submitBtn}>
                   Open this idea →
@@ -538,7 +576,10 @@ export default function IdeaJarClient() {
                       <h3 className={styles.ideaTitle}>{idea.title}</h3>
                     </Link>
 
-                    <p className={styles.ideaDescription}>{idea.description}</p>
+                    <IdeaAuthorRow idea={idea} />
+                    <div className={styles.ideaDescription}>
+                      <ArticleMarkdown content={idea.description} />
+                    </div>
 
                     <div className={styles.cardFooter}>
                       <button
@@ -615,7 +656,10 @@ export default function IdeaJarClient() {
                       <h3 className={styles.ideaTitle}>{idea.title}</h3>
                     </Link>
 
-                    <p className={styles.ideaDescription}>{idea.description}</p>
+                    <IdeaAuthorRow idea={idea} />
+                    <div className={styles.ideaDescription}>
+                      <ArticleMarkdown content={idea.description} />
+                    </div>
 
                     <div className={styles.cardFooter}>
                       <button
@@ -689,7 +733,10 @@ export default function IdeaJarClient() {
                       <h3 className={styles.ideaTitle}>{idea.title}</h3>
                     </Link>
 
-                    <p className={styles.ideaDescription}>{idea.description}</p>
+                    <IdeaAuthorRow idea={idea} />
+                    <div className={styles.ideaDescription}>
+                      <ArticleMarkdown content={idea.description} />
+                    </div>
 
                     <div className={styles.cardFooter}>
                       <button
@@ -763,7 +810,10 @@ export default function IdeaJarClient() {
                       <h3 className={styles.ideaTitle}>{idea.title}</h3>
                     </Link>
 
-                    <p className={styles.ideaDescription}>{idea.description}</p>
+                    <IdeaAuthorRow idea={idea} />
+                    <div className={styles.ideaDescription}>
+                      <ArticleMarkdown content={idea.description} />
+                    </div>
 
                     <div className={styles.cardFooter}>
                       <button

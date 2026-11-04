@@ -49,11 +49,22 @@ export type ArticleSummary = {
   paper?: PaperDetails | null;
 };
 export type ArticleDetail = ArticleSummary & { content: string };
+export type CreatorProfile = {
+  uid: string;
+  full_name: string;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  email?: string | null;
+  batch?: string | null;
+  track?: string | null;
+};
 export type IdeaSummary = {
   id: string; title: string; description: string;
   track: string; difficulty?: string | null; is_verified: boolean;
   is_featured?: boolean;
   spg_creation_type?: string | null;
+  created_by_uid?: string;
+  creator_profile?: CreatorProfile | null;
   stats: { upvote_count: number; views_count: number; claims_count: number };
   created_at?: string | null;
   approved_at?: string | null;

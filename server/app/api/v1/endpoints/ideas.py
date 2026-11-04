@@ -21,6 +21,7 @@ from app.utils import is_admin_user, iso_str, now_iso
 from app.services.firebase import db
 from app.services import contributions as contribution_service
 from app.schemas.ideas import (
+    CreatorProfile,
     IdeaCreate,
     IdeaDetail,
     IdeaDifficulty,
@@ -218,6 +219,62 @@ def _creator_uid(data: Dict[str, Any]) -> str:
     return str(creator or "")
 
 
+def _fetch_creator_profile(uid: str) -> Optional[CreatorProfile]:
+    if not uid:
+        return None
+    try:
+        user_doc = db.collection(USERS_COLLECTION).document(uid).get()
+        if not user_doc.exists:
+            profiles = list(
+                db.collection(USERS_COLLECTION)
+                .where("discord_id", "==", uid)
+                .limit(1)
+                .stream()
+            )
+            if profiles:
+                user_doc = profiles[0]
+            else:
+                return None
+        u_data = user_doc.to_dict() or {}
+        name = (
+            u_data.get("full_name")
+            or u_data.get("display_name")
+            or u_data.get("name")
+            or "Club Member"
+        )
+        avatar = (
+            u_data.get("avatar_url")
+            or u_data.get("photo_url")
+            or u_data.get("avatar")
+        )
+        return CreatorProfile(
+            uid=user_doc.id,
+            full_name=name,
+            display_name=u_data.get("display_name"),
+            avatar_url=avatar,
+            email=u_data.get("email"),
+            batch=str(u_data.get("batch_year") or u_data.get("batch") or ""),
+            track=u_data.get("track"),
+        )
+    except Exception:
+        return None
+
+
+def _populate_creator_profiles(items: List[IdeaSummary]) -> None:
+    uids = list({item.created_by_uid for item in items if item.created_by_uid})
+    if not uids:
+        return
+    profiles_by_uid: Dict[str, CreatorProfile] = {}
+    for uid in uids:
+        p = _fetch_creator_profile(uid)
+        if p:
+            profiles_by_uid[uid] = p
+
+    for item in items:
+        if item.created_by_uid in profiles_by_uid:
+            item.creator_profile = profiles_by_uid[item.created_by_uid]
+
+
 def _normalise_track(value: Any) -> IdeaTrack:
     if value in (None, "other", "general"):
         return IdeaTrack.MISC
@@ -282,7 +339,9 @@ def get_random_idea(
     except Exception:
         pass
 
-    return _to_idea_detail(chosen.id, data)
+    detail = _to_idea_detail(chosen.id, data)
+    detail.creator_profile = _fetch_creator_profile(detail.created_by_uid)
+    return detail
 
 
 @router.get(
@@ -332,6 +391,7 @@ def list_my_ideas(
             by_id[doc.id] = _ticket_to_idea_summary(doc.id, tdata)
 
     items = list(by_id.values())
+    _populate_creator_profiles(items)
     items.sort(key=lambda x: x.created_at or "", reverse=True)
     return IdeaListResponse(
         total=len(items), items=items, page=1, page_size=len(items), has_more=False
@@ -442,15 +502,19 @@ def admin_list_ideas(
     filtered.sort(key=lambda x: x.created_at or "", reverse=True)
 
     total = len(filtered)
-    start = (page - 1) * page_size
-    end = start + page_size
+    page_val = int(page.default if hasattr(page, "default") else page)
+    size_val = int(page_size.default if hasattr(page_size, "default") else page_size)
+    start = (page_val - 1) * size_val
+    end = start + size_val
     page_items = filtered[start:end]
+    _populate_creator_profiles(page_items)
 
     return IdeaListResponse(
         total=total,
         items=page_items,
-        page=page,
-        page_size=page_size,
+        page=page_val,
+        page_size=size_val,
+
         has_more=end < total,
     )
 
@@ -495,6 +559,7 @@ def list_pending_ideas(
             by_id[doc.id] = _ticket_to_idea_summary(doc.id, tdata)
 
     items = list(by_id.values())
+    _populate_creator_profiles(items)
     items.sort(key=lambda x: x.created_at or "", reverse=True)
     return IdeaListResponse(
         total=len(items), items=items, page=1, page_size=len(items), has_more=False
@@ -519,18 +584,22 @@ def list_ideas(
     """List verified ideas with filtering and sorting."""
     docs = _approved_docs()
     all_ideas: List[IdeaSummary] = []
+    track_val = None if hasattr(track, "default") else track
+    diff_val = None if hasattr(difficulty, "default") else difficulty
+    search_val = None if hasattr(search, "default") else search
+    sort_val = (sort_by.default if hasattr(sort_by, "default") else sort_by) or "upvotes"
 
     for doc in docs:
         data = doc.to_dict() or {}
         summary = _to_idea_summary(doc.id, data)
 
-        if track and summary.track != track:
+        if track_val and summary.track != track_val:
             continue
-        if difficulty and summary.difficulty != difficulty:
+        if diff_val and summary.difficulty != diff_val:
             continue
 
-        if search:
-            s = search.lower().strip()
+        if search_val:
+            s = search_val.lower().strip()
             title_match = s in summary.title.lower()
             desc_match = s in summary.description.lower()
             if not (title_match or desc_match):
@@ -539,22 +608,26 @@ def list_ideas(
         all_ideas.append(summary)
 
     # Sort
-    if sort_by == "newest":
+    if sort_val == "newest":
         all_ideas.sort(key=lambda x: x.approved_at or x.created_at or "", reverse=True)
     else:
         # Default by upvotes
         all_ideas.sort(key=lambda x: x.stats.upvote_count, reverse=True)
 
     total = len(all_ideas)
-    start = (page - 1) * page_size
-    end = start + page_size
+    page_val = int(page.default if hasattr(page, "default") else page)
+    size_val = int(page_size.default if hasattr(page_size, "default") else page_size)
+    start = (page_val - 1) * size_val
+    end = start + size_val
     items = all_ideas[start:end]
+    _populate_creator_profiles(items)
 
     return IdeaListResponse(
         total=total,
         items=items,
-        page=page,
-        page_size=page_size,
+        page=page_val,
+        page_size=size_val,
+
         has_more=end < total,
     )
 
@@ -586,7 +659,9 @@ def get_idea(
                     raise HTTPException(
                         status_code=status.HTTP_404_NOT_FOUND, detail="Idea not found."
                     )
-                return _ticket_to_idea_detail(idea_id, tdata)
+                detail = _ticket_to_idea_detail(idea_id, tdata)
+                detail.creator_profile = _fetch_creator_profile(detail.created_by_uid)
+                return detail
 
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Idea not found."
@@ -609,7 +684,9 @@ def get_idea(
     except Exception:
         pass
 
-    return _to_idea_detail(doc.id, data)
+    detail = _to_idea_detail(doc.id, data)
+    detail.creator_profile = _fetch_creator_profile(detail.created_by_uid)
+    return detail
 
 
 @router.post(
@@ -689,7 +766,9 @@ def update_idea(
 
         doc_ref.update(updates)
         refreshed = doc_ref.get().to_dict() or {}
-        return _to_idea_detail(idea_id, refreshed)
+        detail = _to_idea_detail(idea_id, refreshed)
+        detail.creator_profile = _fetch_creator_profile(detail.created_by_uid)
+        return detail
 
     ticket_ref = db.collection(TICKETS_COLLECTION).document(idea_id)
     ticket_doc = ticket_ref.get()
@@ -738,7 +817,9 @@ def update_idea(
     ticket_updates["fields"] = fields
     ticket_ref.update(ticket_updates)
     refreshed_tdata = ticket_ref.get().to_dict() or {}
-    return _ticket_to_idea_detail(idea_id, refreshed_tdata)
+    detail = _ticket_to_idea_detail(idea_id, refreshed_tdata)
+    detail.creator_profile = _fetch_creator_profile(detail.created_by_uid)
+    return detail
 
 
 def _credit_approved_idea(activity: str, author_uid: Any, title: str, track: Any, occurred_at: Any) -> None:
@@ -788,7 +869,9 @@ def approve_idea(
             f"idea:{idea_id}", refreshed.get("created_by_uid"), refreshed.get("title") or "",
             refreshed.get("track"), refreshed.get("created_at") or now,
         )
-        return _to_idea_detail(idea_id, refreshed)
+        detail = _to_idea_detail(idea_id, refreshed)
+        detail.creator_profile = _fetch_creator_profile(detail.created_by_uid)
+        return detail
 
     ticket_ref = db.collection(TICKETS_COLLECTION).document(idea_id)
     ticket_doc = ticket_ref.get()
