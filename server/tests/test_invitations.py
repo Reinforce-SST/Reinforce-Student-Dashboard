@@ -239,6 +239,46 @@ class InvitationsSystemTests(unittest.TestCase):
         cancelled = invitations.cancel_invitation(inv2.id, current_user=LEAD)
         self.assertEqual(cancelled["status"], "cancelled")
 
+    def test_teammate_cancel_registration_leaves_team_and_preserves_spg(self):
+        """When an accepted teammate unregisters, they leave the team and SPG remains active."""
+        # Clean existing reg from setUp
+        self.db.collection("events").document(self.event_id).collection("registrations").document(self.reg_id).delete()
+
+        # 1. Lead registers team
+        reg = events.register_for_event(
+            self.event_id,
+            payload=EventRegisterRequest(
+                team_name="DuoSquad",
+                member_uids=[LEAD["uid"], INVITEE["uid"]],
+            ),
+            current_user=LEAD,
+        )
+        spg_id = reg.spg_id
+        # Invitee accepts invitation
+        invs = invitations.get_my_invitations(status="pending", current_user=INVITEE)
+        invitations.accept_invitation(invs[0].id, current_user=INVITEE)
+
+        # Verify teammate is in registration and SPG
+        reg_after_join = self.db.collection("events").document(self.event_id).collection("registrations").document(reg.id).get().to_dict()
+        self.assertIn(INVITEE["uid"], reg_after_join["member_uids"])
+        spg_after_join = self.db.collection("spgs").document(spg_id).get().to_dict()
+        self.assertIn(INVITEE["uid"], spg_after_join["member_ids"])
+
+        # 2. Teammate cancels registration
+        cancel_resp = events.cancel_registration(self.event_id, current_user=INVITEE)
+        self.assertIn("cancelled", cancel_resp["message"].lower())
+
+        # 3. SPG is STILL ACTIVE (not disbanded!)
+        spg_doc = self.db.collection("spgs").document(spg_id).get().to_dict()
+        self.assertEqual(spg_doc["status"], "active")
+        self.assertNotIn(INVITEE["uid"], spg_doc["member_ids"])
+
+        # 4. Team registration is STILL REGISTERED (lead is still registered!)
+        team_reg = self.db.collection("events").document(self.event_id).collection("registrations").document(reg.id).get().to_dict()
+        self.assertEqual(team_reg["status"], "registered")
+        self.assertNotIn(INVITEE["uid"], team_reg["member_uids"])
+        self.assertIn(LEAD["uid"], team_reg["member_uids"])
+
 
 if __name__ == "__main__":
     unittest.main()

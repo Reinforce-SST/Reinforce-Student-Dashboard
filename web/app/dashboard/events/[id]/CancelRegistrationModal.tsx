@@ -13,6 +13,7 @@ interface CancelRegistrationModalProps {
   hasSpg: boolean;
   eventTitle: string;
   loading: boolean;
+  error?: string | null;
 }
 
 export default function CancelRegistrationModal({
@@ -24,6 +25,7 @@ export default function CancelRegistrationModal({
   hasSpg,
   eventTitle,
   loading,
+  error,
 }: CancelRegistrationModalProps) {
   if (!isOpen) return null;
 
@@ -56,7 +58,11 @@ export default function CancelRegistrationModal({
             </div>
             <div>
               <h2 className={styles.modalTitle} style={{ color: "#ffffff", fontSize: "17px", margin: 0 }}>
-                Cancel Registration
+                {isTeamLead && (hasSpg || teamName)
+                  ? "Cancel Team Registration"
+                  : teamName
+                  ? "Leave Event Team"
+                  : "Cancel Registration"}
               </h2>
               <span style={{ fontSize: "12px", color: "#8c8c98" }}>{eventTitle}</span>
             </div>
@@ -72,6 +78,24 @@ export default function CancelRegistrationModal({
         </div>
 
         <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: "14px" }}>
+          {error && (
+            <div
+              style={{
+                background: "rgba(239, 68, 68, 0.15)",
+                border: "1px solid rgba(239, 68, 68, 0.4)",
+                borderRadius: "8px",
+                padding: "10px 14px",
+                color: "#f87171",
+                fontSize: "12.5px",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+              }}
+            >
+              <span>⚠️ {error}</span>
+            </div>
+          )}
+
           {isTeamLead && (hasSpg || teamName) ? (
             <div
               style={{
@@ -97,6 +121,27 @@ export default function CancelRegistrationModal({
                 </div>
               )}
             </div>
+          ) : teamName ? (
+            <div
+              style={{
+                background: "rgba(248, 113, 113, 0.08)",
+                border: "1px solid rgba(248, 113, 113, 0.3)",
+                borderRadius: "8px",
+                padding: "14px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#f87171", fontWeight: "700", fontSize: "13px" }}>
+                <span>Leave Event Team &quot;{teamName}&quot;</span>
+              </div>
+              <p style={{ margin: 0, fontSize: "12.5px", color: "#e4e4e7", lineHeight: "1.5" }}>
+                You are registered as a <strong>Member of team &quot;{teamName}&quot;</strong>.
+                Cancelling will <strong>remove you from this team and release your spot</strong> in <strong>{eventTitle}</strong>.
+                The rest of your team will remain registered.
+              </p>
+            </div>
           ) : (
             <p style={{ margin: 0, fontSize: "13.5px", color: "#d4d4d8", lineHeight: "1.5" }}>
               Are you sure you want to cancel your registration for <strong>{eventTitle}</strong>?
@@ -120,7 +165,13 @@ export default function CancelRegistrationModal({
           </button>
           <button
             type="button"
-            onClick={onConfirm}
+            onClick={async () => {
+              try {
+                await onConfirm();
+              } catch {
+                // error handled via error prop
+              }
+            }}
             disabled={loading}
             style={{
               background: "#ef4444",
@@ -137,7 +188,13 @@ export default function CancelRegistrationModal({
               gap: "6px",
             }}
           >
-            {loading ? "Cancelling..." : isTeamLead && hasSpg ? "Yes, Cancel & Disband SPG" : "Yes, Cancel Registration"}
+            {loading
+              ? isTeamLead ? "Cancelling Registration..." : "Leaving Team..."
+              : isTeamLead && hasSpg
+              ? "Yes, Cancel Registration & Disband SPG"
+              : !isTeamLead && teamName
+              ? "Yes, Leave Team & Cancel RSVP"
+              : "Yes, Cancel Registration"}
           </button>
         </div>
       </div>

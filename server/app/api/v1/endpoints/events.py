@@ -146,6 +146,11 @@ def _parse_utc(value: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+try:
+    from google.cloud.firestore_v1.base_query import FieldFilter
+except Exception:
+    FieldFilter = None
+
 def _active_registration(data: Dict[str, Any]) -> bool:
     return data.get("status") != RegistrationStatus.CANCELLED.value
 
@@ -155,10 +160,23 @@ def _registrations_for_user(
 ) -> List[Any]:
     """Return every registration involving a user, including legacy duplicates."""
     by_id = {}
-    for query in (
-        regs_ref.where("user_id", "==", user_uid),
-        regs_ref.where("member_uids", "array_contains", user_uid),
-    ):
+    try:
+        if FieldFilter is not None:
+            queries = (
+                regs_ref.where(filter=FieldFilter("user_id", "==", user_uid)),
+                regs_ref.where(filter=FieldFilter("member_uids", "array_contains", user_uid)),
+            )
+        else:
+            queries = (
+                regs_ref.where("user_id", "==", user_uid),
+                regs_ref.where("member_uids", "array_contains", user_uid),
+            )
+    except Exception:
+        queries = (
+            regs_ref.where("user_id", "==", user_uid),
+            regs_ref.where("member_uids", "array_contains", user_uid),
+        )
+    for query in queries:
         docs = transaction.get(query) if transaction is not None else query.stream()
         for doc in docs:
             by_id[doc.id] = doc
@@ -910,18 +928,19 @@ def cancel_registration(
         all_user_regs = _registrations_for_user(
             regs_ref, user_uid, transaction=transaction
         )
-        active_leads = [
+        active_regs = [
             doc for doc in all_user_regs if _active_registration(doc.to_dict() or {})
         ]
-        if not active_leads:
+        if not active_regs:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="No registration found where you are the lead/registrant",
+                detail="No registration found where you are registered",
             )
 
-        reg_doc = active_leads[0]
+        reg_doc = active_regs[0]
         reg_data = reg_doc.to_dict() or {}
         prev_status = reg_data.get("status")
+        is_lead = reg_data.get("user_id") == user_uid
         event_ref = db.collection(EVENTS_COLLECTION).document(event_id)
         event_snap = event_ref.get(transaction=transaction)
         fresh = event_snap.to_dict() or {}
@@ -937,26 +956,64 @@ def cancel_registration(
 
         current_count = int((fresh.get("stats") or {}).get("registered_count", 0))
 
-        waitlist = []
-        if prev_status in {
-            RegistrationStatus.REGISTERED.value,
-            RegistrationStatus.CHECKED_IN.value,
-        }:
-            waitlist_docs = list(
-                transaction.get(
-                    regs_ref.where("status", "==", RegistrationStatus.WAITLISTED.value)
-                )
-            )
-            waitlist = sorted(
-                waitlist_docs,
-                key=lambda d: (d.to_dict() or {}).get("registered_at") or "",
-            )[:1]
-
         spg_ref = None
         spg_snap = None
         if reg_data.get("spg_id"):
             spg_ref = db.collection(SPGS_COLLECTION).document(reg_data["spg_id"])
             spg_snap = spg_ref.get(transaction=transaction)
+
+        if not is_lead:
+            # User is a non-lead teammate leaving the team
+            current_members = reg_data.get("member_uids") or []
+            new_members = [u for u in current_members if u != user_uid]
+            transaction.update(
+                reg_doc.reference,
+                {
+                    "member_uids": new_members,
+                    "updated_at": now_timestamp,
+                },
+            )
+            if spg_ref and spg_snap and spg_snap.exists:
+                spg_data = spg_snap.to_dict() or {}
+                new_spg_members = [m for m in (spg_data.get("member_ids") or []) if m != user_uid]
+                transaction.update(
+                    spg_ref,
+                    {"member_ids": new_spg_members, "updated_at": now_timestamp},
+                )
+
+            if prev_status in {
+                RegistrationStatus.REGISTERED.value,
+                RegistrationStatus.CHECKED_IN.value,
+            }:
+                updated_count = max(0, current_count - 1)
+                transaction.update(
+                    event_ref,
+                    {
+                        "stats.registered_count": updated_count,
+                        "updated_at": now_timestamp,
+                    },
+                )
+            return
+
+        # User is the team lead or solo registrant: cancel entire registration and disband SPG
+        waitlist = []
+        if prev_status in {
+            RegistrationStatus.REGISTERED.value,
+            RegistrationStatus.CHECKED_IN.value,
+        }:
+            try:
+                waitlist_query = (
+                    regs_ref.where(filter=FieldFilter("status", "==", RegistrationStatus.WAITLISTED.value))
+                    if FieldFilter
+                    else regs_ref.where("status", "==", RegistrationStatus.WAITLISTED.value)
+                )
+            except Exception:
+                waitlist_query = regs_ref.where("status", "==", RegistrationStatus.WAITLISTED.value)
+            waitlist_docs = list(transaction.get(waitlist_query))
+            waitlist = sorted(
+                waitlist_docs,
+                key=lambda d: (d.to_dict() or {}).get("registered_at") or "",
+            )[:1]
 
         transaction.update(
             reg_doc.reference,
@@ -1025,17 +1082,25 @@ def cancel_registration(
 
     run_event_transaction(cancel_and_promote)
 
-    # Cancel any pending team invitations issued by this lead
+    # Cancel any invitations associated with this action
     try:
-        pending_invs = list(
-            db.collection("invitations")
-            .where("event_id", "==", event_id)
-            .where("inviter_uid", "==", user_uid)
-            .where("status", "==", "pending")
-            .stream()
-        )
-        for pinv in pending_invs:
-            pinv.reference.update({"status": "cancelled", "updated_at": now_timestamp})
+        inv_col = db.collection("invitations")
+        try:
+            inv_query = (
+                inv_col.where(filter=FieldFilter("event_id", "==", event_id))
+                if FieldFilter
+                else inv_col.where("event_id", "==", event_id)
+            )
+        except Exception:
+            inv_query = inv_col.where("event_id", "==", event_id)
+        for pinv in inv_query.stream():
+            p_data = pinv.to_dict() or {}
+            # Lead cancels all pending invitations they sent
+            if p_data.get("inviter_uid") == user_uid and p_data.get("status") == "pending":
+                pinv.reference.update({"status": "cancelled", "updated_at": now_timestamp})
+            # Member leaving cancels their invitation for this event
+            elif p_data.get("invitee_uid") == user_uid and p_data.get("status") in ("accepted", "pending"):
+                pinv.reference.update({"status": "cancelled", "updated_at": now_timestamp})
     except Exception:
         pass
 

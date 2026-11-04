@@ -8,6 +8,7 @@ import { useMember } from "@/lib/useMember";
 import { api, type IdeaSummary } from "@/lib/api";
 import AttachProblemModal from "@/components/dashboard/AttachProblemModal";
 import InviteTeammatesModal from "@/app/dashboard/events/[id]/InviteTeammatesModal";
+import CancelRegistrationModal from "@/app/dashboard/events/[id]/CancelRegistrationModal";
 import type { InvitationItem } from "@/lib/api";
 import {
   type SPGRecord,
@@ -65,6 +66,9 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
   const [failedAvatars, setFailedAvatars] = useState<Set<string>>(new Set());
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [outgoingSpgInvites, setOutgoingSpgInvites] = useState<InvitationItem[]>([]);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState("");
 
   useEffect(() => {
     if (!token || !spgId) return;
@@ -113,6 +117,21 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
       console.error("Failed to decline SPG invitation", err);
     } finally {
       setInvitationBusy(false);
+    }
+  };
+
+  const handleConfirmCancelRegistration = async () => {
+    if (!token || !spg?.event_id) return;
+    setCancelBusy(true);
+    setCancelError("");
+    try {
+      await api.cancelEventRegistration(token, spg.event_id);
+      setShowCancelModal(false);
+      await fetchSpgData();
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : "Failed to cancel registration.");
+    } finally {
+      setCancelBusy(false);
     }
   };
 
@@ -644,6 +663,23 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
               <MemberIcon name="plus" size={12} />
               RECRUITING
             </span>
+          )}
+          {spg.event_id && (
+            <Link
+              href={`/dashboard/events/${encodeURIComponent(spg.event_id)}`}
+              className={styles.formatChip}
+              style={{
+                background: "rgba(59, 130, 246, 0.15)",
+                color: "#60a5fa",
+                border: "1px solid rgba(59, 130, 246, 0.35)",
+                textDecoration: "none",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              <span>📅 Linked Event →</span>
+            </Link>
           )}
         </div>
       </div>
@@ -1246,32 +1282,59 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
           </div>
           {/* Leadership & Collaborators Roster */}
           <div className={styles.sectionCard}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px", flexWrap: "wrap", gap: "8px" }}>
               <h2 className={styles.sectionTitle} style={{ margin: 0 }}>
                 <MemberIcon name="users" size={16} />
                 Team Roster ({spg.member_ids?.length || 1})
               </h2>
-              {spg.lead_id === profile?.id && (
-                <button
-                  type="button"
-                  onClick={() => setShowInviteModal(true)}
-                  style={{
-                    background: "#e5b731",
-                    color: "#121214",
-                    border: "none",
-                    borderRadius: "4px",
-                    padding: "4px 10px",
-                    fontSize: "11px",
-                    fontWeight: "750",
-                    cursor: "pointer",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "4px",
-                  }}
-                >
-                  <MemberIcon name="plus" size={12} /> Invite Member
-                </button>
-              )}
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                {spg.event_id && isTeamMember && spg.status !== "disbanded" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCancelError("");
+                      setShowCancelModal(true);
+                    }}
+                    style={{
+                      background: "rgba(248, 113, 113, 0.12)",
+                      color: "#f87171",
+                      border: "1px solid rgba(248, 113, 113, 0.35)",
+                      borderRadius: "4px",
+                      padding: "4px 10px",
+                      fontSize: "11px",
+                      fontWeight: "750",
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                    }}
+                  >
+                    <MemberIcon name="alert-circle" size={12} />
+                    {spg.lead_id === profile?.id ? "Cancel & Disband Event SPG" : "Leave Event SPG"}
+                  </button>
+                )}
+                {spg.lead_id === profile?.id && (
+                  <button
+                    type="button"
+                    onClick={() => setShowInviteModal(true)}
+                    style={{
+                      background: "#e5b731",
+                      color: "#121214",
+                      border: "none",
+                      borderRadius: "4px",
+                      padding: "4px 10px",
+                      fontSize: "11px",
+                      fontWeight: "750",
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                    }}
+                  >
+                    <MemberIcon name="plus" size={12} /> Invite Member
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className={styles.rosterList}>
@@ -1748,6 +1811,25 @@ export default function SpgDetailClient({ spgId }: { spgId: string }) {
           }).catch(() => {});
         }}
       />
+      {/* Cancel Event Registration & Disband / Leave Modal */}
+      {spg.event_id && (
+        <CancelRegistrationModal
+          isOpen={showCancelModal}
+          onClose={() => {
+            if (!cancelBusy) {
+              setShowCancelModal(false);
+              setCancelError("");
+            }
+          }}
+          onConfirm={handleConfirmCancelRegistration}
+          isTeamLead={spg.lead_id === profile?.id}
+          teamName={spg.name}
+          hasSpg={true}
+          eventTitle={spg.name || "Linked Event"}
+          loading={cancelBusy}
+          error={cancelError}
+        />
+      )}
       {DialogComponent}
     </div>
   );

@@ -348,11 +348,14 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
 
   const handleConfirmCancelRegistration = async () => {
     setRegistrationBusy(true);
+    setRegistrationError("");
     try {
       await api.cancelEventRegistration(token, event.id);
       setIsRegistered(false);
       setMyRegistration(null);
       setRegistrationStatus("");
+      setOutgoingTeamInvites([]);
+      setTeammates([]);
       setShowCancelModal(false);
       const refreshed = await api.getEvent(event.id, token);
       setRegisteredCount(refreshed.stats?.registered_count ?? Math.max(0, registeredCount - 1));
@@ -985,6 +988,30 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                       View Team SPG →
                     </Link>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRegistrationError("");
+                      setShowCancelModal(true);
+                    }}
+                    style={{
+                      background: "rgba(248, 113, 113, 0.12)",
+                      color: "#f87171",
+                      border: "1px solid rgba(248, 113, 113, 0.3)",
+                      borderRadius: "6px",
+                      padding: "6px 12px",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <MemberIcon name="trash" size={13} />
+                    {myRegistration?.user_id === profile?.id ? "Cancel Registration" : "Leave Team"}
+                  </button>
                 </div>
               </div>
 
@@ -1874,6 +1901,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
         hasSpg={Boolean(myRegistration?.spg_id)}
         eventTitle={event.title}
         loading={registrationBusy}
+        error={registrationError}
       />
 
       {/* Team Invitation Modal */}
