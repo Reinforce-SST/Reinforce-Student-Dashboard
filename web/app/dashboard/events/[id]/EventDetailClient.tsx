@@ -228,7 +228,6 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
     setPublishingDraft(true);
     try {
       await api.adminUpdateEventStatus(token, event.id, "published");
-      event.status = "published";
       window.location.reload();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to publish event.");
@@ -1130,7 +1129,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                   You are included automatically.{" "}
                   {minTeamSize === maxTeamSize
                     ? `Teams have exactly ${maxTeamSize} ${maxTeamSize === 1 ? "member" : "members"}.`
-                    : `Teams have ${minTeamSize}-${maxTeamSize} members.`}
+                    : `Teams have ${minTeamSize}\u2013${maxTeamSize} members.`}
                 </span>
               </div>
             )}

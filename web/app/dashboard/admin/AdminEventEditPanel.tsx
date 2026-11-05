@@ -1311,7 +1311,7 @@ export default function AdminEventEditPanel({
                         ))}
                       </datalist>
                       <small id="event-resource-category-hint" className={styles.formLabelHint}>
-                        Use / between nested folders. This event's folder is preselected.
+                        Use / between nested folders. This event&apos;s folder is preselected.
                       </small>
                     </div>
                   </div>
