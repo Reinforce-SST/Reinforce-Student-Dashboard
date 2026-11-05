@@ -23,8 +23,10 @@ import ProjectSubmissionModal from "./ProjectSubmissionModal";
 import EditResponsesModal from "./EditResponsesModal";
 import AttachProblemModal from "@/components/dashboard/AttachProblemModal";
 import CancelRegistrationModal from "./CancelRegistrationModal";
+import LockRosterModal from "./LockRosterModal";
 import InviteTeammatesModal from "./InviteTeammatesModal";
 import type { InvitationItem } from "@/lib/api";
+import ArticleMarkdown from "@/components/dashboard/ArticleMarkdown";
 import styles from "./EventDetail.module.css";
 
 function formatInline(text: string): React.ReactNode[] {
@@ -72,112 +74,19 @@ function renderMarkdown(md?: string | null) {
   if (!md) {
     return <p className={styles.mdParagraph}>No additional specifications published for this event yet.</p>;
   }
-
-  const normalized = md
-    .replace(/([^\n#])\s*(#{1,6}(?:\s+|[^\s#a-zA-Z0-9_\/:]))/g, "$1\n\n$2")
-    .replace(/([^\n])\s*(\d+\.\s+\*\*)/g, "$1\n$2")
-    .replace(/([^\n])\s*([*-]\s+\*\*)/g, "$1\n$2");
-
-  const lines = normalized.split(/\r?\n/);
-  const elements: React.ReactNode[] = [];
-  let currentList: { type: "ul" | "ol"; items: string[] } | null = null;
-
-  const flushList = () => {
-    if (!currentList) return;
-    if (currentList.type === "ul") {
-      elements.push(
-        <ul key={`ul-${elements.length}`} className={styles.mdList}>
-          {currentList.items.map((item, idx) => (
-            <li key={idx} className={styles.mdListItem}>
-              {formatInline(item)}
-            </li>
-          ))}
-        </ul>
-      );
-    } else {
-      elements.push(
-        <ol key={`ol-${elements.length}`} className={styles.mdOrderedList}>
-          {currentList.items.map((item, idx) => (
-            <li key={idx} className={styles.mdOrderedItem}>
-              {formatInline(item)}
-            </li>
-          ))}
-        </ol>
-      );
-    }
-    currentList = null;
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    const rawLine = lines[i].trim();
-    if (!rawLine || /^#+$/.test(rawLine)) {
-      flushList();
-      continue;
-    }
-
-    const headingMatch = rawLine.match(/^(#{1,6})\s*(.*)$/);
-    if (headingMatch && headingMatch[2].trim()) {
-      flushList();
-      const level = headingMatch[1].length;
-      const title = headingMatch[2].replace(/\s+#+$/, "").trim();
-      if (level === 1) {
-        elements.push(
-          <h1 key={`h1-${i}`} className={styles.mdHeading1}>
-            {formatInline(title)}
-          </h1>
-        );
-      } else if (level === 2) {
-        elements.push(
-          <h2 key={`h2-${i}`} className={styles.mdHeading2}>
-            {formatInline(title)}
-          </h2>
-        );
-      } else {
-        elements.push(
-          <h3 key={`h3-${i}`} className={styles.mdHeading3}>
-            {formatInline(title)}
-          </h3>
-        );
-      }
-    } else if (/^([-*_]\s*){3,}$/.test(rawLine) || /^<hr\s*\/?>$/i.test(rawLine)) {
-      flushList();
-      elements.push(
-        <hr key={`hr-${i}`} className={styles.mdDivider} />
-      );
-    } else if (/^(\*|-)\s+/.test(rawLine)) {
-      const itemText = rawLine.replace(/^(\*|-)\s+/, "");
-      if (currentList && currentList.type === "ul") {
-        currentList.items.push(itemText);
-      } else {
-        flushList();
-        currentList = { type: "ul", items: [itemText] };
-      }
-    } else if (/^\d+\.\s+/.test(rawLine)) {
-      const itemText = rawLine.replace(/^\d+\.\s+/, "");
-      if (currentList && currentList.type === "ol") {
-        currentList.items.push(itemText);
-      } else {
-        flushList();
-        currentList = { type: "ol", items: [itemText] };
-      }
-    } else {
-      flushList();
-      elements.push(
-        <p key={`p-${i}`} className={styles.mdParagraph}>
-          {formatInline(rawLine)}
-        </p>
-      );
-    }
-  }
-
-  flushList();
-  return <div className={styles.mdContainer}>{elements}</div>;
+  return <ArticleMarkdown content={md} />;
 }
 
 export default function EventDetailClient({ event }: { event: EventDocument }) {
   const { token, profile } = useMember();
   const isAdmin = Boolean(profile?.is_admin);
-  const [activeTab, setActiveTab] = useState<"overview" | "timeline" | "attendees" | "attendance">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "team" | "timeline" | "attendees" | "attendance">("overview");
+  const [myEventTeamInvites, setMyEventTeamInvites] = useState<InvitationItem[]>([]);
+  const [refreshingInvites, setRefreshingInvites] = useState(false);
+  const [editingTeamName, setEditingTeamName] = useState(false);
+  const [newTeamNameInput, setNewTeamNameInput] = useState("");
+  const [savingTeamName, setSavingTeamName] = useState(false);
+  const [lockingRoster, setLockingRoster] = useState(false);
 
   const [isRegistered, setIsRegistered] = useState(false);
   const [myRegistration, setMyRegistration] = useState<EventRegistration | null>(null);
@@ -207,6 +116,8 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [memberProfilesMap, setMemberProfilesMap] = useState<Record<string, { full_name?: string; avatar_url?: string }>>({});
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showLockModal, setShowLockModal] = useState(false);
+  const [lockModalError, setLockModalError] = useState("");
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [pendingEventInvite, setPendingEventInvite] = useState<InvitationItem | null>(null);
   const [invitationBusy, setInvitationBusy] = useState(false);
@@ -239,6 +150,105 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
     }, 300);
     return () => clearTimeout(timer);
   }, [poolQuery]);
+
+  
+  const handleManualRefreshInvites = useCallback(async () => {
+    if (!token || !event?.id) return;
+    setRefreshingInvites(true);
+    try {
+      const [invs, freshReg] = await Promise.all([
+        api.listMyInvitations(token, "pending"),
+        api.myEventRegistration(token, event.id).catch(() => null),
+      ]);
+      const eventSpecific = (invs || []).filter(
+        (i) => i.target_id === event.id || i.event_id === event.id
+      );
+      setMyEventTeamInvites(eventSpecific);
+      setPendingEventInvite(eventSpecific[0] || null);
+
+      if (freshReg?.is_registered && freshReg.registration) {
+        setMyRegistration(freshReg.registration);
+        setIsRegistered(true);
+        setRegistrationStatus(freshReg.registration.status || "registered");
+      }
+    } catch (err) {
+      console.error("Failed to refresh invitations", err);
+    } finally {
+      setRefreshingInvites(false);
+    }
+  }, [token, event?.id]);
+
+  useEffect(() => {
+    if (!token || !event?.id) return;
+    handleManualRefreshInvites();
+  }, [token, event?.id, handleManualRefreshInvites]);
+
+  const handleSaveTeamName = async () => {
+    if (!token || !event?.id || !newTeamNameInput.trim()) return;
+    setSavingTeamName(true);
+    try {
+      const res = await api.createOrUpdateTeam(token, event.id, {
+        team_name: newTeamNameInput.trim(),
+        selected_track_id: myRegistration?.selected_track_id,
+        team_custom_responses: myRegistration?.team_custom_responses,
+      });
+      setMyRegistration(res);
+      setEditingTeamName(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to update team name.");
+    } finally {
+      setSavingTeamName(false);
+    }
+  };
+
+  const handleLockRoster = () => {
+    setLockModalError("");
+    setShowLockModal(true);
+  };
+
+  const handleConfirmLockRoster = async () => {
+    if (!token || !event?.id || lockingRoster) return;
+    setLockingRoster(true);
+    setLockModalError("");
+    try {
+      const res = await api.lockTeamRoster(token, event.id);
+      setMyRegistration(res);
+      setShowLockModal(false);
+    } catch (err) {
+      setLockModalError(err instanceof Error ? err.message : "Failed to lock squad roster.");
+    } finally {
+      setLockingRoster(false);
+    }
+  };
+
+  const [publishingDraft, setPublishingDraft] = useState(false);
+
+  const handlePublishDraftEvent = async () => {
+    if (!token || !event?.id || publishingDraft) return;
+    setPublishingDraft(true);
+    try {
+      await api.adminUpdateEventStatus(token, event.id, "published");
+      event.status = "published";
+      window.location.reload();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to publish event.");
+    } finally {
+      setPublishingDraft(false);
+    }
+  };
+
+  const handleUnlockRoster = async () => {
+    if (!token || !event?.id || lockingRoster) return;
+    setLockingRoster(true);
+    try {
+      const res = await api.unlockTeamRoster(token, event.id);
+      setMyRegistration(res);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to unlock squad roster.");
+    } finally {
+      setLockingRoster(false);
+    }
+  };
 
   const eventIdStr = event?.id || "";
   const tokenStr = token || "";
@@ -738,6 +748,70 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
   return (
     <div className={styles.pageContainer}>
       {/* Back Link & Breadcrumb */}
+      {isAdmin && isDraftMode && (
+        <div
+          style={{
+            background: "rgba(229, 183, 49, 0.12)",
+            border: "1px solid rgba(229, 183, 49, 0.4)",
+            borderRadius: "10px",
+            padding: "14px 18px",
+            marginBottom: "16px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "12px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div
+              style={{
+                width: "36px",
+                height: "36px",
+                borderRadius: "8px",
+                background: "rgba(229, 183, 49, 0.2)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#E5B731",
+                flexShrink: 0,
+              }}
+            >
+              <MemberIcon name="sparkles" size={18} />
+            </div>
+            <div>
+              <div style={{ color: "#ffffff", fontWeight: "800", fontSize: "14px" }}>
+                This Event is currently in Draft Mode (Admin View)
+              </div>
+              <div style={{ color: "#a1a1aa", fontSize: "12px", marginTop: "2px" }}>
+                Draft events are hidden from club members. Convert to an active live event to open registration.
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={publishingDraft}
+            onClick={handlePublishDraftEvent}
+            style={{
+              background: "#E5B731",
+              color: "#121214",
+              border: "none",
+              borderRadius: "8px",
+              padding: "9px 18px",
+              fontSize: "13px",
+              fontWeight: "800",
+              cursor: publishingDraft ? "not-allowed" : "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              boxShadow: "0 2px 10px rgba(229, 183, 49, 0.3)",
+            }}
+          >
+            <MemberIcon name="sparkles" size={14} />
+            {publishingDraft ? "Publishing Live..." : "Publish Event (Convert to Live) 🚀"}
+          </button>
+        </div>
+      )}
       <div className={styles.backRow}>
         <Link href="/dashboard/events" className={styles.backBtn}>
           ← Back to Events Planner
@@ -745,8 +819,9 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
 
         <div className={styles.statusChipsRow}>
           {isDraftMode ? (
-            <span className={styles.draftStatusChip}>
-              🔒 DRAFT MODE (ADMIN ONLY)
+            <span className={styles.draftStatusChip} style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+              <MemberIcon name="lock" size={12} />
+              DRAFT MODE (ADMIN ONLY)
             </span>
           ) : (
             <span className={styles.formatChip}>{(event.format || "ONLINE").toUpperCase()}</span>
@@ -995,7 +1070,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                     <MemberIcon name="clock" size={12} />
                     <span>
                       {currentTime > 0 && currentTime >= (parseDateOrIST(event.team_settings.lock_rosters_at)?.getTime() ?? 0)
-                        ? "🔒 Rosters Locked"
+                        ? " Rosters Locked"
                         : `Rosters lock ${parseDateOrIST(event.team_settings.lock_rosters_at)?.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) ?? ""}`}
                     </span>
                   </div>
@@ -1055,7 +1130,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                   You are included automatically.{" "}
                   {minTeamSize === maxTeamSize
                     ? `Teams have exactly ${maxTeamSize} ${maxTeamSize === 1 ? "member" : "members"}.`
-                    : `Teams have ${minTeamSize}–${maxTeamSize} members.`}
+                    : `Teams have ${minTeamSize}-${maxTeamSize} members.`}
                 </span>
               </div>
             )}
@@ -1078,6 +1153,20 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
         >
           <MemberIcon name="calendar" size={15} />
           Overview & Specifications
+        </button>
+
+        <button
+          type="button"
+          className={`${styles.eventTabBtn} ${activeTab === "team" ? styles.eventTabBtnActive : ""}`}
+          onClick={() => setActiveTab("team")}
+        >
+          <MemberIcon name="users" size={15} />
+          Team & Submissions
+          {(myRegistration?.pending_invites?.length || 0) + myEventTeamInvites.length > 0 && (
+            <span className={styles.tabCountBadge}>
+              {(myRegistration?.pending_invites?.length || 0) + myEventTeamInvites.length}
+            </span>
+          )}
         </button>
 
         <button
@@ -1113,15 +1202,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
           </button>
         )}
 
-        {(isAdmin || event.can_access_matrix) && (
-          <Link
-            href={`/dashboard/events/${encodeURIComponent(event.slug || event.id)}/matrix`}
-            className={styles.eventTabMatrixLink}
-          >
-            <MemberIcon name="table" size={15} />
-            Event Matrix ↗
-          </Link>
-        )}
+
       </div>
 
       {/* TAB 1: OVERVIEW & SPECIFICATIONS */}
@@ -1129,12 +1210,440 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
         <div className={styles.mainGrid}>
         {/* Left Main Column */}
         <div className={styles.contentColumn}>
-          {/* Phase 2: Team Formation & Merge Hub (For Team Events) */}
+          {/* Registered Team Shortcut Banner */}
+          {isRegistered && (
+            <div className={styles.teamShortcutBanner}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <MemberIcon name="users" size={22} />
+                <div>
+                  <div style={{ fontWeight: "750", color: "#ffffff", fontSize: "13.5px" }}>
+                    You are registered for this event!
+                  </div>
+                  <div style={{ color: "#a1a1aa", fontSize: "12px", marginTop: "2px" }}>
+                    Manage squad rosters, lock your team to mint an Event SPG, and submit deliverables in Team & Submissions.
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab("team")}
+                className={styles.shortcutTabBtn}
+              >
+                Open Team & Submissions →
+              </button>
+            </div>
+          )}
+
+          {/* Detailed Overview */}
+          <section className={styles.sectionCard} aria-label="Event Detailed Overview">
+            <h2 className={styles.sectionTitle}>
+              <MemberIcon name="articles" size={18} />
+              Event Agenda & Specifications
+            </h2>
+            <div className={styles.sectionBody}>
+              {renderMarkdown(event.detailed_info || event.description)}
+            </div>
+          </section>
+
+          {/* Participation & Team Formation (SPG) */}
+          <section className={styles.sectionCard} aria-label="Participation Guidelines">
+            <h2 className={styles.sectionTitle}>
+              <MemberIcon name="users" size={18} />
+              Participation & SPG Formation
+            </h2>
+
+            <div className={styles.spgInfoBox}>
+              <div className={styles.spgHeader}>
+                <span className={styles.spgTag}>
+                  {event.participation?.mode === "team" ? "TEAM EVENT" : "SOLO PARTICIPATION"}
+                </span>
+                {event.participation?.requires_event_spg && (
+                  <span style={{ fontSize: "0.72rem", color: "#4ade80", fontWeight: "750" }}>
+                    ✓ Auto-provisions temporary Event SPG
+                  </span>
+                )}
+              </div>
+
+              <div className={styles.spgRuleList}>
+                <div className={styles.spgRuleItem}>
+                  <span className={styles.ruleLabel}>Team Size</span>
+                  <span className={styles.ruleVal}>
+                    {event.participation?.mode === "team"
+                      ? `${event.participation.min_team_size ?? 1} - ${event.participation.max_team_size ?? 1} Members`
+                      : "Individual (Solo)"}
+                  </span>
+                </div>
+
+                <div className={styles.spgRuleItem}>
+                  <span className={styles.ruleLabel}>SPG Auto-Disband</span>
+                  <span className={styles.ruleVal}>
+                    {event.participation?.requires_event_spg
+                      ? `${event.participation?.spg_auto_disband_days || 3} Days after event`
+                      : "N/A"}
+                  </span>
+                </div>
+
+                <div className={styles.spgRuleItem}>
+                  <span className={styles.ruleLabel}>Access Scope</span>
+                  <span className={styles.ruleVal}>
+                    {event.eligibility?.access_scope === "invite_only" ? "Invite Only" :
+                      event.eligibility?.access_scope === "members_only" ? "Members Only" : "Open to All Students"}
+                  </span>
+                </div>
+
+                <div className={styles.spgRuleItem}>
+                  <span className={styles.ruleLabel}>Eligibility</span>
+                  <span className={styles.ruleVal}>
+                    {displayedBatches?.length
+                      ? `${legacyDefaultYears || displayedBatches.every((year) => year >= 1900) ? "Batches" : "Years"}: ${displayedBatches.join(", ")}`
+                      : "All Batches"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Resources & Downloads */}
+          <section className={styles.sectionCard} aria-label="Event Artifacts & Materials">
+            <h2 className={styles.sectionTitle}>
+              <MemberIcon name="tag" size={18} />
+              Event Materials & Links
+            </h2>
+
+            <div className={styles.resourcesList}>
+              {event.resources?.slides_url && (
+                <a
+                  href={event.resources.slides_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={styles.resourceLinkItem}
+                >
+                  <span> Presentation Slides & Technical Brief</span>
+                  <span>Open Slides →</span>
+                </a>
+              )}
+              {event.resources?.writeup_url && (
+                <a
+                  href={event.resources.writeup_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={styles.resourceLinkItem}
+                >
+                  <span> Starter Repository & Notebooks</span>
+                  <span>GitHub →</span>
+                </a>
+              )}
+              {event.resources?.recording_url && (
+                <a
+                  href={event.resources.recording_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={styles.resourceLinkItem}
+                >
+                  <span> Workshop Video Recording</span>
+                  <span>Watch →</span>
+                </a>
+              )}
+              {linkedResources.map((resource) => (
+                <a
+                  key={resource.id}
+                  href={resource.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={styles.resourceLinkItem}
+                >
+                  <span>{resource.title}</span>
+                  <span>Open link →</span>
+                </a>
+              ))}
+              {linkedResourcesLoading && (
+                <p style={{ color: "#8c8c98", fontSize: "0.82rem", margin: 0 }}>
+                  Loading shared links…
+                </p>
+              )}
+              {linkedResourcesError && (
+                <p role="status" style={{ color: "#8c8c98", fontSize: "0.82rem", margin: 0 }}>
+                  Shared event links could not be loaded.
+                </p>
+              )}
+              {!event.resources?.slides_url &&
+                !event.resources?.writeup_url &&
+                !event.resources?.recording_url && (
+                !linkedResourcesLoading && !linkedResourcesError && linkedResources.length === 0 && (
+                  <p style={{ color: "#8c8c98", fontSize: "0.82rem", margin: 0 }}>
+                    No event materials have been published yet.
+                  </p>
+                ))}
+            </div>
+          </section>
+        </div>
+
+        {/* Right Sidebar Column */}
+        <aside className={styles.sidebarColumn} aria-label="Event Key Details Sidebar">
+          {/* Merit Reward Card */}
+          <div className={styles.pointsRewardCard}>
+            <div className={styles.pointsTextGroup}>
+              <span className={styles.pointsLabel}>Merit Points Reward</span>
+              <span className={styles.pointsAmount}>
+                +{event.points_reward?.attendance_points ?? 0} PTS
+              </span>
+            </div>
+            <MemberIcon name="award" size={28} />
+          </div>
+
+          {/* Registration Form Responses Card (Right Sidebar for Registered Attendees) */}
+          {isRegistered && (
+            (event.custom_registration_fields?.length ?? 0) > 0 ||
+            Boolean(myRegistration?.custom_responses && Object.keys(myRegistration.custom_responses).length > 0) ||
+            Boolean(myRegistration?.team_name)
+          ) && (
+            <section className={styles.intakeCard} style={{ padding: "18px" }} aria-label="Registration Form Answers">
+              <div className={styles.intakeHeader}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <h2 className={styles.sectionTitle} style={{ margin: 0, fontSize: "15px" }}>
+                    <MemberIcon name="tag" size={16} />
+                    Registration Form Responses
+                  </h2>
+                  <span
+                    className={styles.deliverablesStatusTag}
+                    style={{
+                      background: "rgba(229, 183, 49, 0.12)",
+                      color: "#e5b731",
+                      border: "1px solid rgba(229, 183, 49, 0.3)",
+                      fontSize: "10.5px",
+                      padding: "2px 7px",
+                    }}
+                  >
+                    ✓ Intake Recorded
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowEditResponsesModal(true)}
+                  className={styles.editIntakeBtn}
+                  title="Edit your submitted answers for this event"
+                >
+                  <MemberIcon name="edit" size={13} />
+                  Edit Responses
+                </button>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                {/* Team Name Response (for team events) */}
+                {event.participation?.mode === "team" && myRegistration?.team_name && (
+                  <div className={styles.intakeFieldBox} style={{ padding: "12px 14px" }}>
+                    <div className={styles.intakeFieldHeader}>
+                      <span className={styles.intakeFieldLabel}>TEAM NAME</span>
+                      <span
+                        className={styles.intakeFieldScope}
+                        style={{
+                          background: "rgba(229, 183, 49, 0.12)",
+                          color: "#e5b731",
+                          border: "1px solid rgba(229, 183, 49, 0.3)",
+                        }}
+                      >
+                        Team
+                      </span>
+                    </div>
+                    <div className={styles.intakeFieldValue} style={{ fontWeight: "700", color: "#f4f4f5" }}>
+                      <span>{myRegistration.team_name}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Custom registration fields */}
+                {event.custom_registration_fields?.map((cf) => {
+                  const val =
+                    cf.applies_to === "team"
+                      ? myRegistration?.custom_responses?.[cf.field_id]
+                      : myRegistration?.member_responses?.[profile?.id || ""]?.[cf.field_id] ??
+                        myRegistration?.custom_responses?.[cf.field_id];
+
+                  const hasVal = val !== undefined && val !== null && val !== "";
+
+                  return (
+                    <div key={cf.field_id} className={styles.intakeFieldBox} style={{ padding: "12px 14px" }}>
+                      <div className={styles.intakeFieldHeader}>
+                        <span className={styles.intakeFieldLabel}>{cf.label.toUpperCase()}</span>
+                        <span
+                          className={styles.intakeFieldScope}
+                          style={{
+                            background:
+                              cf.applies_to === "team"
+                                ? "rgba(229, 183, 49, 0.12)"
+                                : "rgba(56, 189, 248, 0.12)",
+                            color: cf.applies_to === "team" ? "#e5b731" : "#38bdf8",
+                            border: `1px solid ${
+                              cf.applies_to === "team"
+                                ? "rgba(229, 183, 49, 0.3)"
+                                : "rgba(56, 189, 248, 0.3)"
+                            }`,
+                          }}
+                        >
+                          {cf.applies_to === "team" ? "Team" : "Individual"}
+                        </span>
+                      </div>
+
+                      <div className={styles.intakeFieldValue}>
+                        {!hasVal ? (
+                          <span className={styles.intakeFieldValueEmpty}>Not provided</span>
+                        ) : cf.field_type === "boolean" ? (
+                          <span>{val ? "✓ Yes, Confirmed" : "✕ No"}</span>
+                        ) : cf.field_type === "url" ? (
+                          <a
+                            href={String(val)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className={styles.intakeFieldLink}
+                          >
+                            <span>📎</span>
+                            <span>{String(val)}</span>
+                          </a>
+                        ) : (
+                          <span>{String(val)}</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* Quick Specs */}
+          <div className={styles.sectionCard}>
+            <h2 className={styles.sectionTitle}>
+              <MemberIcon name="clock" size={16} />
+              Schedule & Location
+            </h2>
+
+            <div className={styles.specList}>
+              <div className={styles.specItem}>
+                <div className={styles.specIcon}>
+                  <MemberIcon name="calendar" size={16} />
+                </div>
+                <div className={styles.specContent}>
+                  <span className={styles.specLabel}>Date & Start Time</span>
+                  <span className={styles.specValue}>{formattedStartTime}</span>
+                </div>
+              </div>
+
+              <div className={styles.specItem}>
+                <div className={styles.specIcon}>
+                  <MemberIcon name="clock" size={16} />
+                </div>
+                <div className={styles.specContent}>
+                  <span className={styles.specLabel}>Estimated Duration</span>
+                  <span className={styles.specValue}>
+                    {formatEventDuration(durationMinutes)}
+                  </span>
+                </div>
+              </div>
+
+              <div className={styles.specItem}>
+                <div className={styles.specIcon}>
+                  <MemberIcon name="location" size={16} />
+                </div>
+                <div className={styles.specContent}>
+                  <span className={styles.specLabel}>Venue / Stage</span>
+                  <span className={styles.specValue}>
+                    {event.venue_info?.venue_name ||
+                      (event.format === "online" ? "Online; link to be announced" : "Venue to be announced")}
+                    {event.venue_info?.room ? ` (${event.venue_info.room})` : ""}
+                  </span>
+                </div>
+              </div>
+
+              <div className={styles.specItem}>
+                <div className={styles.specIcon}>
+                  <MemberIcon name="shield" size={16} />
+                </div>
+                <div className={styles.specContent}>
+                  <span className={styles.specLabel}>RSVP Deadline</span>
+                  <span className={styles.specValue}>{formattedDeadline}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Participation Stats */}
+          <div className={styles.sectionCard}>
+            <h2 className={styles.sectionTitle}>
+              <MemberIcon name="users" size={16} />
+              Registration Status
+            </h2>
+
+            <div className={styles.statsWidget}>
+              <div className={styles.statRow}>
+                <span style={{ color: "#8c8c98" }}>Confirmed Attendees</span>
+                <span className={styles.statValueMono}>
+                  {registeredCount}{capacity ? ` / ${capacity}` : ""}
+                </span>
+              </div>
+
+              <div className={styles.progressBar}>
+                <div className={styles.progressFill} style={{ width: `${fillPercent}%` }} />
+              </div>
+
+              <div className={styles.statRow}>
+                <span style={{ color: "#8c8c98" }}>Average Rating</span>
+                <span
+                  style={{
+                    color: "var(--brand, #E5B731)",
+                    fontWeight: "800",
+                    fontFamily: "var(--font-mono, monospace)",
+                  }}
+                >
+                  {event.stats?.feedback_count ? `⭐ ${(event.stats.average_rating ?? 0).toFixed(1)} / 5.0` : "No ratings yet"}
+                </span>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+      )}
+
+      {/* TAB 2: TIMELINE & MILESTONES */}
+      
+      {/* TAB 2: TEAM & SUBMISSIONS */}
+      {activeTab === "team" && (
+        <div className={styles.teamTabGrid}>
+          {/* Main Area: Deliverables & Team Squad */}
+          <div className={styles.teamMainArea}>
+            {!isRegistered ? (
+              <div className={styles.notRegisteredTeamNotice}>
+                <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px" }}>
+                  <div className={styles.noticeIconCircle}>
+                    <MemberIcon name="users" size={22} />
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: "16px", color: "#ffffff", fontWeight: "800" }}>
+                      Team Formation & Submissions Hub
+                    </h3>
+                    <p style={{ margin: "4px 0 0", fontSize: "13px", color: "#a1a1aa" }}>
+                      Every participant registers individually first. Once registered, this hub unlocks squad creation, teammate invite codes, peer merging, and project deliverables submission.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleToggleRsvp}
+                  className={styles.registerNowBtn}
+                >
+                  <MemberIcon name="plus" size={16} />
+                  {event.participation?.mode === "team" ? "Register for Event (Team Mode)" : "RSVP for Event"}
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Phase 2: Team Formation & Merge Hub (For Team Events) */}
           {isRegistered && (event.participation?.mode === "team" || Boolean(myRegistration?.team_id || myRegistration?.team_name)) && (() => {
             const hasSquad = Boolean(myRegistration?.team_id);
-            const isLeader = Boolean(myRegistration?.is_team_leader);
             const squadMembers = myRegistration?.member_uids || (profile?.id ? [profile.id] : []);
             const squadSize = hasSquad ? squadMembers.length : 1;
+            const isLeader = Boolean(myRegistration?.is_team_leader) || (squadMembers.length > 0 && squadMembers[0] === profile?.id) || (Boolean(myRegistration?.team_name) && squadSize <= 1);
             const isEligibleSquad = squadSize >= minTeamSize;
             const isFullSquad = squadSize >= maxTeamSize;
             const pendingInvites = myRegistration?.pending_invites || [];
@@ -1152,7 +1661,59 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                       <MemberIcon name="users" size={18} />
                       {hasSquad ? (
                         <>
-                          Squad: <span style={{ color: "#E5B731" }}>{myRegistration?.team_name || "Active Squad"}</span>
+                          Squad: {editingTeamName ? (
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                            <input
+                              type="text"
+                              value={newTeamNameInput}
+                              onChange={(e) => setNewTeamNameInput(e.target.value)}
+                              className={styles.teamFieldInput}
+                              style={{ padding: "4px 8px", fontSize: "13px", width: "160px" }}
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              disabled={savingTeamName || !newTeamNameInput.trim()}
+                              onClick={handleSaveTeamName}
+                              className={styles.inviteAcceptBtn}
+                              style={{ padding: "4px 8px", fontSize: "11px" }}
+                            >
+                              {savingTeamName ? "Saving..." : "Save"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingTeamName(false)}
+                              className={styles.inviteDeclineBtn}
+                              style={{ padding: "4px 8px", fontSize: "11px" }}
+                            >
+                              Cancel
+                            </button>
+                          </span>
+                        ) : (
+                          <span>
+                            <strong style={{ color: "#E5B731" }}>{myRegistration?.team_name || "Active Squad"}</strong>
+                            {isLeader && !myRegistration?.roster_locked && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setNewTeamNameInput(myRegistration?.team_name || "");
+                                  setEditingTeamName(true);
+                                }}
+                                style={{
+                                  background: "transparent",
+                                  border: "none",
+                                  color: "#a1a1aa",
+                                  cursor: "pointer",
+                                  marginLeft: "6px",
+                                  fontSize: "12px",
+                                }}
+                                title="Edit squad name"
+                              >
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}><MemberIcon name="edit" size={12} /> Edit</span>
+                              </button>
+                            )}
+                          </span>
+                        )}
                         </>
                       ) : (
                         <span>Solo Participant <span style={{ color: "#a1a1aa", fontSize: "14px", fontWeight: "normal" }}>(Registered Pool)</span></span>
@@ -1215,6 +1776,65 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                   </div>
 
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    {hasSquad && (
+                      myRegistration?.roster_locked ? (
+                        <button
+                          type="button"
+                          disabled={lockingRoster}
+                          onClick={handleUnlockRoster}
+                          style={{
+                            background: "rgba(229, 183, 49, 0.15)",
+                            color: "#E5B731",
+                            border: "1px solid rgba(229, 183, 49, 0.4)",
+                            borderRadius: "6px",
+                            padding: "6px 12px",
+                            fontSize: "11.5px",
+                            fontWeight: "800",
+                            cursor: "pointer",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "5px",
+                          }}
+                        >
+                          {lockingRoster ? (
+                            "Unlocking..."
+                          ) : (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                              <MemberIcon name="unlock" size={12} /> Unlock / Edit Roster
+                            </span>
+                          )}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={lockingRoster || !isEligibleSquad}
+                          onClick={handleLockRoster}
+                          title={!isEligibleSquad ? `Requires minimum of ${minTeamSize} members to lock roster` : undefined}
+                          style={{
+                            background: isEligibleSquad ? "#E5B731" : "#27272a",
+                            color: isEligibleSquad ? "#141416" : "#71717a",
+                            border: "none",
+                            borderRadius: "6px",
+                            padding: "6px 12px",
+                            fontSize: "11.5px",
+                            fontWeight: "800",
+                            cursor: isEligibleSquad ? "pointer" : "not-allowed",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "5px",
+                          }}
+                        >
+                          {lockingRoster ? (
+                            "Locking..."
+                          ) : (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                              <MemberIcon name="lock" size={12} /> Lock Squad Roster & Form SPG
+                            </span>
+                          )}
+                        </button>
+                      )
+                    )}
+
                     {myRegistration?.spg_id && (
                       <Link
                         href={`/dashboard/spg/${encodeURIComponent(myRegistration.spg_id)}`}
@@ -1392,7 +2012,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                               className={styles.copyCodeBtn}
                               style={{ padding: "5px 10px", fontSize: "11.5px" }}
                             >
-                              {copiedCode ? "✓ Copied" : "Copy Code 📋"}
+                              {copiedCode ? "✓ Copied" : "Copy Code "}
                             </button>
                           </div>
                         )}
@@ -1400,7 +2020,8 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                         {/* Roster List */}
                         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                           {squadMembers.map((uid) => {
-                            const isThisLeader = (myRegistration?.user_id === uid && myRegistration.is_team_leader) || (squadMembers[0] === uid && !myRegistration?.user_id);
+                            const leaderUid = (myRegistration?.is_team_leader && profile?.id) ? profile.id : (squadMembers.length > 0 ? squadMembers[0] : profile?.id);
+                            const isThisLeader = uid === leaderUid;
                             const prof = memberProfilesMap[uid] || myRegistration?.member_profiles?.find((p) => p.id === uid);
                             const name = uid === profile?.id ? `${profile.full_name || "You"} (You)` : (prof?.full_name || `Member ${uid.slice(0, 5)}`);
                             return (
@@ -1821,7 +2442,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                         rel="noreferrer"
                         className={styles.deliverableLinkItem}
                       >
-                        <span>💻</span>
+                        <span></span>
                         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           Repository
                         </span>
@@ -1834,7 +2455,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                         rel="noreferrer"
                         className={styles.deliverableLinkItem}
                       >
-                        <span>📊</span>
+                        <span></span>
                         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           Pitch Slides
                         </span>
@@ -1847,7 +2468,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                         rel="noreferrer"
                         className={styles.deliverableLinkItem}
                       >
-                        <span>🎥</span>
+                        <span></span>
                         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           Live Demo
                         </span>
@@ -1860,7 +2481,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                         rel="noreferrer"
                         className={styles.deliverableLinkItem}
                       >
-                        <span>📄</span>
+                        <span></span>
                         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           Paper / Writeup
                         </span>
@@ -1878,7 +2499,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                             rel="noreferrer"
                             className={styles.deliverableLinkItem}
                           >
-                            <span>🔗</span>
+                            <span>📎</span>
                             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               {k}: {String(v)}
                             </span>
@@ -1900,378 +2521,212 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
             );
           })()}
 
-          {/* Detailed Overview */}
-          <section className={styles.sectionCard} aria-label="Event Detailed Overview">
-            <h2 className={styles.sectionTitle}>
-              <MemberIcon name="articles" size={18} />
-              Event Agenda & Specifications
-            </h2>
-            <div className={styles.sectionBody}>
-              {renderMarkdown(event.detailed_info || event.description)}
-            </div>
-          </section>
 
-          {/* Participation & Team Formation (SPG) */}
-          <section className={styles.sectionCard} aria-label="Participation Guidelines">
-            <h2 className={styles.sectionTitle}>
-              <MemberIcon name="users" size={18} />
-              Participation & SPG Formation
-            </h2>
-
-            <div className={styles.spgInfoBox}>
-              <div className={styles.spgHeader}>
-                <span className={styles.spgTag}>
-                  {event.participation?.mode === "team" ? "TEAM EVENT" : "SOLO PARTICIPATION"}
-                </span>
-                {event.participation?.requires_event_spg && (
-                  <span style={{ fontSize: "0.72rem", color: "#4ade80", fontWeight: "750" }}>
-                    ✓ Auto-provisions temporary Event SPG
+              </>
+            )}
+            <section className={styles.sectionCard} aria-label="Participation Rules">
+              <h2 className={styles.sectionTitle}>
+                <MemberIcon name="users" size={18} />
+                Squad & Participation Rules
+              </h2>
+              <div className={styles.spgInfoBox}>
+                <div className={styles.spgHeader}>
+                  <span className={styles.spgTag}>
+                    {event.participation?.mode === "team" ? "TEAM EVENT" : "SOLO PARTICIPATION"}
                   </span>
-                )}
-              </div>
-
-              <div className={styles.spgRuleList}>
-                <div className={styles.spgRuleItem}>
-                  <span className={styles.ruleLabel}>Team Size</span>
-                  <span className={styles.ruleVal}>
-                    {event.participation?.mode === "team"
-                      ? `${event.participation.min_team_size ?? 1} - ${event.participation.max_team_size ?? 1} Members`
-                      : "Individual (Solo)"}
-                  </span>
+                  {event.participation?.requires_event_spg && (
+                    <span style={{ fontSize: "0.72rem", color: "#4ade80", fontWeight: "750" }}>
+                      ✓ Auto-provisions temporary Event SPG
+                    </span>
+                  )}
                 </div>
-
-                <div className={styles.spgRuleItem}>
-                  <span className={styles.ruleLabel}>SPG Auto-Disband</span>
-                  <span className={styles.ruleVal}>
-                    {event.participation?.requires_event_spg
-                      ? `${event.participation?.spg_auto_disband_days || 3} Days after event`
-                      : "N/A"}
-                  </span>
-                </div>
-
-                <div className={styles.spgRuleItem}>
-                  <span className={styles.ruleLabel}>Access Scope</span>
-                  <span className={styles.ruleVal}>
-                    {event.eligibility?.access_scope === "invite_only" ? "Invite Only" :
-                      event.eligibility?.access_scope === "members_only" ? "Members Only" : "Open to All Students"}
-                  </span>
-                </div>
-
-                <div className={styles.spgRuleItem}>
-                  <span className={styles.ruleLabel}>Eligibility</span>
-                  <span className={styles.ruleVal}>
-                    {displayedBatches?.length
-                      ? `${legacyDefaultYears || displayedBatches.every((year) => year >= 1900) ? "Batches" : "Years"}: ${displayedBatches.join(", ")}`
-                      : "All Batches"}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* Resources & Downloads */}
-          <section className={styles.sectionCard} aria-label="Event Artifacts & Materials">
-            <h2 className={styles.sectionTitle}>
-              <MemberIcon name="tag" size={18} />
-              Event Materials & Links
-            </h2>
-
-            <div className={styles.resourcesList}>
-              {event.resources?.slides_url && (
-                <a
-                  href={event.resources.slides_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={styles.resourceLinkItem}
-                >
-                  <span>📄 Presentation Slides & Technical Brief</span>
-                  <span>Open Slides →</span>
-                </a>
-              )}
-              {event.resources?.writeup_url && (
-                <a
-                  href={event.resources.writeup_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={styles.resourceLinkItem}
-                >
-                  <span>💻 Starter Repository & Notebooks</span>
-                  <span>GitHub →</span>
-                </a>
-              )}
-              {event.resources?.recording_url && (
-                <a
-                  href={event.resources.recording_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={styles.resourceLinkItem}
-                >
-                  <span>🎥 Workshop Video Recording</span>
-                  <span>Watch →</span>
-                </a>
-              )}
-              {linkedResources.map((resource) => (
-                <a
-                  key={resource.id}
-                  href={resource.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={styles.resourceLinkItem}
-                >
-                  <span>{resource.title}</span>
-                  <span>Open link →</span>
-                </a>
-              ))}
-              {linkedResourcesLoading && (
-                <p style={{ color: "#8c8c98", fontSize: "0.82rem", margin: 0 }}>
-                  Loading shared links…
-                </p>
-              )}
-              {linkedResourcesError && (
-                <p role="status" style={{ color: "#8c8c98", fontSize: "0.82rem", margin: 0 }}>
-                  Shared event links could not be loaded.
-                </p>
-              )}
-              {!event.resources?.slides_url &&
-                !event.resources?.writeup_url &&
-                !event.resources?.recording_url && (
-                !linkedResourcesLoading && !linkedResourcesError && linkedResources.length === 0 && (
-                  <p style={{ color: "#8c8c98", fontSize: "0.82rem", margin: 0 }}>
-                    No event materials have been published yet.
-                  </p>
-                ))}
-            </div>
-          </section>
-        </div>
-
-        {/* Right Sidebar Column */}
-        <aside className={styles.sidebarColumn} aria-label="Event Key Details Sidebar">
-          {/* Merit Reward Card */}
-          <div className={styles.pointsRewardCard}>
-            <div className={styles.pointsTextGroup}>
-              <span className={styles.pointsLabel}>Merit Points Reward</span>
-              <span className={styles.pointsAmount}>
-                +{event.points_reward?.attendance_points ?? 0} PTS
-              </span>
-            </div>
-            <MemberIcon name="award" size={28} />
-          </div>
-
-          {/* Registration Form Responses Card (Right Sidebar for Registered Attendees) */}
-          {isRegistered && (
-            (event.custom_registration_fields?.length ?? 0) > 0 ||
-            Boolean(myRegistration?.custom_responses && Object.keys(myRegistration.custom_responses).length > 0) ||
-            Boolean(myRegistration?.team_name)
-          ) && (
-            <section className={styles.intakeCard} style={{ padding: "18px" }} aria-label="Registration Form Answers">
-              <div className={styles.intakeHeader}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                  <h2 className={styles.sectionTitle} style={{ margin: 0, fontSize: "15px" }}>
-                    <MemberIcon name="tag" size={16} />
-                    Registration Form Responses
-                  </h2>
-                  <span
-                    className={styles.deliverablesStatusTag}
-                    style={{
-                      background: "rgba(229, 183, 49, 0.12)",
-                      color: "#e5b731",
-                      border: "1px solid rgba(229, 183, 49, 0.3)",
-                      fontSize: "10.5px",
-                      padding: "2px 7px",
-                    }}
-                  >
-                    ✓ Intake Recorded
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setShowEditResponsesModal(true)}
-                  className={styles.editIntakeBtn}
-                  title="Edit your submitted answers for this event"
-                >
-                  <MemberIcon name="edit" size={13} />
-                  Edit Responses
-                </button>
-              </div>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                {/* Team Name Response (for team events) */}
-                {event.participation?.mode === "team" && myRegistration?.team_name && (
-                  <div className={styles.intakeFieldBox} style={{ padding: "12px 14px" }}>
-                    <div className={styles.intakeFieldHeader}>
-                      <span className={styles.intakeFieldLabel}>TEAM NAME</span>
-                      <span
-                        className={styles.intakeFieldScope}
-                        style={{
-                          background: "rgba(229, 183, 49, 0.12)",
-                          color: "#e5b731",
-                          border: "1px solid rgba(229, 183, 49, 0.3)",
-                        }}
-                      >
-                        Team
-                      </span>
-                    </div>
-                    <div className={styles.intakeFieldValue} style={{ fontWeight: "700", color: "#f4f4f5" }}>
-                      <span>{myRegistration.team_name}</span>
-                    </div>
+                <div className={styles.spgRuleList}>
+                  <div className={styles.spgRuleItem}>
+                    <span className={styles.ruleLabel}>Team Size Cap</span>
+                    <span className={styles.ruleVal}>
+                      {event.participation?.mode === "team"
+                        ? `${event.participation.min_team_size ?? 1} - ${event.participation.max_team_size ?? 1} Members`
+                        : "Solo (1 Member)"}
+                    </span>
                   </div>
-                )}
-
-                {/* Custom registration fields */}
-                {event.custom_registration_fields?.map((cf) => {
-                  const val =
-                    cf.applies_to === "team"
-                      ? myRegistration?.custom_responses?.[cf.field_id]
-                      : myRegistration?.member_responses?.[profile?.id || ""]?.[cf.field_id] ??
-                        myRegistration?.custom_responses?.[cf.field_id];
-
-                  const hasVal = val !== undefined && val !== null && val !== "";
-
-                  return (
-                    <div key={cf.field_id} className={styles.intakeFieldBox} style={{ padding: "12px 14px" }}>
-                      <div className={styles.intakeFieldHeader}>
-                        <span className={styles.intakeFieldLabel}>{cf.label.toUpperCase()}</span>
-                        <span
-                          className={styles.intakeFieldScope}
-                          style={{
-                            background:
-                              cf.applies_to === "team"
-                                ? "rgba(229, 183, 49, 0.12)"
-                                : "rgba(56, 189, 248, 0.12)",
-                            color: cf.applies_to === "team" ? "#e5b731" : "#38bdf8",
-                            border: `1px solid ${
-                              cf.applies_to === "team"
-                                ? "rgba(229, 183, 49, 0.3)"
-                                : "rgba(56, 189, 248, 0.3)"
-                            }`,
-                          }}
-                        >
-                          {cf.applies_to === "team" ? "Team" : "Individual"}
-                        </span>
-                      </div>
-
-                      <div className={styles.intakeFieldValue}>
-                        {!hasVal ? (
-                          <span className={styles.intakeFieldValueEmpty}>Not provided</span>
-                        ) : cf.field_type === "boolean" ? (
-                          <span>{val ? "✓ Yes, Confirmed" : "✗ No"}</span>
-                        ) : cf.field_type === "url" ? (
-                          <a
-                            href={String(val)}
-                            target="_blank"
-                            rel="noreferrer"
-                            className={styles.intakeFieldLink}
-                          >
-                            <span>🔗</span>
-                            <span>{String(val)}</span>
-                          </a>
-                        ) : (
-                          <span>{String(val)}</span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+                  <div className={styles.spgRuleItem}>
+                    <span className={styles.ruleLabel}>SPG Auto-Disband</span>
+                    <span className={styles.ruleVal}>
+                      {event.participation?.requires_event_spg
+                        ? `${event.participation?.spg_auto_disband_days || 3} Days after event`
+                        : "N/A"}
+                    </span>
+                  </div>
+                  <div className={styles.spgRuleItem}>
+                    <span className={styles.ruleLabel}>Access Scope</span>
+                    <span className={styles.ruleVal}>
+                      {event.eligibility?.access_scope === "invite_only" ? "Invite Only" :
+                        event.eligibility?.access_scope === "members_only" ? "Members Only" : "Open to All Students"}
+                    </span>
+                  </div>
+                </div>
               </div>
             </section>
-          )}
-
-          {/* Quick Specs */}
-          <div className={styles.sectionCard}>
-            <h2 className={styles.sectionTitle}>
-              <MemberIcon name="clock" size={16} />
-              Schedule & Location
-            </h2>
-
-            <div className={styles.specList}>
-              <div className={styles.specItem}>
-                <div className={styles.specIcon}>
-                  <MemberIcon name="calendar" size={16} />
-                </div>
-                <div className={styles.specContent}>
-                  <span className={styles.specLabel}>Date & Start Time</span>
-                  <span className={styles.specValue}>{formattedStartTime}</span>
-                </div>
-              </div>
-
-              <div className={styles.specItem}>
-                <div className={styles.specIcon}>
-                  <MemberIcon name="clock" size={16} />
-                </div>
-                <div className={styles.specContent}>
-                  <span className={styles.specLabel}>Estimated Duration</span>
-                  <span className={styles.specValue}>
-                    {formatEventDuration(durationMinutes)}
-                  </span>
-                </div>
-              </div>
-
-              <div className={styles.specItem}>
-                <div className={styles.specIcon}>
-                  <MemberIcon name="location" size={16} />
-                </div>
-                <div className={styles.specContent}>
-                  <span className={styles.specLabel}>Venue / Stage</span>
-                  <span className={styles.specValue}>
-                    {event.venue_info?.venue_name ||
-                      (event.format === "online" ? "Online; link to be announced" : "Venue to be announced")}
-                    {event.venue_info?.room ? ` (${event.venue_info.room})` : ""}
-                  </span>
-                </div>
-              </div>
-
-              <div className={styles.specItem}>
-                <div className={styles.specIcon}>
-                  <MemberIcon name="shield" size={16} />
-                </div>
-                <div className={styles.specContent}>
-                  <span className={styles.specLabel}>RSVP Deadline</span>
-                  <span className={styles.specValue}>{formattedDeadline}</span>
-                </div>
-              </div>
-            </div>
           </div>
 
-          {/* Participation Stats */}
-          <div className={styles.sectionCard}>
-            <h2 className={styles.sectionTitle}>
-              <MemberIcon name="users" size={16} />
-              Registration Status
-            </h2>
-
-            <div className={styles.statsWidget}>
-              <div className={styles.statRow}>
-                <span style={{ color: "#8c8c98" }}>Confirmed Attendees</span>
-                <span className={styles.statValueMono}>
-                  {registeredCount}{capacity ? ` / ${capacity}` : ""}
-                </span>
-              </div>
-
-              <div className={styles.progressBar}>
-                <div className={styles.progressFill} style={{ width: `${fillPercent}%` }} />
-              </div>
-
-              <div className={styles.statRow}>
-                <span style={{ color: "#8c8c98" }}>Average Rating</span>
-                <span
-                  style={{
-                    color: "var(--brand, #E5B731)",
-                    fontWeight: "800",
-                    fontFamily: "var(--font-mono, monospace)",
-                  }}
-                >
-                  {event.stats?.feedback_count ? `⭐ ${(event.stats.average_rating ?? 0).toFixed(1)} / 5.0` : "No ratings yet"}
-                </span>
-              </div>
+          {/* Side Column: Invitations Column Beside Team Page */}
+          <aside className={styles.invitesColumn} aria-label="Invitations to You">
+            <div className={styles.invitesHeader}>
+              <h3 className={styles.invitesTitle}>
+                <MemberIcon name="mail" size={16} />
+                <span>Invitations to You</span>
+                {(myRegistration?.pending_invites?.length || 0) + myEventTeamInvites.length > 0 && (
+                  <span className={styles.invitesBadge}>
+                    {(myRegistration?.pending_invites?.length || 0) + myEventTeamInvites.length}
+                  </span>
+                )}
+              </h3>
+              <button
+                type="button"
+                onClick={handleManualRefreshInvites}
+                disabled={refreshingInvites}
+                className={styles.refreshInvitesBtn}
+                title="Refresh incoming squad and event invitations"
+              >
+                <span className={refreshingInvites ? styles.spinningIcon : ""} style={{ display: "inline-flex" }}><MemberIcon name="refresh" size={13} /></span>
+                <span>{refreshingInvites ? "Refreshing..." : "Refresh"}</span>
+              </button>
             </div>
-          </div>
-        </aside>
-      </div>
+
+            {/* List incoming invites */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {(myRegistration?.pending_invites || []).length > 0 &&
+                (myRegistration?.pending_invites || []).map((inv) => (
+                  <div key={inv.invite_id} className={styles.inviteItemCard}>
+                    <div className={styles.inviteCardBadge}>Squad Merge Request</div>
+                    <div className={styles.inviteTeamName}>
+                      &quot;{inv.from_team_name}&quot;
+                    </div>
+                    <div className={styles.inviteSubtitle}>
+                      From leader: <strong style={{ color: "#ffffff" }}>{inv.from_leader_name}</strong>
+                    </div>
+                    <div className={styles.inviteActionsRow}>
+                      <button
+                        type="button"
+                        disabled={mergeBusyId === inv.invite_id}
+                        onClick={() => handleAcceptMergeInvite(inv.invite_id)}
+                        className={styles.inviteAcceptBtn}
+                      >
+                        {mergeBusyId === inv.invite_id ? "Merging..." : "Accept & Merge"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeclineMergeInvite(inv.invite_id)}
+                        className={styles.inviteDeclineBtn}
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+              {myEventTeamInvites.length > 0 &&
+                myEventTeamInvites.map((inv) => (
+                  <div key={inv.id} className={styles.inviteItemCard}>
+                    <div className={styles.inviteCardBadge}>Team Invitation</div>
+                    <div className={styles.inviteTeamName}>
+                      &quot;{inv.team_name || "Event Team"}&quot;
+                    </div>
+                    <div className={styles.inviteSubtitle}>
+                      Invited by <strong style={{ color: "#ffffff" }}>{inv.inviter_name}</strong> ({inv.inviter_email || "Lead"})
+                    </div>
+                    <div className={styles.inviteActionsRow}>
+                      <button
+                        type="button"
+                        disabled={invitationBusy}
+                        onClick={() => handleAcceptInvite(inv.id)}
+                        className={styles.inviteAcceptBtn}
+                      >
+                        {invitationBusy ? "Joining..." : "Accept & Join"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={invitationBusy}
+                        onClick={() => handleDeclineInvite(inv.id)}
+                        className={styles.inviteDeclineBtn}
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+              {(myRegistration?.pending_invites?.length || 0) + myEventTeamInvites.length === 0 && (
+                <div className={styles.invitesEmptyState}>
+                  <div style={{ display: "flex", justifyContent: "center", marginBottom: "8px", color: "#71717a" }}><MemberIcon name="inbox" size={32} /></div>
+                  <div style={{ fontWeight: "750", color: "#ffffff", fontSize: "13px" }}>
+                    No Pending Invitations
+                  </div>
+                  <p style={{ color: "#8c8c98", fontSize: "11.5px", margin: "4px 0 10px", lineHeight: "1.4" }}>
+                    When team leads or peers invite you to merge, their invitations will appear here.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleManualRefreshInvites}
+                    disabled={refreshingInvites}
+                    className={styles.checkInvitesBtn}
+                  >
+                    Check Again
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Quick Squad Code Box */}
+            {myRegistration?.invite_code && (
+              <div className={styles.quickCodeCard}>
+                <div style={{ fontSize: "10px", textTransform: "uppercase", fontWeight: "800", color: "#8c8c98" }}>
+                  Your Squad Invite Code
+                </div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "4px" }}>
+                  <code className={styles.quickCodeDisplay}>{myRegistration.invite_code}</code>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (myRegistration?.invite_code) {
+                        navigator.clipboard.writeText(myRegistration.invite_code);
+                        setCopiedCode(true);
+                        setTimeout(() => setCopiedCode(false), 2000);
+                      }
+                    }}
+                    className={styles.quickCopyBtn}
+                  >
+                    {copiedCode ? <><MemberIcon name="check" size={12} /> Copied</> : <><MemberIcon name="copy" size={12} /> Copy</>}
+                  </button>
+                </div>
+                <div style={{ fontSize: "10.5px", color: "#71717a", marginTop: "6px" }}>
+                  Give this 6-character code to registered peers so they can join your squad directly.
+                </div>
+              </div>
+            )}
+
+            {/* Outgoing Invites Sent */}
+            {outgoingTeamInvites.length > 0 && (
+              <div className={styles.outgoingInvitesBox}>
+                <div style={{ fontSize: "11px", fontWeight: "800", color: "#8c8c98", textTransform: "uppercase", marginBottom: "8px" }}>
+                  Sent by Your Squad ({outgoingTeamInvites.length})
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {outgoingTeamInvites.map((out) => (
+                    <div key={out.id} className={styles.outgoingItem}>
+                      <span style={{ fontSize: "12px", color: "#e4e4e7" }}>{out.invitee_name}</span>
+                      <span style={{ fontSize: "10px", color: "#E5B731", background: "rgba(229,183,49,0.1)", padding: "2px 6px", borderRadius: "4px" }}>
+                        Pending
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </aside>
+        </div>
       )}
-
-      {/* TAB 2: TIMELINE & MILESTONES */}
-      {activeTab === "timeline" && (
+{activeTab === "timeline" && (
         <section className={styles.sectionCard} aria-label="Event Timeline">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
             <h2 className={styles.sectionTitle}>
@@ -2411,6 +2866,19 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
         eventTitle={event.title}
         loading={registrationBusy}
         error={registrationError}
+      />
+
+      {/* Lock Squad Roster & Form SPG Modal */}
+      <LockRosterModal
+        isOpen={showLockModal}
+        onClose={() => setShowLockModal(false)}
+        onConfirm={handleConfirmLockRoster}
+        teamName={myRegistration?.team_name}
+        squadSize={myRegistration?.member_uids?.length || 1}
+        minTeamSize={minTeamSize}
+        eventTitle={event.title}
+        loading={lockingRoster}
+        error={lockModalError}
       />
 
       {/* Team Invitation Modal */}

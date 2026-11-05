@@ -30,6 +30,7 @@ export type CalendarEventItem = {
   isEnded: boolean;
   isOngoing: boolean;
   startDate: Date;
+  isDraft?: boolean;
   bannerUrl?: string | null;
 };
 
@@ -96,6 +97,7 @@ function mapEventToCalendarItem(ev: any, now = Date.now(), isAdmin = false): Cal
     isEnded,
     isOngoing,
     startDate: start,
+    isDraft,
     bannerUrl: ev.banner_url || null,
   };
 }
@@ -123,6 +125,7 @@ export default function EventsManagementClient() {
   const [loadError, setLoadError] = useState("");
   const [eventInvites, setEventInvites] = useState<InvitationItem[]>([]);
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
+  const [publishingId, setPublishingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -628,20 +631,65 @@ export default function EventsManagementClient() {
                       </span>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={(e) => handleToggleRsvp(ev.slug, e)}
-                      className={`${styles.actionBtn} ${
-                        ev.isOngoing
-                          ? styles.btnOngoing
-                          : ev.isEnded
-                          ? styles.btnEnded
-                          : styles.btnRsvp
-                      }`}
-                      aria-label={`Open ${ev.title}`}
-                    >
-                      {ev.isOngoing ? "JOIN NOW" : ev.isEnded ? "VIEW DETAILS" : ev.registrationOpen ? "RSVP NOW" : "VIEW DETAILS"}
-                    </button>
+                    {isAdmin && ev.isDraft ? (
+                      <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (!token || publishingId) return;
+                            setPublishingId(ev.id);
+                            try {
+                              await api.adminUpdateEventStatus(token, ev.id, "published");
+                              const nowMs = Date.now();
+                              const res = await api.listEvents(token, { limit: 100 });
+                              setEvents(res.events.map((it: any) => mapEventToCalendarItem(it, nowMs, isAdmin)));
+                            } catch (err) {
+                              alert(err instanceof Error ? err.message : "Failed to publish event.");
+                            } finally {
+                              setPublishingId(null);
+                            }
+                          }}
+                          className={styles.actionBtn}
+                          style={{
+                            background: "#E5B731",
+                            color: "#121214",
+                            border: "none",
+                            fontWeight: "800",
+                            boxShadow: "0 2px 8px rgba(229, 183, 49, 0.3)",
+                            fontSize: "12px",
+                            padding: "8px 14px",
+                          }}
+                          disabled={publishingId === ev.id}
+                        >
+                          {publishingId === ev.id ? "PUBLISHING..." : "PUBLISH EVENT 🚀"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleToggleRsvp(ev.slug, e)}
+                          className={`${styles.actionBtn} ${styles.btnEnded}`}
+                          aria-label={`Open ${ev.title}`}
+                        >
+                          VIEW
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={(e) => handleToggleRsvp(ev.slug, e)}
+                        className={`${styles.actionBtn} ${
+                          ev.isOngoing
+                            ? styles.btnOngoing
+                            : ev.isEnded
+                            ? styles.btnEnded
+                            : styles.btnRsvp
+                        }`}
+                        aria-label={`Open ${ev.title}`}
+                      >
+                        {ev.isOngoing ? "JOIN NOW" : ev.isEnded ? "VIEW DETAILS" : ev.registrationOpen ? "RSVP NOW" : "VIEW DETAILS"}
+                      </button>
+                    )}
                   </div>
                 </article>
               );

@@ -1316,6 +1316,19 @@ def create_or_update_team(
         "updated_at": now_ts,
     }
 
+    # Update SPG name if team_name changed
+    spg_id = reg_data.get("spg_id")
+    if spg_id and payload.team_name.strip():
+        try:
+            spg_doc = db.collection(SPGS_COLLECTION).document(spg_id).get()
+            if spg_doc.exists:
+                db.collection(SPGS_COLLECTION).document(spg_id).update({
+                    "name": payload.team_name.strip(),
+                    "updated_at": now_ts,
+                })
+        except Exception:
+            pass
+
     for m_uid in current_members:
         m_doc = regs_ref.document(m_uid).get()
         if m_doc.exists:
@@ -1578,6 +1591,7 @@ def merge_team(
     is_now_full = combined_size >= event.participation.max_team_size
     next_looking_for_team = False if is_now_full else bool(target_data.get("looking_for_team", True))
 
+    host_spg_id = target_data.get("spg_id") or caller_data.get("spg_id")
     shared_update = {
         "team_id": target_team_id,
         "team_name": host_team_name,
@@ -1585,9 +1599,23 @@ def merge_team(
         "selected_track_id": host_track_id,
         "team_custom_responses": host_team_responses,
         "member_uids": combined_members,
+        "spg_id": host_spg_id,
         "looking_for_team": next_looking_for_team,
         "updated_at": now_ts,
     }
+
+    if host_spg_id:
+        try:
+            spg_doc = db.collection(SPGS_COLLECTION).document(host_spg_id).get()
+            if spg_doc.exists:
+                db.collection(SPGS_COLLECTION).document(host_spg_id).update({
+                    "name": host_team_name,
+                    "member_ids": combined_members,
+                    "lead_id": host_leader_uid,
+                    "updated_at": now_ts,
+                })
+        except Exception:
+            pass
 
     for m_uid in combined_members:
         m_snap = regs_ref.document(m_uid).get()
@@ -1662,6 +1690,25 @@ def leave_team(
                     r_update["is_team_leader"] = True
                 r_snap.reference.update(r_update)
 
+    caller_spg_id = caller_data.get("spg_id")
+    if caller_spg_id:
+        try:
+            spg_doc = db.collection(SPGS_COLLECTION).document(caller_spg_id).get()
+            if spg_doc.exists:
+                spg_dict = spg_doc.to_dict() or {}
+                new_spg_members = [m for m in (spg_dict.get("member_ids") or []) if m != user_uid]
+                spg_update: Dict[str, Any] = {
+                    "member_ids": new_spg_members,
+                    "updated_at": now_ts,
+                }
+                if caller_data.get("is_team_leader") and remaining:
+                    spg_update["lead_id"] = remaining[0]
+                elif not remaining:
+                    spg_update["status"] = "disbanded"
+                db.collection(SPGS_COLLECTION).document(caller_spg_id).update(spg_update)
+        except Exception:
+            pass
+
     caller_doc.reference.update({
         "team_id": None,
         "team_name": None,
@@ -1670,11 +1717,152 @@ def leave_team(
         "member_uids": [user_uid],
         "team_custom_responses": {},
         "looking_for_team": True,
+        "spg_id": None,
+        "roster_locked": False,
         "updated_at": now_ts,
     })
 
     fresh_caller = regs_ref.document(caller_doc.id).get().to_dict() or {}
     fresh_caller["id"] = caller_doc.id
+    _hydrate_single_registration_profiles(fresh_caller)
+    return RegistrationDocument.model_validate(fresh_caller)
+
+
+@router.post("/{id}/team/lock", response_model=RegistrationDocument)
+def lock_team_roster(
+    id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Lock team roster and automatically mint an SPG for the squad."""
+    user_uid = get_user_uid(current_user)
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event = _doc_to_event_document(event_doc)
+
+    regs_ref = (
+        db.collection(EVENTS_COLLECTION)
+        .document(event_id)
+        .collection(REGISTRATIONS_SUBCOLLECTION)
+    )
+
+    my_regs = [r for r in _registrations_for_user(regs_ref, user_uid) if _active_registration(r.to_dict() or {})]
+    if not my_regs:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="You must register for this event before locking a squad roster.",
+        )
+
+    my_reg_doc = my_regs[0]
+    reg_data = my_reg_doc.to_dict() or {}
+
+    team_id = reg_data.get("team_id")
+    team_name = reg_data.get("team_name")
+    if not team_id or not team_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You must create a named squad before locking the roster.",
+        )
+
+    member_uids = reg_data.get("member_uids") or [user_uid]
+    if user_uid not in member_uids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not a member of this squad.",
+        )
+
+    min_size = event.participation.min_team_size or 1
+    if len(member_uids) < min_size:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Squad has {len(member_uids)} members, but at least {min_size} are required before locking roster.",
+        )
+
+    now_ts = now_iso()
+    spg_id = reg_data.get("spg_id")
+
+    # If SPG does not exist yet, automatically mint one!
+    if not spg_id:
+        spg_id, spg_data = _event_spg_data(
+            event, event_id, user_uid, member_uids, team_name
+        )
+        db.collection(SPGS_COLLECTION).document(spg_id).set(spg_data)
+    else:
+        # Keep SPG members synced
+        try:
+            spg_doc = db.collection(SPGS_COLLECTION).document(spg_id).get()
+            if spg_doc.exists:
+                db.collection(SPGS_COLLECTION).document(spg_id).update({
+                    "name": team_name,
+                    "member_ids": member_uids,
+                    "lead_id": user_uid,
+                    "updated_at": now_ts,
+                })
+        except Exception:
+            pass
+
+    # Lock roster and associate SPG for all squad members
+    for m_uid in member_uids:
+        m_doc = regs_ref.document(m_uid).get()
+        if m_doc.exists:
+            m_doc.reference.update({
+                "roster_locked": True,
+                "locked_at": now_ts,
+                "spg_id": spg_id,
+                "looking_for_team": False,
+                "updated_at": now_ts,
+            })
+
+    fresh_caller = regs_ref.document(my_reg_doc.id).get().to_dict() or {}
+    fresh_caller["id"] = my_reg_doc.id
+    _hydrate_single_registration_profiles(fresh_caller)
+    return RegistrationDocument.model_validate(fresh_caller)
+
+
+@router.post("/{id}/team/unlock", response_model=RegistrationDocument)
+def unlock_team_roster(
+    id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Unlock team roster so teammates can join or leave."""
+    user_uid = get_user_uid(current_user)
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+
+    regs_ref = (
+        db.collection(EVENTS_COLLECTION)
+        .document(event_id)
+        .collection(REGISTRATIONS_SUBCOLLECTION)
+    )
+
+    my_regs = [r for r in _registrations_for_user(regs_ref, user_uid) if _active_registration(r.to_dict() or {})]
+    if not my_regs:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Registration not found.",
+        )
+
+    my_reg_doc = my_regs[0]
+    reg_data = my_reg_doc.to_dict() or {}
+
+    member_uids = reg_data.get("member_uids") or [user_uid]
+    if user_uid not in member_uids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not a member of this squad.",
+        )
+
+    now_ts = now_iso()
+    for m_uid in member_uids:
+        m_doc = regs_ref.document(m_uid).get()
+        if m_doc.exists:
+            m_doc.reference.update({
+                "roster_locked": False,
+                "looking_for_team": True,
+                "updated_at": now_ts,
+            })
+
+    fresh_caller = regs_ref.document(my_reg_doc.id).get().to_dict() or {}
+    fresh_caller["id"] = my_reg_doc.id
     _hydrate_single_registration_profiles(fresh_caller)
     return RegistrationDocument.model_validate(fresh_caller)
 

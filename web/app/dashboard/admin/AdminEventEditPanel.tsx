@@ -557,7 +557,7 @@ export default function AdminEventEditPanel({
           title="Refresh event list"
         >
           <MemberIcon name="lightning" size={14} />
-          {loadingList ? "Refreshingâ€¦" : "Refresh List"}
+          {loadingList ? "Refreshing..." : "Refresh List"}
         </button>
       </div>
 
@@ -575,7 +575,7 @@ export default function AdminEventEditPanel({
           <div className={styles.eventListToolbar}>
             <input
               type="search"
-              placeholder="Search events by title, slug, track, or typeâ€¦"
+              placeholder="Search events by title, slug, track, or type..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className={styles.eventSearchInput}
@@ -597,7 +597,7 @@ export default function AdminEventEditPanel({
 
           {loadingList ? (
             <div style={{ textAlign: "center", padding: "48px", color: "#e5b731" }}>
-              Loading existing club eventsâ€¦
+              Loading existing club events...
             </div>
           ) : filteredEvents.length === 0 ? (
             <div
@@ -710,7 +710,7 @@ export default function AdminEventEditPanel({
                       title="Open public event page in new tab"
                     >
                       <MemberIcon name="external" size={13} />
-                      View Page â†—
+                      View Page ↗
                     </Link>
                   </div>
                 </article>
@@ -731,7 +731,7 @@ export default function AdminEventEditPanel({
                 onClick={() => setSelectedId("")}
                 className={styles.backToListBtn}
               >
-                â† Back to All Events
+                ← Back to All Events
               </button>
               <span>
                 <strong>Currently Editing:</strong> {title || "Selected Event"}
@@ -744,13 +744,13 @@ export default function AdminEventEditPanel({
               className={styles.viewActionBtn}
             >
               <MemberIcon name="external" size={13} />
-              View Live Page â†—
+              View Live Page ↗
             </Link>
           </div>
 
           {loadingDetail ? (
             <div style={{ textAlign: "center", padding: "40px", color: "#e5b731" }}>
-              Loading event detailsâ€¦
+              Loading event details...
             </div>
           ) : (
             <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
@@ -1242,7 +1242,7 @@ export default function AdminEventEditPanel({
                   Choose several links from the shared pool. A link can be reused on other events.
                 </p>
                 {resourcesLoading ? (
-                  <p className={styles.cardSubtitle}>Loading shared linksâ€¦</p>
+                  <p className={styles.cardSubtitle}>Loading shared links...</p>
                 ) : poolResources.length ? (
                   <div className={styles.eventResourceOptions}>
                     {poolResources.map((resource) => (
@@ -1291,7 +1291,7 @@ export default function AdminEventEditPanel({
                         className={styles.formInput}
                         value={newResourceUrl}
                         onChange={(event) => setNewResourceUrl(event.target.value)}
-                        placeholder="https://â€¦"
+                        placeholder="https://..."
                       />
                     </div>
                     <div className={styles.formGroup}>
@@ -1311,7 +1311,7 @@ export default function AdminEventEditPanel({
                         ))}
                       </datalist>
                       <small id="event-resource-category-hint" className={styles.formLabelHint}>
-                        Use / between nested folders. This eventâ€™s folder is preselected.
+                        Use / between nested folders. This event's folder is preselected.
                       </small>
                     </div>
                   </div>
@@ -1333,7 +1333,7 @@ export default function AdminEventEditPanel({
                       disabled={isAddingResource || !newResourceTitle.trim() || !newResourceUrl.trim()}
                       onClick={handleAddPoolResource}
                     >
-                      {isAddingResource ? "Adding linkâ€¦" : "Add to shared pool"}
+                      {isAddingResource ? "Adding link..." : "Add to shared pool"}
                     </button>
                   </div>
                 </div>
@@ -2186,7 +2186,7 @@ export default function AdminEventEditPanel({
                   style={{ flex: 1 }}
                 >
                   <MemberIcon name="check" size={16} />
-                  {isSubmitting ? "Saving Changesâ€¦" : "Save Event Changes"}
+                  {isSubmitting ? "Saving Changes..." : "Save Event Changes"}
                 </button>
 
                 <button

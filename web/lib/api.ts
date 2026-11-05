@@ -385,6 +385,8 @@ export type EventRegistration = {
   member_uids: string[];
   spg_id?: string | null;
   spg_status?: string | null;
+  roster_locked?: boolean;
+  locked_at?: string | null;
   custom_responses?: Record<string, any>;
   team_custom_responses?: Record<string, any>;
   member_responses?: Record<string, Record<string, any>>;
@@ -1401,6 +1403,16 @@ export const api = {
 
   leaveTeam: (token: string, eventId: string) =>
     request<EventRegistration>(`/events/${encodeURIComponent(eventId)}/team/leave`, token, {
+      method: "POST",
+    }),
+
+  lockTeamRoster: (token: string, eventId: string) =>
+    request<EventRegistration>(`/events/${encodeURIComponent(eventId)}/team/lock`, token, {
+      method: "POST",
+    }),
+
+  unlockTeamRoster: (token: string, eventId: string) =>
+    request<EventRegistration>(`/events/${encodeURIComponent(eventId)}/team/unlock`, token, {
       method: "POST",
     }),
 
