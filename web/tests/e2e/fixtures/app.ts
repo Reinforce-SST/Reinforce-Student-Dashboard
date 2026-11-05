@@ -377,6 +377,12 @@ async function handleApi(route: Route, world: World) {
     return ok(match ? { ...fixture.eventDetail, ...match } : fixture.eventDetail);
   }
 
+  /* ----------------------------------------------------------- invitations */
+  if (path.startsWith("/invitations")) {
+    if (method === "GET") return ok([]);
+    return ok({ success: true });
+  }
+
   /* ----------------------------------------------------------------- spgs */
   if (path === "/spgs" && method === "GET") return ok(page1(world.spgs));
   if (/^\/spgs\/[^/]+\/reports\/(form|pdf)$/.test(path)) return ok(fixture.spgReport);

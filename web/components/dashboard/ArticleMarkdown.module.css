@@ -15,7 +15,9 @@
 .markdown pre code { padding: 0; background: none; font-size: 0.85rem; }
 .markdown img { max-width: 100%; height: auto; border-radius: 8px; }
 .markdown hr { border: 0; border-top: 1px solid #2e2e36; }
-.tableScroll { max-width: 100%; overflow-x: auto; }
-.markdown table { border-collapse: collapse; min-width: 100%; font-size: 0.88rem; }
-.markdown th, .markdown td { padding: 8px 10px; border: 1px solid #2e2e36; text-align: left; }
-.markdown th { background: #1c1c22; color: #f4f4f6; }
+.tableScroll { max-width: 100%; overflow-x: auto; margin: 1.2em 0; border: 1px solid #2d2d35; border-radius: 8px; background: #151518; }
+.markdown table { border-collapse: collapse; min-width: 100%; width: 100%; font-size: 0.88rem; line-height: 1.5; }
+.markdown th, .markdown td { padding: 10px 14px; border: 1px solid #282830; text-align: left; }
+.markdown th { background: #1a1a20; color: #f4f4f6; font-weight: 750; letter-spacing: 0.02em; border-bottom: 2px solid #33333d; }
+.markdown tr:nth-child(even) td { background: rgba(255, 255, 255, 0.015); }
+.markdown tr:hover td { background: rgba(229, 183, 49, 0.04); }

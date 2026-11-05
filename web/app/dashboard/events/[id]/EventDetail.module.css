@@ -3630,3 +3630,317 @@
   line-height: 1.4;
   margin: 6px 0 2px;
 }
+
+/* --- Team & Submission Tab and Invitations Column --- */
+.teamTabGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 350px;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 980px) {
+  .teamTabGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.teamMainArea {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.invitesColumn {
+  background: #141416;
+  border: 1px solid #232328;
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: sticky;
+  top: 80px;
+}
+
+.invitesHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #232328;
+}
+
+.invitesTitle {
+  font-size: 14px;
+  font-weight: 800;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.invitesBadge {
+  background: #E5B731;
+  color: #121214;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  padding: 2px 7px;
+  line-height: 1;
+}
+
+.refreshInvitesBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(229, 183, 49, 0.1);
+  border: 1px solid rgba(229, 183, 49, 0.3);
+  color: #e5b731;
+  padding: 5px 11px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.refreshInvitesBtn:hover:not(:disabled) {
+  background: rgba(229, 183, 49, 0.2);
+  border-color: #e5b731;
+  transform: translateY(-1px);
+}
+
+.refreshInvitesBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.spinningIcon {
+  display: inline-block;
+  animation: spinInvites 1s linear infinite;
+}
+
+@keyframes spinInvites {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.inviteItemCard {
+  background: #19191e;
+  border: 1px solid #2b2e36;
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color 0.15s ease;
+}
+
+.inviteItemCard:hover {
+  border-color: #3b3e48;
+}
+
+.inviteCardBadge {
+  font-size: 10px;
+  font-weight: 800;
+  color: #E5B731;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.inviteTeamName {
+  font-size: 13.5px;
+  font-weight: 750;
+  color: #ffffff;
+}
+
+.inviteSubtitle {
+  font-size: 11.5px;
+  color: #8c8c98;
+  line-height: 1.4;
+}
+
+.inviteActionsRow {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.inviteAcceptBtn {
+  background: #E5B731;
+  color: #121214;
+  border: none;
+  border-radius: 5px;
+  padding: 5px 12px;
+  font-size: 11.5px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.inviteAcceptBtn:hover:not(:disabled) {
+  background: #f0c542;
+}
+
+.inviteDeclineBtn {
+  background: rgba(255, 255, 255, 0.08);
+  color: #a1a1aa;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 5px;
+  padding: 5px 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.inviteDeclineBtn:hover {
+  background: rgba(244, 63, 94, 0.12);
+  color: #f43f5e;
+  border-color: rgba(244, 63, 94, 0.3);
+}
+
+.invitesEmptyState {
+  padding: 24px 16px;
+  text-align: center;
+  background: #111114;
+  border: 1px dashed #282830;
+  border-radius: 10px;
+}
+
+.checkInvitesBtn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid #31343a;
+  color: #d4d4d8;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 750;
+  cursor: pointer;
+  margin-top: 6px;
+}
+
+.checkInvitesBtn:hover:not(:disabled) {
+  background: rgba(229, 183, 49, 0.12);
+  color: #E5B731;
+  border-color: rgba(229, 183, 49, 0.4);
+}
+
+.quickCodeCard {
+  background: #0f0f12;
+  border: 1px solid #23252c;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.quickCodeDisplay {
+  font-size: 16px;
+  font-weight: 850;
+  color: #E5B731;
+  letter-spacing: 0.12em;
+}
+
+.quickCopyBtn {
+  background: rgba(229, 183, 49, 0.12);
+  border: 1px solid rgba(229, 183, 49, 0.3);
+  color: #E5B731;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.quickCopyBtn:hover {
+  background: rgba(229, 183, 49, 0.22);
+}
+
+.outgoingInvitesBox {
+  background: #111114;
+  border: 1px solid #23252c;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.outgoingItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+
+.teamShortcutBanner {
+  background: rgba(229, 183, 49, 0.07);
+  border: 1px solid rgba(229, 183, 49, 0.35);
+  border-radius: 12px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.shortcutTabBtn {
+  background: #E5B731;
+  color: #121214;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.15s ease;
+}
+
+.shortcutTabBtn:hover {
+  transform: translateY(-1px);
+}
+
+.notRegisteredTeamNotice {
+  background: #141416;
+  border: 1px solid #2b2e35;
+  border-radius: 16px;
+  padding: 24px;
+}
+
+.noticeIconCircle {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(229, 183, 49, 0.15);
+  color: #E5B731;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.registerNowBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #E5B731;
+  color: #121214;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 13.5px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.registerNowBtn:hover {
+  background: #f0c542;
+  transform: translateY(-1px);
+}
