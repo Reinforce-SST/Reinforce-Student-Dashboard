@@ -1295,10 +1295,10 @@ def create_or_update_team(
     current_members = reg_data.get("member_uids") or [user_uid]
 
     if current_team_id:
-        if not reg_data.get("is_team_leader") and len(current_members) > 1:
+        if user_uid not in current_members:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only the team leader can modify team settings.",
+                detail="You are not a member of this squad.",
             )
         team_id = current_team_id
         invite_code = reg_data.get("invite_code") or secrets.token_hex(3).upper()

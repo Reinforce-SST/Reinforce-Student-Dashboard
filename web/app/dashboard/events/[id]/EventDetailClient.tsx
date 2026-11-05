@@ -1690,28 +1690,32 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                             </button>
                           </span>
                         ) : (
-                          <span>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
                             <strong style={{ color: "#E5B731" }}>{myRegistration?.team_name || "Active Squad"}</strong>
-                            {isLeader && !myRegistration?.roster_locked && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setNewTeamNameInput(myRegistration?.team_name || "");
-                                  setEditingTeamName(true);
-                                }}
-                                style={{
-                                  background: "transparent",
-                                  border: "none",
-                                  color: "#a1a1aa",
-                                  cursor: "pointer",
-                                  marginLeft: "6px",
-                                  fontSize: "12px",
-                                }}
-                                title="Edit squad name"
-                              >
-                                <span style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}><MemberIcon name="edit" size={12} /> Edit</span>
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNewTeamNameInput(myRegistration?.team_name || "");
+                                setEditingTeamName(true);
+                              }}
+                              style={{
+                                background: "rgba(229, 183, 49, 0.15)",
+                                border: "1px solid rgba(229, 183, 49, 0.4)",
+                                color: "#E5B731",
+                                cursor: "pointer",
+                                borderRadius: "4px",
+                                padding: "3px 8px",
+                                fontSize: "11.5px",
+                                fontWeight: "750",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "4px",
+                              }}
+                              title="Edit squad name"
+                            >
+                              <MemberIcon name="edit" size={12} />
+                              Edit
+                            </button>
                           </span>
                         )}
                         </>
