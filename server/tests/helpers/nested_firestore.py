@@ -135,6 +135,23 @@ class NestedFirestore:
 class Transaction:
     """Immediate transaction fake; endpoint tests run single-threaded."""
 
+    def __init__(self):
+        self._read_only = False
+        self._id = b"fake-transaction"
+        self._max_attempts = 1
+
+    def _begin(self, *args, **kwargs):
+        self._id = b"fake-transaction"
+
+    def _commit(self, *args, **kwargs):
+        pass
+
+    def _rollback(self, *args, **kwargs):
+        pass
+
+    def _clean_up(self, *args, **kwargs):
+        pass
+
     def get(self, reference):
         if isinstance(reference, Query):
             return reference.stream()

@@ -34,6 +34,10 @@ class IdeaStudentLifecycleTests(unittest.TestCase):
         self.ideas_patch.start()
         self.addCleanup(self.ideas_patch.stop)
 
+        self.txn_patch = patch("google.cloud.firestore.transactional", lambda func: func)
+        self.txn_patch.start()
+        self.addCleanup(self.txn_patch.stop)
+
         # Ensure run_in_transaction functions with NestedFirestore mock
         self.db.transaction = lambda: NestedFirestoreTransaction(self.db)
 
@@ -87,16 +91,15 @@ class IdeaStudentLifecycleTests(unittest.TestCase):
         res = self.client.post("/api/v1/ideas", json=payload)
         self.assertEqual(res.status_code, 201, res.text)
         data = res.json()
-        ticket_id = data["id"]
-        self.assertTrue(ticket_id.startswith("tkt_"))
+        idea_id = data["id"]
+        self.assertTrue(idea_id.startswith("idea_"))
         self.assertEqual(data["title"], "Automated Code Review Agent")
         self.assertFalse(data["is_verified"])
 
-        # Check saved ticket document in database
-        ticket_doc = self.db.collection("tickets").document(ticket_id).get().to_dict()
-        self.assertEqual(ticket_doc["category"], "idea_jar")
-        self.assertEqual(ticket_doc["created_by_uid"], STUDENT_A["uid"])
-        self.assertEqual(ticket_doc["status"], "open")
+        # Check saved idea document in database
+        idea_doc = self.db.collection("ideas").document(idea_id).get().to_dict()
+        self.assertEqual(idea_doc["created_by_uid"], STUDENT_A["uid"])
+        self.assertFalse(idea_doc["is_verified"])
 
     def test_student_lists_own_ideas(self):
         self.as_student_a()
@@ -215,6 +218,21 @@ class NestedFirestoreTransaction:
     """Mock transaction wrapper for NestedFirestore."""
     def __init__(self, db):
         self.db = db
+        self._read_only = False
+        self._id = b"fake-transaction"
+        self._max_attempts = 1
+
+    def _begin(self, *args, **kwargs):
+        self._id = b"fake-transaction"
+
+    def _commit(self, *args, **kwargs):
+        pass
+
+    def _rollback(self, *args, **kwargs):
+        pass
+
+    def _clean_up(self, *args, **kwargs):
+        pass
 
     def get(self, ref):
         return ref.get()

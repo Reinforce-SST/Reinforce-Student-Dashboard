@@ -97,7 +97,7 @@ class TicketCommunicationTests(unittest.TestCase):
             "content": "The ImageNet mirror seems down from campus Wi-Fi.",
             "attachments": ["https://storage.googleapis.com/proof/error.png"],
         }).json()
-        self.assertEqual(msg1["content"], "The ImageNet mirror seems down from campus Wi-Fi")
+        self.assertEqual(msg1["content"], "The ImageNet mirror seems down from campus Wi-Fi.")
         self.assertEqual(msg1["sender_uid"], MEMBER_A["uid"])
 
         # 3. Admin posts response
@@ -113,7 +113,7 @@ class TicketCommunicationTests(unittest.TestCase):
         self.assertEqual(thread_res.status_code, 200)
         messages = thread_res.json()
         self.assertEqual(len(messages), 2)
-        self.assertEqual(messages[0]["content"], "The ImageNet mirror seems down from campus Wi-Fi")
+        self.assertEqual(messages[0]["content"], "The ImageNet mirror seems down from campus Wi-Fi.")
         self.assertEqual(messages[1]["content"], "Use the internal academic proxy at proxy.sst.scaler.com:8080.")
 
     def test_member_closes_own_ticket(self):

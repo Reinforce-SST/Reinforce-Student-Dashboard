@@ -33,6 +33,10 @@ class BlogCommunityTests(unittest.TestCase):
         self.blog_patch.start()
         self.addCleanup(self.blog_patch.stop)
 
+        self.txn_patch = patch("google.cloud.firestore.transactional", lambda func: func)
+        self.txn_patch.start()
+        self.addCleanup(self.txn_patch.stop)
+
         self.db.transaction = lambda: NestedFirestoreTransaction(self.db)
 
         # Seed Users
@@ -179,6 +183,21 @@ class NestedFirestoreTransaction:
     """Mock transaction wrapper for NestedFirestore."""
     def __init__(self, db):
         self.db = db
+        self._read_only = False
+        self._id = b"fake-transaction"
+        self._max_attempts = 1
+
+    def _begin(self, *args, **kwargs):
+        self._id = b"fake-transaction"
+
+    def _commit(self, *args, **kwargs):
+        pass
+
+    def _rollback(self, *args, **kwargs):
+        pass
+
+    def _clean_up(self, *args, **kwargs):
+        pass
 
     def get(self, ref):
         return ref.get()

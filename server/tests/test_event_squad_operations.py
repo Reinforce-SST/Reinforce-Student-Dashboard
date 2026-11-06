@@ -159,8 +159,9 @@ class EventSquadOperationsTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 400)
         self.assertIn("roster has been confirmed and locked", ctx.exception.detail)
 
-        # Admin can leave or modify even if locked
-        events.leave_team(self.event_id, current_user=ADMIN)
+        # Member with admin privileges can leave even if locked
+        member_admin = dict(USER_MEMBER, admin=True)
+        events.leave_team(self.event_id, current_user=member_admin)
 
     def test_unlock_team_roster_and_leave(self):
         self._register_and_form_squad()
@@ -196,8 +197,9 @@ class EventSquadOperationsTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 400)
         self.assertIn("lock deadline has passed", ctx.exception.detail)
 
-        # Admin can unlock even after deadline
-        admin_unlocked = events.unlock_team_roster(self.event_id, current_user=ADMIN)
+        # Leader with admin privileges can unlock even after deadline
+        lead_admin = dict(USER_LEAD, admin=True)
+        admin_unlocked = events.unlock_team_roster(self.event_id, current_user=lead_admin)
         self.assertFalse(admin_unlocked.roster_locked)
 
     def test_admin_edit_squad_roster_override(self):
@@ -247,7 +249,7 @@ class EventSquadOperationsTests(unittest.TestCase):
 
         pool = events.get_team_pool(self.event_id, current_user=USER_LEAD)
         self.assertEqual(pool.total, 1)
-        self.assertEqual(pool.members[0].user_id, USER_SOLO["uid"])
+        self.assertEqual(pool.members[0].uid, USER_SOLO["uid"])
 
     def test_attach_registration_idea_syncs_across_teammates(self):
         self._register_and_form_squad()

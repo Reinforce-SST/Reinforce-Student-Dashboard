@@ -568,7 +568,7 @@ def delete_comment(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
 
     data = comment_doc.to_dict() or {}
-    if data.get("author_uid") != user["uid"]:
+    if data.get("author_uid") != user["uid"] and not is_admin_user(user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only delete your own comments")
 
     now = now_iso()
