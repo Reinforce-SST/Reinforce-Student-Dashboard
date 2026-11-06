@@ -118,11 +118,17 @@ def _get_event_doc_or_404(id_or_slug: str) -> firestore.DocumentSnapshot:
         return doc
 
     # Try matching by slug
-    slug_query = (
-        db.collection(EVENTS_COLLECTION).where("slug", "==", id_or_slug).limit(1).get()
+    slug_docs = list(
+        db.collection(EVENTS_COLLECTION).where("slug", "==", id_or_slug).get()
     )
-    if slug_query:
-        return slug_query[0]
+    if slug_docs:
+        active_docs = [
+            d
+            for d in slug_docs
+            if (d.to_dict() or {}).get("status")
+            not in {EventStatus.DRAFT.value, EventStatus.ARCHIVED.value}
+        ]
+        return active_docs[0] if active_docs else slug_docs[0]
 
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
@@ -477,11 +483,21 @@ def list_events(
         # Timeline filter
         if timeline == "upcoming":
             if (
+                status_filter is None
+                and item.status in {EventStatus.DRAFT.value, EventStatus.ARCHIVED.value}
+            ):
+                continue
+            if (
                 item.schedule.start_time < now_str
                 and item.status == EventStatus.COMPLETED.value
             ):
                 continue
         elif timeline == "past":
+            if (
+                status_filter is None
+                and item.status in {EventStatus.DRAFT.value, EventStatus.ARCHIVED.value}
+            ):
+                continue
             if (
                 item.status != EventStatus.COMPLETED.value
                 and item.schedule.start_time >= now_str

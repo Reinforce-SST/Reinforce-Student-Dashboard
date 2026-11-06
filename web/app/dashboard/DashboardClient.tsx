@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useMember } from "@/lib/useMember";
 import { api, type EventSummaryItem, type BannerDocument } from "@/lib/api";
 import { appCache } from "@/lib/cache";
-import { getDashboardEvents, indiaDateKey, indiaDateParts } from "@/lib/dashboardData";
+import { getDashboardEvents, indiaDateKey, indiaDateParts, isBannerDestination } from "@/lib/dashboardData";
 import { loadAllSpgs, loadAllUpcomingEvents } from "@/lib/memberData";
 import type { SPGRecord } from "@/lib/spgData";
 import type { ContributionRecord } from "@/lib/contributionData";
@@ -195,18 +195,35 @@ export default function DashboardClient() {
     const d = new Date(b.schedule.start_time);
     const dateStr = formatBannerDate(d);
 
-    const matchedEvent = events.find((e) =>
-      e.id === b.id ||
-      e.slug === b.id ||
-      (b.banner_cta_url && (b.banner_cta_url.includes(e.id) || (e.slug && b.banner_cta_url.includes(e.slug)))) ||
-      e.title.toLowerCase().trim() === b.title.toLowerCase().trim()
-    );
+    const ctaDestination = b.banner_cta_url?.trim() || "";
+    // Extract target event ref (slug or id) if the CTA URL is an event path: /dashboard/events/<ref> or /events/<ref>
+    const eventUrlMatch = ctaDestination.match(/(?:\/dashboard)?\/events\/([^/?#]+)/i);
+    const targetEventRef = eventUrlMatch ? decodeURIComponent(eventUrlMatch[1].trim()).replace(/\/$/, "") : null;
 
-    const eventId = matchedEvent ? matchedEvent.id : (
-      (b.banner_cta_url && b.banner_cta_url.includes("/events/"))
-        ? b.banner_cta_url.split("/events/")[1].split("?")[0].replace(/\/$/, "")
-        : ""
-    );
+    // Strict candidate resolution:
+    // 1. If an event slug or ID is explicitly in the CTA destination, match against that
+    // 2. If the banner ID itself matches an event ID or slug
+    // 3. Fallback to title ONLY IF ctaDestination does not specify an explicit destination (or is generic /dashboard/events)
+    let matchedEvent: EventSummaryItem | undefined;
+
+    if (targetEventRef) {
+      const candidates = events.filter((e) => e.id === targetEventRef || e.slug === targetEventRef);
+      matchedEvent = candidates.find((e) => e.status !== "draft") || candidates[0];
+    }
+
+    if (!matchedEvent && b.id) {
+      const candidatesById = events.filter((e) => e.id === b.id || e.slug === b.id);
+      matchedEvent = candidatesById.find((e) => e.status !== "draft") || candidatesById[0];
+    }
+
+    if (!matchedEvent && (!ctaDestination || ctaDestination === "/dashboard/events" || ctaDestination === "/events")) {
+      const candidatesByTitle = events.filter(
+        (e) => e.status !== "draft" && e.title.toLowerCase().trim() === b.title.toLowerCase().trim()
+      );
+      matchedEvent = candidatesByTitle[0];
+    }
+
+    const eventId = matchedEvent ? matchedEvent.id : (targetEventRef || "");
 
     const venue = matchedEvent?.venue_info?.room ||
       matchedEvent?.venue_info?.venue_name ||
@@ -239,9 +256,12 @@ export default function DashboardClient() {
       ? "HAPPENING NOW"
       : (matchedEvent?.status === "registration_closed" ? "REGISTRATION CLOSED" : "REGISTRATION OPEN");
 
-    const detailsLink = matchedEvent
+    // Details link: respect the explicit button destination configured by the admin!
+    const detailsLink = (ctaDestination && isBannerDestination(ctaDestination))
+      ? ctaDestination
+      : matchedEvent
       ? `/dashboard/events/${matchedEvent.slug || matchedEvent.id}`
-      : (b.banner_cta_url?.trim() || "/dashboard/events");
+      : "/dashboard/events";
 
     return {
       id: b.id,
