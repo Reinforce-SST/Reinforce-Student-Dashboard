@@ -98,6 +98,12 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
   const [teammates, setTeammates] = useState<PickedMember[]>([]);
   const minTeamSize = Math.max(1, event.participation?.min_team_size ?? 1);
   const maxTeamSize = Math.max(1, event.participation?.max_team_size ?? 1);
+  const hasSquad = Boolean(myRegistration?.team_id);
+  const squadMembers = myRegistration?.member_uids || (profile?.id ? [profile.id] : []);
+  const squadSize = hasSquad ? squadMembers.length : 1;
+  const isLeader = Boolean(myRegistration?.is_team_leader) || (squadMembers.length > 0 && squadMembers[0] === profile?.id) || (Boolean(myRegistration?.team_name) && squadSize <= 1);
+  const isEligibleSquad = squadSize >= minTeamSize;
+  const isFullSquad = squadSize >= maxTeamSize;
   const [registeredCount, setRegisteredCount] = useState(event.stats?.registered_count ?? 0);
   const [deadlinePassed, setDeadlinePassed] = useState(false);
   const [linkedResources, setLinkedResources] = useState<LearningResource[]>([]);
@@ -1064,14 +1070,59 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                   </div>
                 )}
 
-                {event.team_settings?.lock_rosters_at && (
-                  <div className={styles.rosterLockWarning}>
-                    <MemberIcon name="clock" size={12} />
-                    <span>
-                      {currentTime > 0 && currentTime >= (parseDateOrIST(event.team_settings.lock_rosters_at)?.getTime() ?? 0)
-                        ? " Rosters Locked"
-                        : `Rosters lock ${parseDateOrIST(event.team_settings.lock_rosters_at)?.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) ?? ""}`}
-                    </span>
+                {myRegistration?.roster_locked ? (
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    <div className={styles.rosterLockSuccess}>
+                      <MemberIcon name="lock" size={12} />
+                      <span>Roster Confirmed & Locked</span>
+                    </div>
+                    {myRegistration.spg_id && (
+                      <Link
+                        href={`/dashboard/spg?id=${encodeURIComponent(myRegistration.spg_id)}`}
+                        className={styles.heroSpgBadge}
+                        title="View Team SPG Workspace"
+                      >
+                        <MemberIcon name="sparkles" size={12} />
+                        SPG Ready ↗
+                      </Link>
+                    )}
+                    {isLeader && (
+                      <button
+                        type="button"
+                        onClick={handleUnlockRoster}
+                        disabled={lockingRoster}
+                        className={styles.heroUnlockBtn}
+                        title="Unlock squad roster to edit teammates"
+                      >
+                        <MemberIcon name="unlock" size={11} />
+                        {lockingRoster ? "Unlocking..." : "Unlock Roster"}
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    {event.team_settings?.lock_rosters_at && (
+                      <div className={styles.rosterLockWarning}>
+                        <MemberIcon name="clock" size={12} />
+                        <span>
+                          {currentTime > 0 && currentTime >= (parseDateOrIST(event.team_settings.lock_rosters_at)?.getTime() ?? 0)
+                            ? " Rosters Locked"
+                            : `Rosters lock ${parseDateOrIST(event.team_settings.lock_rosters_at)?.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) ?? ""}`}
+                        </span>
+                      </div>
+                    )}
+                    {hasSquad && isLeader && (
+                      <button
+                        type="button"
+                        onClick={handleLockRoster}
+                        disabled={lockingRoster || !isEligibleSquad}
+                        className={styles.heroLockBtn}
+                        title={!isEligibleSquad ? `Requires minimum of ${minTeamSize} members to lock roster` : "Confirm squad roster early to mint Event SPG immediately"}
+                      >
+                        <MemberIcon name="lock" size={12} />
+                        {lockingRoster ? "Locking..." : "Confirm & Lock Squad Early"}
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -1639,12 +1690,6 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
               <>
                 {/* Phase 2: Team Formation & Merge Hub (For Team Events) */}
           {isRegistered && (event.participation?.mode === "team" || Boolean(myRegistration?.team_id || myRegistration?.team_name)) && (() => {
-            const hasSquad = Boolean(myRegistration?.team_id);
-            const squadMembers = myRegistration?.member_uids || (profile?.id ? [profile.id] : []);
-            const squadSize = hasSquad ? squadMembers.length : 1;
-            const isLeader = Boolean(myRegistration?.is_team_leader) || (squadMembers.length > 0 && squadMembers[0] === profile?.id) || (Boolean(myRegistration?.team_name) && squadSize <= 1);
-            const isEligibleSquad = squadSize >= minTeamSize;
-            const isFullSquad = squadSize >= maxTeamSize;
             const pendingInvites = myRegistration?.pending_invites || [];
 
             return (
@@ -2744,7 +2789,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
       {/* TAB 3: REGISTERED ATTENDEES & SPGS */}
       {activeTab === "attendees" && (
         <section className={styles.sectionCard} aria-label="Registered Attendees">
-          <EventAttendeesPanel eventId={event.id} token={token} />
+          <EventAttendeesPanel eventId={event.id} token={token} isAdmin={isAdmin} />
         </section>
       )}
 

@@ -765,6 +765,14 @@ class TeamInviteMemberRequest(BaseModel):
     target_uid: str
 
 
+class AdminUpdateTeamRosterRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    team_name: Optional[str] = None
+    member_uids: List[str]
+    leader_uid: str
+
+
 class TeamPoolMemberSummary(BaseModel):
     uid: str
     full_name: str

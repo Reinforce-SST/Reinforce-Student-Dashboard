@@ -1416,6 +1416,25 @@ export const api = {
       method: "POST",
     }),
 
+  adminUpdateTeamRoster: (
+    token: string,
+    eventId: string,
+    teamId: string,
+    payload: {
+      team_name?: string;
+      member_uids: string[];
+      leader_uid: string;
+    }
+  ) =>
+    request<{ success: boolean; message: string; team_id: string; spg_id?: string | null }>(
+      `/events/${encodeURIComponent(eventId)}/teams/${encodeURIComponent(teamId)}/roster`,
+      token,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }
+    ),
+
   updateRegistrationTrack: (
     token: string,
     eventId: string,

@@ -28,15 +28,27 @@ function formatRegisteredDate(isoStr?: string | null): string {
 export default function EventAttendeesPanel({
   eventId,
   token,
+  isAdmin = false,
 }: {
   eventId: string;
   token: string;
+  isAdmin?: boolean;
 }) {
   const [registrations, setRegistrations] = useState<EventRegistration[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState<"all" | "teams" | "solo">("all");
+
+  // Admin Roster Edit State
+  const [editingTeam, setEditingTeam] = useState<AggregatedTeam | null>(null);
+  const [editTeamName, setEditTeamName] = useState("");
+  const [editLeaderUid, setEditLeaderUid] = useState("");
+  const [editMemberUids, setEditMemberUids] = useState<string[]>([]);
+  const [addMemberQuery, setAddMemberQuery] = useState("");
+  const [savingRoster, setSavingRoster] = useState(false);
+  const [rosterError, setRosterError] = useState<string | null>(null);
+  const [rosterSuccess, setRosterSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -71,11 +83,92 @@ export default function EventAttendeesPanel({
     team_name: string;
     spg_id?: string | null;
     status: string;
+    roster_locked: boolean;
     registered_at: string;
     leader_uid: string;
     leader_profile?: AttendeeProfile | null;
     member_uids: string[];
     profileMap: Map<string, AttendeeProfile>;
+  };
+
+  const handleOpenAdminEdit = (team: AggregatedTeam) => {
+    setEditingTeam(team);
+    setEditTeamName(team.team_name);
+    setEditLeaderUid(team.leader_uid);
+    setEditMemberUids([...team.member_uids]);
+    setAddMemberQuery("");
+    setRosterError(null);
+    setRosterSuccess(null);
+  };
+
+  const handleCloseAdminEdit = () => {
+    if (savingRoster) return;
+    setEditingTeam(null);
+  };
+
+  const handleRemoveMember = (uid: string) => {
+    if (editMemberUids.length <= 1) {
+      setRosterError("A squad must maintain at least one member.");
+      return;
+    }
+    const updated = editMemberUids.filter((m) => m !== uid);
+    setEditMemberUids(updated);
+    if (editLeaderUid === uid) {
+      setEditLeaderUid(updated[0]);
+    }
+  };
+
+  const handleAddMember = (uid: string) => {
+    const clean = uid.trim();
+    if (!clean) return;
+    if (editMemberUids.includes(clean)) {
+      setRosterError("Member is already in this squad.");
+      return;
+    }
+    setEditMemberUids([...editMemberUids, clean]);
+    setAddMemberQuery("");
+    setRosterError(null);
+  };
+
+  const handleSaveRoster = async () => {
+    if (!editingTeam || !token) return;
+    if (editMemberUids.length === 0) {
+      setRosterError("A squad must have at least one member.");
+      return;
+    }
+    if (!editLeaderUid || !editMemberUids.includes(editLeaderUid)) {
+      setRosterError("Please designate a valid team leader from the squad members.");
+      return;
+    }
+
+    setSavingRoster(true);
+    setRosterError(null);
+    setRosterSuccess(null);
+
+    try {
+      await api.adminUpdateTeamRoster(
+        token,
+        eventId,
+        editingTeam.team_id || editingTeam.spg_id || editingTeam.key,
+        {
+          team_name: editTeamName.trim() || undefined,
+          member_uids: editMemberUids,
+          leader_uid: editLeaderUid,
+        }
+      );
+
+      const freshRegs = await api.getEventRegistrations(token, eventId);
+      setRegistrations(freshRegs);
+
+      setRosterSuccess("Squad roster updated and synced successfully!");
+      setTimeout(() => {
+        setEditingTeam(null);
+      }, 900);
+    } catch (err) {
+      setRosterError(err instanceof Error ? err.message : "Failed to update squad roster.");
+    } finally {
+      setSavingRoster(false);
+    }
   };
 
   const { allTeams, soloRegistrations } = useMemo(() => {
@@ -176,6 +269,7 @@ export default function EventAttendeesPanel({
       const spgId = groupRegs.find((r) => r.spg_id)?.spg_id || null;
       const teamId = groupRegs.find((r) => r.team_id)?.team_id || null;
       const status = leaderReg.status || groupRegs[0].status;
+      const isLocked = groupRegs.some((r) => Boolean(r.roster_locked));
 
       const sortedByDate = [...groupRegs].sort((a, b) =>
         (a.registered_at || "").localeCompare(b.registered_at || "")
@@ -189,6 +283,7 @@ export default function EventAttendeesPanel({
         team_name: teamName,
         spg_id: spgId,
         status,
+        roster_locked: isLocked,
         registered_at: registeredAt,
         leader_uid: leaderUid,
         leader_profile: leaderProfile,
@@ -343,7 +438,41 @@ export default function EventAttendeesPanel({
                       {team.team_name || "Unnamed Team"}
                     </strong>
                   </div>
-                  {getStatusBadge(team.status)}
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    {team.roster_locked ? (
+                      <span
+                        style={{
+                          background: "rgba(34, 197, 94, 0.15)",
+                          color: "#4ade80",
+                          border: "1px solid rgba(34, 197, 94, 0.3)",
+                          borderRadius: "4px",
+                          padding: "2px 6px",
+                          fontSize: "10.5px",
+                          fontWeight: "700",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "3px",
+                        }}
+                      >
+                        <MemberIcon name="lock" size={9} /> Confirmed
+                      </span>
+                    ) : (
+                      <span
+                        style={{
+                          background: "rgba(229, 183, 49, 0.12)",
+                          color: "#e5b731",
+                          border: "1px solid rgba(229, 183, 49, 0.3)",
+                          borderRadius: "4px",
+                          padding: "2px 6px",
+                          fontSize: "10.5px",
+                          fontWeight: "600",
+                        }}
+                      >
+                        Open Roster
+                      </span>
+                    )}
+                    {getStatusBadge(team.status)}
+                  </div>
                 </div>
 
                 <div className={styles.attendeeCardBody}>
@@ -387,6 +516,30 @@ export default function EventAttendeesPanel({
                   <div className={styles.registeredTime}>
                     Registered: {formatRegisteredDate(team.registered_at)}
                   </div>
+
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAdminEdit(team)}
+                      style={{
+                        background: "rgba(255, 255, 255, 0.06)",
+                        border: "1px solid rgba(255, 255, 255, 0.15)",
+                        color: "#ffffff",
+                        borderRadius: "6px",
+                        padding: "5px 10px",
+                        fontSize: "11px",
+                        fontWeight: "700",
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        marginTop: "10px",
+                        width: "fit-content",
+                      }}
+                    >
+                      <MemberIcon name="edit" size={12} /> Edit Squad Roster (Admin)
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -436,6 +589,255 @@ export default function EventAttendeesPanel({
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* ADMIN EDIT SQUAD ROSTER MODAL */}
+      {editingTeam && (
+        <div className={styles.modalOverlay} onClick={savingRoster ? undefined : handleCloseAdminEdit}>
+          <div
+            className={styles.modalBox}
+            style={{ maxWidth: "560px", background: "#18181b", border: "1px solid #31343a", borderRadius: "14px" }}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className={styles.modalHeader} style={{ borderBottom: "1px solid #27272a", padding: "16px 20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div
+                  style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "8px",
+                    background: "rgba(229, 183, 49, 0.15)",
+                    border: "1px solid rgba(229, 183, 49, 0.3)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#E5B731",
+                  }}
+                >
+                  <MemberIcon name="edit" size={18} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "800", color: "#ffffff" }}>
+                    Edit Squad Roster (Admin Override)
+                  </h3>
+                  <span style={{ fontSize: "12px", color: "#a1a1aa" }}>
+                    Bypasses roster lock & deadline. Automatically syncs with the Event SPG.
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseAdminEdit}
+                className={styles.modalCloseBtn}
+                disabled={savingRoster}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
+              {rosterError && (
+                <div className={styles.alertErrorBox} style={{ margin: 0 }}>
+                  <MemberIcon name="alert-circle" size={14} />
+                  <span>{rosterError}</span>
+                </div>
+              )}
+              {rosterSuccess && (
+                <div
+                  style={{
+                    background: "rgba(34, 197, 94, 0.15)",
+                    border: "1px solid rgba(34, 197, 94, 0.3)",
+                    borderRadius: "8px",
+                    padding: "10px 14px",
+                    color: "#4ade80",
+                    fontSize: "13px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}
+                >
+                  <MemberIcon name="check" size={14} />
+                  <span>{rosterSuccess}</span>
+                </div>
+              )}
+
+              {/* Team Name */}
+              <div>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#d4d4d8", marginBottom: "6px" }}>
+                  Squad / Team Name
+                </label>
+                <input
+                  type="text"
+                  value={editTeamName}
+                  onChange={(e) => setEditTeamName(e.target.value)}
+                  className={styles.attendeeSearchInput}
+                  placeholder="Team Name"
+                />
+              </div>
+
+              {/* Team Lead Selector */}
+              <div>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#d4d4d8", marginBottom: "6px" }}>
+                  Designated Team Lead (Crown 👑)
+                </label>
+                <select
+                  value={editLeaderUid}
+                  onChange={(e) => setEditLeaderUid(e.target.value)}
+                  className={styles.attendeeSearchInput}
+                  style={{ cursor: "pointer" }}
+                >
+                  {editMemberUids.map((uid) => {
+                    const prof = editingTeam.profileMap.get(uid);
+                    return (
+                      <option key={uid} value={uid}>
+                        👑 {prof?.full_name || uid} ({uid.slice(0, 8)}...)
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* Current Squad Members */}
+              <div>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#d4d4d8", marginBottom: "8px" }}>
+                  Squad Members ({editMemberUids.length})
+                </label>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "160px", overflowY: "auto" }}>
+                  {editMemberUids.map((uid) => {
+                    const prof = editingTeam.profileMap.get(uid);
+                    const isLead = uid === editLeaderUid;
+                    return (
+                      <div
+                        key={uid}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          background: "#121214",
+                          border: "1px solid #27272a",
+                          borderRadius: "6px",
+                          padding: "8px 12px",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span style={{ fontSize: "13px", fontWeight: "600", color: isLead ? "#E5B731" : "#ffffff" }}>
+                            {isLead ? "👑 " : ""}{prof?.full_name || uid}
+                          </span>
+                          <span style={{ fontSize: "11px", color: "#71717a" }}>
+                            {prof?.email || uid}
+                          </span>
+                        </div>
+                        {editMemberUids.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveMember(uid)}
+                            style={{
+                              background: "rgba(239, 68, 68, 0.1)",
+                              border: "1px solid rgba(239, 68, 68, 0.3)",
+                              color: "#f87171",
+                              borderRadius: "4px",
+                              padding: "2px 8px",
+                              fontSize: "11px",
+                              fontWeight: "700",
+                              cursor: "pointer",
+                            }}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Add Member to Squad */}
+              <div>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#d4d4d8", marginBottom: "6px" }}>
+                  Add Member (Select registered participant or enter UID)
+                </label>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <select
+                    value={addMemberQuery}
+                    onChange={(e) => setAddMemberQuery(e.target.value)}
+                    className={styles.attendeeSearchInput}
+                    style={{ flex: 1, cursor: "pointer" }}
+                  >
+                    <option value="">-- Choose from registered participants --</option>
+                    {registrations
+                      .filter((r) => r.user_id && !editMemberUids.includes(r.user_id))
+                      .map((r) => (
+                        <option key={r.user_id} value={r.user_id}>
+                          {r.user_profile?.full_name || r.user_id} ({r.user_profile?.email || r.user_id})
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => handleAddMember(addMemberQuery)}
+                    disabled={!addMemberQuery}
+                    style={{
+                      background: addMemberQuery ? "rgba(229, 183, 49, 0.2)" : "#27272a",
+                      color: addMemberQuery ? "#E5B731" : "#71717a",
+                      border: "1px solid rgba(229, 183, 49, 0.4)",
+                      borderRadius: "6px",
+                      padding: "8px 14px",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      cursor: addMemberQuery ? "pointer" : "not-allowed",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    + Add Member
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div
+              className={styles.modalActions}
+              style={{
+                borderTop: "1px solid #27272a",
+                padding: "14px 20px",
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "10px",
+              }}
+            >
+              <button
+                type="button"
+                onClick={handleCloseAdminEdit}
+                className={styles.modalCancelBtn}
+                disabled={savingRoster}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveRoster}
+                disabled={savingRoster || editMemberUids.length === 0}
+                style={{
+                  background: "#E5B731",
+                  color: "#121214",
+                  border: "none",
+                  borderRadius: "8px",
+                  padding: "8px 16px",
+                  fontSize: "13px",
+                  fontWeight: "800",
+                  cursor: savingRoster ? "not-allowed" : "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <MemberIcon name="check" size={14} />
+                {savingRoster ? "Saving & Syncing SPG..." : "Save Squad & Sync SPG"}
+              </button>
+            </div>
           </div>
         </div>
       )}

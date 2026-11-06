@@ -34,6 +34,7 @@ from app.schemas.contributions import (
     ContributionTrack,
 )
 from app.schemas.events import (
+    AdminUpdateTeamRosterRequest,
     AssignAllColumnRequest,
     BatchUpdateMatrixRequest,
     CreateMatrixColumnRequest,
@@ -191,6 +192,39 @@ def _registrations_for_user(
     for query in queries:
         docs = transaction.get(query) if transaction is not None else query.stream()
         for doc in docs:
+            by_id[doc.id] = doc
+    return list(by_id.values())
+
+
+def _user_own_registrations(
+    regs_ref: Any, user_uid: str, transaction: Any = None
+) -> List[Any]:
+    """Return registration document(s) directly owned by user_uid (by doc.id or user_id), excluding co-member docs."""
+    by_id = {}
+    try:
+        direct_doc = transaction.get(regs_ref.document(user_uid)) if transaction is not None else regs_ref.document(user_uid).get()
+        if direct_doc.exists:
+            by_id[direct_doc.id] = direct_doc
+    except Exception:
+        pass
+
+    try:
+        if FieldFilter is not None:
+            q = regs_ref.where(filter=FieldFilter("user_id", "==", user_uid))
+        else:
+            q = regs_ref.where("user_id", "==", user_uid)
+    except Exception:
+        q = regs_ref.where("user_id", "==", user_uid)
+
+    try:
+        docs = transaction.get(q) if transaction is not None else q.stream()
+        for doc in docs:
+            by_id[doc.id] = doc
+    except Exception:
+        pass
+
+    if not by_id:
+        for doc in _registrations_for_user(regs_ref, user_uid, transaction=transaction):
             by_id[doc.id] = doc
     return list(by_id.values())
 
@@ -1346,13 +1380,16 @@ def create_or_update_team(
             pass
 
     for m_uid in current_members:
-        m_doc = regs_ref.document(m_uid).get()
-        if m_doc.exists:
+        m_docs = _user_own_registrations(regs_ref, m_uid)
+        for m_snap in m_docs:
             m_update = dict(update_payload)
-            m_update["is_team_leader"] = (m_uid == user_uid) if not current_team_id else (m_doc.to_dict() or {}).get("is_team_leader", False)
-            if not current_team_id and m_uid == user_uid:
-                m_update["is_team_leader"] = True
-            m_doc.reference.update(m_update)
+            m_doc_data = m_snap.to_dict() or {}
+            m_owner = m_doc_data.get("user_id") or m_doc_data.get("uid") or m_snap.id
+            if not current_team_id:
+                m_update["is_team_leader"] = (m_owner == user_uid)
+            else:
+                m_update["is_team_leader"] = m_doc_data.get("is_team_leader", False)
+            m_snap.reference.update(m_update)
 
     fresh_caller = regs_ref.document(my_reg_doc.id).get().to_dict() or {}
     fresh_caller["id"] = my_reg_doc.id
@@ -1602,7 +1639,8 @@ def merge_team(
     host_track_id = target_data.get("selected_track_id") or caller_data.get("selected_track_id")
     host_code = target_data.get("invite_code")
     host_team_responses = target_data.get("team_custom_responses") or caller_data.get("team_custom_responses") or {}
-    host_leader_uid = target_data.get("user_id") if target_data.get("is_team_leader") else target_members[0]
+    target_leader = target_data.get("user_id") or target_data.get("uid") or target_reg_doc.id
+    host_leader_uid = target_leader if target_data.get("is_team_leader") else (target_members[0] if target_members else target_leader)
 
     is_now_full = combined_size >= event.participation.max_team_size
     next_looking_for_team = False if is_now_full else bool(target_data.get("looking_for_team", True))
@@ -1644,16 +1682,15 @@ def merge_team(
             pass
 
     for m_uid in combined_members:
-        m_docs = _registrations_for_user(regs_ref, m_uid)
-        if not m_docs:
-            m_snap = regs_ref.document(m_uid).get()
-            if m_snap.exists:
-                m_docs = [m_snap]
+        m_docs = _user_own_registrations(regs_ref, m_uid)
         for m_snap in m_docs:
             m_dict = dict(shared_update)
-            m_dict["is_team_leader"] = (m_uid == host_leader_uid)
+            doc_data = m_snap.to_dict() or {}
+            doc_owner = doc_data.get("user_id") or doc_data.get("uid") or m_snap.id
+            is_leader = (doc_owner == host_leader_uid) if doc_owner in combined_members else (m_uid == host_leader_uid)
+            m_dict["is_team_leader"] = is_leader
             if m_uid == user_uid and matching_invite_id:
-                curr_invites = (m_snap.to_dict() or {}).get("pending_invites") or []
+                curr_invites = doc_data.get("pending_invites") or []
                 m_dict["pending_invites"] = [i for i in curr_invites if i.get("invite_id") != matching_invite_id]
             m_snap.reference.update(m_dict)
 
@@ -1709,18 +1746,15 @@ def leave_team(
 
     if remaining:
         for rem_uid in remaining:
-            rem_docs = _registrations_for_user(regs_ref, rem_uid)
-            if not rem_docs:
-                r_snap = regs_ref.document(rem_uid).get()
-                if r_snap.exists:
-                    rem_docs = [r_snap]
+            rem_docs = _user_own_registrations(regs_ref, rem_uid)
             for r_snap in rem_docs:
                 r_update: Dict[str, Any] = {
                     "member_uids": remaining,
                     "updated_at": now_ts,
                     "looking_for_team": True,
                 }
-                if caller_data.get("is_team_leader") and rem_uid == remaining[0]:
+                r_owner = (r_snap.to_dict() or {}).get("user_id") or (r_snap.to_dict() or {}).get("uid") or r_snap.id
+                if caller_data.get("is_team_leader") and r_owner == remaining[0]:
                     r_update["is_team_leader"] = True
                 r_snap.reference.update(r_update)
 
@@ -1836,11 +1870,7 @@ def lock_team_roster(
 
     # Lock roster and associate SPG for all squad members
     for m_uid in member_uids:
-        m_docs = _registrations_for_user(regs_ref, m_uid)
-        if not m_docs:
-            m_snap = regs_ref.document(m_uid).get()
-            if m_snap.exists:
-                m_docs = [m_snap]
+        m_docs = _user_own_registrations(regs_ref, m_uid)
         for m_doc in m_docs:
             m_doc.reference.update({
                 "roster_locked": True,
@@ -1891,11 +1921,7 @@ def unlock_team_roster(
 
     now_ts = now_iso()
     for m_uid in member_uids:
-        m_docs = _registrations_for_user(regs_ref, m_uid)
-        if not m_docs:
-            m_snap = regs_ref.document(m_uid).get()
-            if m_snap.exists:
-                m_docs = [m_snap]
+        m_docs = _user_own_registrations(regs_ref, m_uid)
         for m_doc in m_docs:
             m_doc.reference.update({
                 "roster_locked": False,
@@ -1907,6 +1933,163 @@ def unlock_team_roster(
     fresh_caller["id"] = my_reg_doc.id
     _hydrate_single_registration_profiles(fresh_caller)
     return RegistrationDocument.model_validate(fresh_caller)
+
+
+@router.patch("/{id}/teams/{team_id}/roster")
+def admin_update_team_roster(
+    id: str,
+    team_id: str,
+    payload: AdminUpdateTeamRosterRequest,
+    admin: Dict[str, Any] = Depends(get_admin_user),
+):
+    """Admin updates squad members, team lead, and team name.
+    
+    Bypasses deadline and lock checks, and automatically syncs the linked Event SPG.
+    """
+    event_doc = _get_event_doc_or_404(id)
+    event_id = event_doc.id
+    event = _doc_to_event_document(event_doc)
+
+    regs_ref = (
+        db.collection(EVENTS_COLLECTION)
+        .document(event_id)
+        .collection(REGISTRATIONS_SUBCOLLECTION)
+    )
+
+    now_ts = now_iso()
+    new_members = list(dict.fromkeys([m.strip() for m in payload.member_uids if m and m.strip()]))
+    if not new_members:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A team must have at least one member.",
+        )
+    if payload.leader_uid not in new_members:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Team leader must be one of the members.",
+        )
+
+    # Locate existing registrations matching team_id, spg_id, user_id, or team_name
+    matching_docs = []
+    t_docs = list(regs_ref.where("team_id", "==", team_id).stream())
+    if t_docs:
+        matching_docs = t_docs
+    if not matching_docs:
+        s_docs = list(regs_ref.where("spg_id", "==", team_id).stream())
+        if s_docs:
+            matching_docs = s_docs
+    if not matching_docs:
+        u_docs = list(regs_ref.where("user_id", "==", team_id).stream())
+        if u_docs:
+            matching_docs = u_docs
+    if not matching_docs:
+        n_docs = list(regs_ref.where("team_name", "==", team_id).stream())
+        if n_docs:
+            matching_docs = n_docs
+
+    existing_team_id = None
+    existing_spg_id = None
+    existing_team_name = None
+    old_member_uids = set()
+
+    for d in matching_docs:
+        d_dict = d.to_dict() or {}
+        if not existing_team_id and d_dict.get("team_id"):
+            existing_team_id = d_dict.get("team_id")
+        if not existing_spg_id and d_dict.get("spg_id"):
+            existing_spg_id = d_dict.get("spg_id")
+        if not existing_team_name and d_dict.get("team_name"):
+            existing_team_name = d_dict.get("team_name")
+        for m in d_dict.get("member_uids") or []:
+            old_member_uids.add(m)
+        if d_dict.get("user_id"):
+            old_member_uids.add(d_dict.get("user_id"))
+
+    canonical_team_id = existing_team_id or f"team_{uuid.uuid4().hex[:8]}"
+    final_team_name = (payload.team_name or existing_team_name or f"Team {payload.leader_uid[:5]}").strip()
+
+    # Detach removed members
+    removed_uids = old_member_uids - set(new_members)
+    for r_uid in removed_uids:
+        r_docs = _user_own_registrations(regs_ref, r_uid)
+        for rd in r_docs:
+            rd.reference.update({
+                "team_id": None,
+                "team_name": None,
+                "spg_id": None,
+                "is_team_leader": False,
+                "member_uids": [r_uid],
+                "looking_for_team": True,
+                "roster_locked": False,
+                "updated_at": now_ts,
+            })
+
+    # Ensure SPG exists and is updated
+    final_spg_id = existing_spg_id
+    if final_spg_id:
+        try:
+            spg_doc = db.collection(SPGS_COLLECTION).document(final_spg_id).get()
+            if spg_doc.exists:
+                db.collection(SPGS_COLLECTION).document(final_spg_id).update({
+                    "name": final_team_name,
+                    "member_ids": new_members,
+                    "lead_id": payload.leader_uid,
+                    "updated_at": now_ts,
+                })
+        except Exception:
+            pass
+    else:
+        # Mint SPG for this squad
+        final_spg_id, spg_data = _event_spg_data(
+            event, event_id, payload.leader_uid, new_members, final_team_name
+        )
+        db.collection(SPGS_COLLECTION).document(final_spg_id).set(spg_data)
+
+    # Update or create registration documents for each new member
+    for m_uid in new_members:
+        m_docs = _user_own_registrations(regs_ref, m_uid)
+        shared_fields = {
+            "team_id": canonical_team_id,
+            "team_name": final_team_name,
+            "spg_id": final_spg_id,
+            "member_uids": new_members,
+            "looking_for_team": False,
+            "roster_locked": True,
+            "updated_at": now_ts,
+        }
+        if m_docs:
+            for md in m_docs:
+                m_owner = (md.to_dict() or {}).get("user_id") or (md.to_dict() or {}).get("uid") or md.id
+                m_update = dict(shared_fields)
+                m_update["is_team_leader"] = (m_owner == payload.leader_uid)
+                md.reference.update(m_update)
+        else:
+            new_reg = {
+                "id": m_uid,
+                "uid": m_uid,
+                "event_id": event_id,
+                "user_id": m_uid,
+                "custom_responses": {},
+                "team_custom_responses": {},
+                "member_responses": {},
+                "pending_invites": [],
+                "selected_track_id": None,
+                "invite_code": None,
+                "submission": None,
+                "status": RegistrationStatus.REGISTERED.value,
+                "checked_in_at": None,
+                "checked_in_by": None,
+                "registered_at": now_ts,
+                **shared_fields,
+            }
+            regs_ref.document(m_uid).set(new_reg)
+
+    return {
+        "success": True,
+        "message": f"Squad '{final_team_name}' updated with {len(new_members)} members.",
+        "team_id": canonical_team_id,
+        "spg_id": final_spg_id,
+    }
 
 
 # --- Feedback Endpoints ---
@@ -4109,9 +4292,10 @@ def submit_event_project(
     member_list = reg_data.get("member_uids") or []
     for m_uid in member_list:
         if m_uid != reg_doc.id:
-            m_snap = regs_ref.document(m_uid).get()
-            if m_snap.exists:
-                m_snap.reference.update(update_payload)
+            m_docs = _user_own_registrations(regs_ref, m_uid)
+            for m_snap in m_docs:
+                if m_snap.id != reg_doc.id:
+                    m_snap.reference.update(update_payload)
 
     # Sync idea to linked SPG if problem_statement_id was provided
     if payload.problem_statement_id is not None:
@@ -4354,12 +4538,13 @@ def update_member_custom_responses(
     member_list = reg_data.get("member_uids") or []
     for m_uid in member_list:
         if m_uid != reg_doc.id:
-            m_snap = regs_ref.document(m_uid).get()
-            if m_snap.exists:
-                m_snap.reference.update({
-                    "custom_responses": custom_responses,
-                    "updated_at": now_timestamp,
-                })
+            m_docs = _user_own_registrations(regs_ref, m_uid)
+            for m_snap in m_docs:
+                if m_snap.id != reg_doc.id:
+                    m_snap.reference.update({
+                        "custom_responses": custom_responses,
+                        "updated_at": now_timestamp,
+                    })
 
     return {"success": True, "responses": user_responses, "custom_responses": custom_responses}
 
