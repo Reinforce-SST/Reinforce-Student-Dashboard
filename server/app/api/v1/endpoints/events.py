@@ -1620,6 +1620,16 @@ def merge_team(
         "updated_at": now_ts,
     }
 
+    caller_old_spg = caller_data.get("spg_id")
+    if caller_old_spg and caller_old_spg != host_spg_id:
+        try:
+            db.collection(SPGS_COLLECTION).document(caller_old_spg).update({
+                "status": "disbanded",
+                "updated_at": now_ts,
+            })
+        except Exception:
+            pass
+
     if host_spg_id:
         try:
             spg_doc = db.collection(SPGS_COLLECTION).document(host_spg_id).get()
@@ -1634,8 +1644,12 @@ def merge_team(
             pass
 
     for m_uid in combined_members:
-        m_snap = regs_ref.document(m_uid).get()
-        if m_snap.exists:
+        m_docs = _registrations_for_user(regs_ref, m_uid)
+        if not m_docs:
+            m_snap = regs_ref.document(m_uid).get()
+            if m_snap.exists:
+                m_docs = [m_snap]
+        for m_snap in m_docs:
             m_dict = dict(shared_update)
             m_dict["is_team_leader"] = (m_uid == host_leader_uid)
             if m_uid == user_uid and matching_invite_id:
@@ -1695,8 +1709,12 @@ def leave_team(
 
     if remaining:
         for rem_uid in remaining:
-            r_snap = regs_ref.document(rem_uid).get()
-            if r_snap.exists:
+            rem_docs = _registrations_for_user(regs_ref, rem_uid)
+            if not rem_docs:
+                r_snap = regs_ref.document(rem_uid).get()
+                if r_snap.exists:
+                    rem_docs = [r_snap]
+            for r_snap in rem_docs:
                 r_update: Dict[str, Any] = {
                     "member_uids": remaining,
                     "updated_at": now_ts,
@@ -1818,8 +1836,12 @@ def lock_team_roster(
 
     # Lock roster and associate SPG for all squad members
     for m_uid in member_uids:
-        m_doc = regs_ref.document(m_uid).get()
-        if m_doc.exists:
+        m_docs = _registrations_for_user(regs_ref, m_uid)
+        if not m_docs:
+            m_snap = regs_ref.document(m_uid).get()
+            if m_snap.exists:
+                m_docs = [m_snap]
+        for m_doc in m_docs:
             m_doc.reference.update({
                 "roster_locked": True,
                 "locked_at": now_ts,
@@ -1869,8 +1891,12 @@ def unlock_team_roster(
 
     now_ts = now_iso()
     for m_uid in member_uids:
-        m_doc = regs_ref.document(m_uid).get()
-        if m_doc.exists:
+        m_docs = _registrations_for_user(regs_ref, m_uid)
+        if not m_docs:
+            m_snap = regs_ref.document(m_uid).get()
+            if m_snap.exists:
+                m_docs = [m_snap]
+        for m_doc in m_docs:
             m_doc.reference.update({
                 "roster_locked": False,
                 "looking_for_team": True,
@@ -2258,7 +2284,17 @@ def list_event_registrations(
 
     # The attendee list is open to every member, but an attendance note is the
     # admin's own record — often the reason for a disqualification — and the
-    # member view never shows it. Strip what only the attendance console needs.
+    # For teams with multiple registrations, resolve true leader consistently
+    team_leaders: Dict[str, str] = {}
+    for r_dict in raw_regs:
+        t_id = r_dict.get("team_id") or (r_dict.get("team_name") and f"name_{r_dict['team_name'].strip().lower()}")
+        if not t_id:
+            continue
+        if r_dict.get("is_team_leader") and t_id not in team_leaders:
+            team_leaders[t_id] = r_dict.get("user_id") or ""
+        elif t_id not in team_leaders and r_dict.get("member_uids"):
+            team_leaders[t_id] = r_dict["member_uids"][0]
+
     viewer_is_admin = is_admin_user(current_user)
     results: List[RegistrationDocument] = []
     for r_dict in raw_regs:
@@ -2266,6 +2302,9 @@ def list_event_registrations(
             r_dict.pop("attendance_note", None)
             r_dict.pop("checked_in_by", None)
         uid = r_dict.get("user_id") or ""
+        t_id = r_dict.get("team_id") or (r_dict.get("team_name") and f"name_{r_dict['team_name'].strip().lower()}")
+        if t_id and t_id in team_leaders:
+            r_dict["is_team_leader"] = (uid == team_leaders[t_id])
         r_dict["user_profile"] = user_profiles.get(uid)
         r_dict["member_profiles"] = [
             user_profiles.get(m, {"id": m, "full_name": m})
