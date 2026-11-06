@@ -306,9 +306,147 @@ def _assert_mutable(spg: SPGRecord) -> None:
         )
 
 
+def _sync_spg_to_event_registrations(db: Any, spg: SPGRecord, now: datetime) -> None:
+    """Sync SPG state (members, lead, name, status) back to linked event registrations."""
+    event_id = spg.event_id
+    if not event_id:
+        try:
+            matched_events = list(
+                db.collection_group("registrations")
+                .where("spg_id", "==", spg.id)
+                .limit(1)
+                .stream()
+            )
+            if matched_events:
+                event_id = (matched_events[0].to_dict() or {}).get("event_id")
+        except Exception:
+            pass
+    if not event_id:
+        return
+
+    try:
+        regs_ref = (
+            db.collection("events")
+            .document(event_id)
+            .collection("registrations")
+        )
+        now_ts = now.isoformat()
+
+        if spg.status == SPGStatus.DISBANDED:
+            current_spg_regs = list(regs_ref.where("spg_id", "==", spg.id).stream())
+            for d in current_spg_regs:
+                d.reference.update({
+                    "spg_status": "disbanded",
+                    "updated_at": now_ts,
+                })
+            return
+
+        current_spg_regs = list(regs_ref.where("spg_id", "==", spg.id).stream())
+        existing_user_ids = set()
+        canonical_team_id = None
+        for doc in current_spg_regs:
+            d_dict = doc.to_dict() or {}
+            uid = d_dict.get("user_id") or d_dict.get("uid") or doc.id
+            if uid:
+                existing_user_ids.add(uid)
+            if not canonical_team_id and d_dict.get("team_id"):
+                canonical_team_id = d_dict.get("team_id")
+
+        if not canonical_team_id:
+            canonical_team_id = f"team_{spg.id[:10]}"
+
+        new_members = set(spg.member_ids)
+        # Detach removed members
+        removed_uids = existing_user_ids - new_members
+        for r_uid in removed_uids:
+            r_docs = list(regs_ref.where("user_id", "==", r_uid).stream())
+            if not r_docs:
+                r_snap = regs_ref.document(r_uid).get()
+                if r_snap.exists:
+                    r_docs = [r_snap]
+            for rd in r_docs:
+                rd.reference.update({
+                    "spg_id": None,
+                    "spg_status": None,
+                    "team_id": None,
+                    "team_name": None,
+                    "is_team_leader": False,
+                    "member_uids": [r_uid],
+                    "looking_for_team": True,
+                    "updated_at": now_ts,
+                })
+
+        # Update or link all current members
+        for m_uid in spg.member_ids:
+            m_docs = list(regs_ref.where("user_id", "==", m_uid).stream())
+            if not m_docs:
+                m_snap = regs_ref.document(m_uid).get()
+                if m_snap.exists:
+                    m_docs = [m_snap]
+            is_lead = (m_uid == spg.lead_id)
+            update_payload = {
+                "spg_id": spg.id,
+                "spg_status": "active",
+                "team_id": canonical_team_id,
+                "team_name": spg.name,
+                "member_uids": list(spg.member_ids),
+                "is_team_leader": is_lead,
+                "looking_for_team": False,
+                "updated_at": now_ts,
+            }
+            if m_docs:
+                for md in m_docs:
+                    md.reference.update(update_payload)
+            else:
+                new_reg = {
+                    "id": m_uid,
+                    "uid": m_uid,
+                    "event_id": event_id,
+                    "user_id": m_uid,
+                    "team_id": canonical_team_id,
+                    "team_name": spg.name,
+                    "is_team_leader": is_lead,
+                    "looking_for_team": False,
+                    "member_uids": list(spg.member_ids),
+                    "spg_id": spg.id,
+                    "spg_status": "active",
+                    "custom_responses": {},
+                    "team_custom_responses": {},
+                    "member_responses": {},
+                    "pending_invites": [],
+                    "selected_track_id": None,
+                    "invite_code": None,
+                    "submission": None,
+                    "status": "registered",
+                    "checked_in_at": None,
+                    "checked_in_by": None,
+                    "registered_at": now_ts,
+                }
+                regs_ref.document(m_uid).set(new_reg)
+                try:
+                    from google.cloud.firestore import Increment
+                    db.collection("events").document(event_id).update({
+                        "stats.registered_count": Increment(1),
+                    })
+                except Exception:
+                    try:
+                        edoc = db.collection("events").document(event_id).get()
+                        if edoc.exists:
+                            curr_c = int(((edoc.to_dict() or {}).get("stats") or {}).get("registered_count", 0))
+                            db.collection("events").document(event_id).update({
+                                "stats.registered_count": curr_c + 1,
+                            })
+                    except Exception:
+                        pass
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("Failed to sync SPG to event registrations: %s", e)
+
+
 def _save(db: Any, record: SPGRecord, now: datetime) -> SPGRecord:
     updated = record.model_copy(update={"updated_at": now})
     db.collection(SPGS_COLLECTION).document(updated.id).set(updated.model_dump())
+    _sync_spg_to_event_registrations(db, updated, now)
     return updated
 
 
@@ -339,6 +477,18 @@ def add_member(db: Any, *, spg_id: str, user_id: str, now: Optional[datetime] = 
         raise SPGError(400, f"{user_id} is not a known member UID.")
     if len(spg.member_ids) >= MAX_MEMBERS:
         raise SPGError(400, f"An SPG has at most {MAX_MEMBERS} members.")
+    if spg.event_id:
+        try:
+            event_doc = db.collection("events").document(spg.event_id).get()
+            if event_doc.exists:
+                event_data = event_doc.to_dict() or {}
+                max_size = (event_data.get("participation") or {}).get("max_team_size")
+                if max_size and len(spg.member_ids) >= max_size:
+                    raise SPGError(400, f"This squad has reached the event maximum team size of {max_size}.")
+        except SPGError:
+            raise
+        except Exception:
+            pass
     return _save(db, spg.model_copy(update={"member_ids": spg.member_ids + [user_id]}), now or utcnow())
 
 

@@ -506,9 +506,23 @@ export default function AdminBannerEditPanel({
                       fontSize: "12px",
                     }}
                   >
-                    <span style={{ fontWeight: 600 }}>{ev.title}</span>
+                    <span style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span>{ev.title}</span>
+                      <span
+                        style={{
+                          fontSize: "10px",
+                          fontWeight: 700,
+                          padding: "2px 6px",
+                          borderRadius: "4px",
+                          textTransform: "uppercase",
+                          ...getStatusBadgeStyle(ev.status),
+                        }}
+                      >
+                        {ev.status}
+                      </span>
+                    </span>
                     <span style={{ fontSize: "11px", color: "#8c8c98" }}>
-                      {ev.banner_url ? "📷 Has Cover" : "No Cover"} • Click to Fill
+                      {ev.slug ? `/${ev.slug}` : ev.id} • {ev.banner_url ? "📷 Has Cover" : "No Cover"} • Click to Fill
                     </span>
                   </button>
                 ))}

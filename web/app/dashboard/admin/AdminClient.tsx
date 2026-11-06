@@ -759,9 +759,25 @@ export default function AdminClient({ initialTab }: { initialTab?: AdminTab } = 
                           fontSize: "12px",
                         }}
                       >
-                        <span style={{ fontWeight: 600 }}>{ev.title}</span>
+                        <span style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span>{ev.title}</span>
+                          <span
+                            style={{
+                              fontSize: "10px",
+                              fontWeight: 700,
+                              padding: "2px 6px",
+                              borderRadius: "4px",
+                              textTransform: "uppercase",
+                              background: ev.status === "published" ? "rgba(34, 197, 94, 0.15)" : ev.status === "draft" ? "rgba(234, 179, 8, 0.15)" : "rgba(142, 142, 147, 0.15)",
+                              color: ev.status === "published" ? "#22c55e" : ev.status === "draft" ? "#eab308" : "#8e8e93",
+                              border: `1px solid ${ev.status === "published" ? "rgba(34, 197, 94, 0.3)" : ev.status === "draft" ? "rgba(234, 179, 8, 0.3)" : "rgba(142, 142, 147, 0.3)"}`,
+                            }}
+                          >
+                            {ev.status}
+                          </span>
+                        </span>
                         <span style={{ fontSize: "11px", color: "#8c8c98" }}>
-                          {ev.banner_url ? "📷 Has Cover" : "No Cover"} • Click to Fill
+                          {ev.slug ? `/${ev.slug}` : ev.id} • {ev.banner_url ? "📷 Has Cover" : "No Cover"} • Click to Fill
                         </span>
                       </button>
                     ))}
