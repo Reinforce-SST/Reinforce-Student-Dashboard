@@ -1078,7 +1078,7 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                     </div>
                     {myRegistration.spg_id && (
                       <Link
-                        href={`/dashboard/spg?id=${encodeURIComponent(myRegistration.spg_id)}`}
+                        href={`/dashboard/spg/${encodeURIComponent(myRegistration.spg_id)}`}
                         className={styles.heroSpgBadge}
                         title="View Team SPG Workspace"
                       >
