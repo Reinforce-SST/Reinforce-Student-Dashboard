@@ -773,6 +773,11 @@ class AdminUpdateTeamRosterRequest(BaseModel):
     leader_uid: str
 
 
+class AttachRegistrationIdeaRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    idea_id: Optional[str] = None
+
+
 class TeamPoolMemberSummary(BaseModel):
     uid: str
     full_name: str

@@ -15,8 +15,8 @@ from fastapi import HTTPException
 
 from app.api.v1.endpoints import events
 from app.schemas.events import (
-    AdminEditTeamRosterRequest,
-    AttachIdeaRequest,
+    AdminUpdateTeamRosterRequest,
+    AttachRegistrationIdeaRequest,
     CreateOrUpdateTeamRequest,
     EventRegisterRequest,
     TeamMergeByCodeRequest,
@@ -212,17 +212,18 @@ class EventSquadOperationsTests(unittest.TestCase):
         )
 
         # Admin overrides squad roster to add USER_EXTRA
-        res = events.admin_edit_event_team(
+        res = events.admin_update_team_roster(
             self.event_id,
             team_id=team_doc.team_id,
-            payload=AdminEditTeamRosterRequest(
+            payload=AdminUpdateTeamRosterRequest(
                 member_uids=[USER_LEAD["uid"], USER_MEMBER["uid"], USER_EXTRA["uid"]],
                 leader_uid=USER_LEAD["uid"],
                 team_name="Hyperion Extended",
             ),
-            current_user=ADMIN,
+            admin=ADMIN,
         )
-        self.assertIn("updated successfully", res["message"])
+        self.assertTrue(res["success"])
+        self.assertIn("updated with", res["message"])
 
         # Check registrations updated
         lead_reg = events.get_my_registration(self.event_id, current_user=USER_LEAD).registration
@@ -261,7 +262,7 @@ class EventSquadOperationsTests(unittest.TestCase):
         # Leader attaches idea
         events.attach_registration_idea(
             self.event_id,
-            payload=AttachIdeaRequest(idea_id="idea-brain"),
+            payload=AttachRegistrationIdeaRequest(idea_id="idea-brain"),
             current_user=USER_LEAD,
         )
 
