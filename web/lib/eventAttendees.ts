@@ -1,13 +1,6 @@
-import type { EventRegistration } from "./api";
+import type { EventRegistration, AttendeeProfile } from "./api";
 
-export type AttendeeProfile = {
-  id: string;
-  full_name?: string | null;
-  email?: string | null;
-  discord_username?: string | null;
-  avatar_url?: string | null;
-  batch_year?: number | null;
-};
+export type { AttendeeProfile };
 
 export type AggregatedTeam = {
   key: string;

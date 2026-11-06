@@ -94,7 +94,7 @@ test("squad roster locking, unlocking, and admin edits hit correct event endpoin
   }
 });
 
-test("squad join, leave, and attaching ideas route through API properly", async () => {
+test("squad merge, leave, and attaching ideas route through API properly", async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (url, init) => {
@@ -102,18 +102,18 @@ test("squad join, leave, and attaching ideas route through API properly", async 
     return { ok: true, json: async () => ({ success: true }) };
   };
   try {
-    await api.joinTeamByCode("member-token", "evt-hackathon", { join_code: "XYZ123" });
+    await api.mergeTeam("member-token", "evt-hackathon", { invite_code: "XYZ123" });
     await api.leaveTeam("member-token", "evt-hackathon");
-    await api.attachRegistrationIdea("member-token", "evt-hackathon", { idea_id: "idea-99" });
+    await api.attachEventIdea("member-token", "evt-hackathon", "idea-99");
 
-    assert.match(calls[0].url, /\/events\/evt-hackathon\/team\/join$/);
+    assert.match(calls[0].url, /\/events\/evt-hackathon\/team\/merge$/);
     assert.equal(calls[0].init.method, "POST");
-    assert.equal(JSON.parse(calls[0].init.body).join_code, "XYZ123");
+    assert.equal(JSON.parse(calls[0].init.body).invite_code, "XYZ123");
 
     assert.match(calls[1].url, /\/events\/evt-hackathon\/team\/leave$/);
     assert.equal(calls[1].init.method, "POST");
 
-    assert.match(calls[2].url, /\/events\/evt-hackathon\/registration\/idea$/);
+    assert.match(calls[2].url, /\/events\/evt-hackathon\/my-registration\/idea$/);
     assert.equal(calls[2].init.method, "POST");
     assert.equal(JSON.parse(calls[2].init.body).idea_id, "idea-99");
   } finally {
