@@ -322,7 +322,7 @@ export default function EventAttendeesPanel({
                           gap: "3px",
                         }}
                       >
-                        <MemberIcon name="lock" size={9} /> Confirmed
+                        <MemberIcon name="lock" size={9} /> Locked Roster
                       </span>
                     ) : (
                       <span

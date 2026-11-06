@@ -62,7 +62,7 @@ export default function AdminLearningResourcesPanel({ token }: { token: string }
   const load = useCallback(async () => {
     if (!token) return;
     try {
-      const result = await api.listLearningResources({}, token);
+      const result = await api.listLearningResources({}, token, true);
       setResources(result.resources);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Learning resources could not be loaded.");

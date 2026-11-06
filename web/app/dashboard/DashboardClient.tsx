@@ -188,10 +188,11 @@ export default function DashboardClient() {
     : dedicatedBanners.filter((b) => b.status !== "archived" && b.status !== "draft");
 
   const dedicatedSlides: FeaturedBanner[] = dedicatedSource.map((b) => {
-    const d = new Date(b.schedule.start_time);
+    const startTimeStr = b.schedule?.start_time || b.created_at || (b as any).start_at || new Date().toISOString();
+    const d = new Date(startTimeStr);
     const dateStr = formatBannerDate(d);
 
-    const ctaDestination = b.banner_cta_url?.trim() || "";
+    const ctaDestination = b.banner_cta_url?.trim() || (b as any).custom_url?.trim() || "";
     // Extract target event ref (slug or id) if the CTA URL is an event path: /dashboard/events/<ref> or /events/<ref>
     const eventUrlMatch = ctaDestination.match(/(?:\/dashboard)?\/events\/([^/?#]+)/i);
     const targetEventRef = eventUrlMatch ? decodeURIComponent(eventUrlMatch[1].trim()).replace(/\/$/, "") : null;
@@ -219,7 +220,7 @@ export default function DashboardClient() {
       matchedEvent = candidatesByTitle[0];
     }
 
-    const eventId = matchedEvent ? matchedEvent.id : (targetEventRef || "");
+    const eventId = matchedEvent ? matchedEvent.id : (targetEventRef || (b as any).target_event_id || "");
 
     const venue = matchedEvent?.venue_info?.room ||
       matchedEvent?.venue_info?.venue_name ||
@@ -235,10 +236,16 @@ export default function DashboardClient() {
       ? (matchedEvent.format === "in_person" || matchedEvent.format === "offline" ? "CAMPUS" : (matchedEvent.format || "CAMPUS").toUpperCase())
       : "CAMPUS";
 
-    const startMs = new Date(b.schedule.start_time).getTime();
-    const endMs = b.schedule.end_time
+    const startMs = b.schedule?.start_time
+      ? new Date(b.schedule.start_time).getTime()
+      : (b as any).start_at
+      ? new Date((b as any).start_at).getTime()
+      : Date.now();
+    const endMs = b.schedule?.end_time
       ? new Date(b.schedule.end_time).getTime()
-      : (Number.isFinite(startMs) ? startMs + (b.schedule.duration_minutes ? b.schedule.duration_minutes * 60_000 : 86_400_000) : null);
+      : (b as any).end_at
+      ? new Date((b as any).end_at).getTime()
+      : (Number.isFinite(startMs) ? startMs + (b.schedule?.duration_minutes ? b.schedule.duration_minutes * 60_000 : 86_400_000) : null);
 
     const isEnded = matchedEvent
       ? (matchedEvent.status === "ended" || matchedEvent.status === "completed" || (endMs !== null && endMs < nowMs))

@@ -34,8 +34,8 @@ test.describe("Event Squad Roster Locking and Admin Editing", () => {
 
     await app.enter(`/dashboard/events/${teamEvent.id}`);
 
-    // Click "Lock Roster" button
-    const lockBtn = page.getByRole("button", { name: /Lock Roster/i });
+    // Click "Lock Squad Roster" button
+    const lockBtn = page.getByRole("button", { name: /Lock Squad Roster|Confirm & Lock Squad Early/i }).first();
     await expect(lockBtn).toBeVisible();
     await lockBtn.click();
 

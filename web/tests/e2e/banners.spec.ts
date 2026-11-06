@@ -6,14 +6,15 @@ test.beforeEach(async ({ app }) => {
 
 test.describe("Hero Banners Administration and Presentation", () => {
   test("an admin can create a new dashboard hero banner", async ({ page, app }) => {
-    await app.enter("/dashboard/admin?tab=banners");
+    await app.enter("/dashboard/admin/banners");
 
-    await page.getByPlaceholder(/Reinforce Hackathon 2026/).fill("Spring AI Summit");
-    await page.getByPlaceholder(/Brief 1-2 sentence hook for students/).fill("Join talks by top researchers.");
-    await page.getByPlaceholder(/Learn More →/).fill("Register Now →");
-    await page.getByPlaceholder(/\/dashboard\/events\/... or https:\/\//).fill("/dashboard/events/paper-reading-week-10");
+    await page.locator("input[type='datetime-local']").first().fill("2026-10-15T10:00");
+    await page.getByPlaceholder("e.g. Reinforce HackSprint 2026").fill("Spring AI Summit");
+    await page.getByPlaceholder("Summary of the featured event or announcement...").fill("Join talks by top researchers.");
+    await page.getByPlaceholder("Explore Event →").fill("Register Now →");
+    await page.getByPlaceholder("/dashboard/events or https://example.com/event").fill("/dashboard/events/paper-reading-week-10");
 
-    await page.getByRole("button", { name: /Publish Dashboard Banner/ }).click();
+    await page.getByRole("button", { name: "Publish Dashboard Hero Banner" }).click();
 
     await expect.poll(() => app.world.calls.find(c => c.method === "POST" && c.path === "/banners")).toBeTruthy();
     const call = app.world.calls.find(c => c.method === "POST" && c.path === "/banners");
@@ -22,13 +23,13 @@ test.describe("Hero Banners Administration and Presentation", () => {
 
   test("an admin can view and select an existing banner to edit", async ({ page, app }) => {
     app.world.banners = [{ ...data.banner, title: "Editable Summit Banner" }];
-    await app.enter("/dashboard/admin?tab=banners");
+    await app.enter("/dashboard/admin/banners");
 
-    await page.getByRole("button", { name: /Modify Existing Banners/ }).click();
+    await page.getByRole("button", { name: "Edit Existing Banner" }).click();
     await expect(page.getByText("Editable Summit Banner")).toBeVisible();
-    await page.getByRole("button", { name: /Edit/i }).first().click();
+    await page.getByRole("button", { name: "Edit Banner" }).first().click();
 
-    await expect(page.getByRole("button", { name: /Save Banner Changes/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Update Dashboard Hero Banner" })).toBeVisible();
   });
 
   test("the dashboard renders active hero banner for members", async ({ page, app }) => {
@@ -37,8 +38,9 @@ test.describe("Hero Banners Administration and Presentation", () => {
       ...data.banner,
       title: "Featured Innovation Showcase",
       description: "Discover breakthrough machine learning prototypes.",
+      banner_cta_url: "/dashboard/events/paper-reading-week-10",
       custom_url: "/dashboard/events/paper-reading-week-10",
-      status: "active",
+      status: "published",
     }];
 
     await app.enter("/dashboard");
