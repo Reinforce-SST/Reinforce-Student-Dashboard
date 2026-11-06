@@ -42,6 +42,13 @@ test('banner presentation keeps old defaults and uses saved content', () => {
     badge: 'Orientation', ctaText: 'Join now', ctaLink: 'https://reinforce-sst.com/orientation',
   });
   assert.equal(isBannerDestination('javascript:alert(1)'), false);
+  assert.equal(isBannerDestination('data:text/html,<h1>hi</h1>'), false);
+  assert.equal(isBannerDestination('http://insecure.example.com'), false);
+  assert.equal(isBannerDestination('https://user:pass@evil.example.com'), false);
+  assert.equal(isBannerDestination('   /dashboard/events   '), false);
   assert.equal(isBannerDestination('//other.example'), false);
   assert.equal(isBannerDestination('/dashboard/events'), true);
+  assert.equal(isBannerDestination('/dashboard/events/evt-123?tab=teams#roster'), true);
+  assert.equal(isBannerDestination('https://reinforce-sst.com/hackathon-2026'), true);
 });
+

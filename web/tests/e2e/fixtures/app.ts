@@ -45,6 +45,8 @@ export type World = {
   registerError?: { status: number; detail: string };
   /** Learning Resources, published and hidden. */
   resources: Record<string, unknown>[];
+  /** Hero banners collection */
+  banners: Record<string, unknown>[];
 };
 
 function freshWorld(): World {
@@ -64,6 +66,7 @@ function freshWorld(): World {
     registrations: [{ ...fixture.eventRegistration }],
     contributions: [{ ...fixture.contribution }],
     resources: fixture.learningResources.map(item => ({ ...item })),
+    banners: [{ ...fixture.banner }],
   };
 }
 
@@ -371,10 +374,55 @@ async function handleApi(route: Route, world: World) {
   }
   if (/^\/events\/[^/]+\/feedback$/.test(path)) return ok({ success: true });
   if (/^\/events\/[^/]+\/status$/.test(path)) return ok({ ...fixture.upcomingEvent, status: "published" });
+  if (/^\/events\/[^/]+\/team\/lock$/.test(path)) return ok({ status: "registered", roster_locked: true });
+  if (/^\/events\/[^/]+\/team\/unlock$/.test(path)) return ok({ status: "registered", roster_locked: false });
+  if (/^\/events\/[^/]+\/teams\/[^/]+\/roster$/.test(path)) {
+    return ok({ success: true, message: "Squad roster updated and synced successfully!" });
+  }
+  if (/^\/events\/[^/]+\/team-pool$/.test(path)) return ok({ pool: [], total: 0 });
   if (/^\/events\/[^/]+$/.test(path)) {
     const slug = path.split("/")[2];
     const match = world.events.find(item => item.id === slug || item.slug === slug);
     return ok(match ? { ...fixture.eventDetail, ...match } : fixture.eventDetail);
+  }
+
+  /* ------------------------------------------------------------- banners */
+  if (path === "/banners" && method === "GET") {
+    const wanted = search.get("status");
+    const matching = world.banners.filter(item => !wanted || wanted === "all" || item.status === wanted);
+    return ok({ banners: matching, total: matching.length });
+  }
+  if (path === "/banners" && method === "POST") {
+    const created = {
+      ...fixture.banner,
+      ...(body as object),
+      id: `banner-${world.banners.length + 1}`,
+      created_at: fixture.NOW_ISO,
+      updated_at: fixture.NOW_ISO,
+    };
+    world.banners = [created, ...world.banners];
+    return ok(created);
+  }
+  if (path === "/banners/media" && method === "POST") {
+    return ok({ url: "https://reinforce-sst.com/media/uploaded-banner.png" });
+  }
+  const bannerIdMatch = path.match(/^\/banners\/([^/]+)$/);
+  if (bannerIdMatch) {
+    const id = bannerIdMatch[1];
+    const index = world.banners.findIndex(item => item.id === id);
+    if (method === "GET") {
+      if (index < 0) return fail(404, "Banner not found");
+      return ok(world.banners[index]);
+    }
+    if (method === "PUT" || method === "PATCH") {
+      if (index < 0) return fail(404, "Banner not found");
+      world.banners[index] = { ...world.banners[index], ...(body as object), updated_at: fixture.NOW_ISO };
+      return ok(world.banners[index]);
+    }
+    if (method === "DELETE") {
+      if (index >= 0) world.banners.splice(index, 1);
+      return ok({ message: "Banner deleted successfully", id });
+    }
   }
 
   /* ----------------------------------------------------------- invitations */
