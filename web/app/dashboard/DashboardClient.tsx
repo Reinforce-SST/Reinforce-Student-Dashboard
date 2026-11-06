@@ -179,17 +179,13 @@ export default function DashboardClient() {
   const { banners: legacyBanners, upcoming } = getDashboardEvents(events, now);
 
   const isBannerActive = (b: BannerDocument) => {
-    if (b.status === "archived") return false;
-    if (b.schedule?.end_time) {
-      const end = new Date(b.schedule.end_time).getTime();
-      if (Number.isFinite(end) && end < nowMs) return false;
-    }
+    if (b.status === "archived" || b.status === "draft") return false;
     return true;
   };
   const activeDedicatedBanners = dedicatedBanners.filter(isBannerActive);
   const dedicatedSource = activeDedicatedBanners.length > 0
     ? activeDedicatedBanners
-    : dedicatedBanners.filter((b) => b.status !== "archived");
+    : dedicatedBanners.filter((b) => b.status !== "archived" && b.status !== "draft");
 
   const dedicatedSlides: FeaturedBanner[] = dedicatedSource.map((b) => {
     const d = new Date(b.schedule.start_time);

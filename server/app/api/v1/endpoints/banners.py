@@ -78,10 +78,6 @@ def list_banners(
 
     for doc in docs:
         b = _doc_to_banner_document(doc)
-        # For non-admins, filter out expired banners if end_time is in the past
-        if not is_admin:
-            if b.schedule.end_time and b.schedule.end_time.isoformat() < now_str:
-                continue
         banners.append(b)
 
     # Sort newest schedule start_time first
