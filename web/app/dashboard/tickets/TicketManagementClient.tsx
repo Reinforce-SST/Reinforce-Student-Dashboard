@@ -962,17 +962,7 @@ export default function TicketManagementClient() {
                       ? "Closed"
                       : "Resolved"}
                   </span>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <span>{ticket.updatedAt}</span>
-                    <Link
-                      href={`/dashboard/tickets/${encodeURIComponent(ticket.id)}`}
-                      className={styles.openThreadSmallLink}
-                      onClick={(e) => e.stopPropagation()}
-                      title="Open full ticket view"
-                    >
-                      Open →
-                    </Link>
-                  </div>
+                  <span>{ticket.updatedAt}</span>
                 </div>
               </article>
             ))}
@@ -1070,23 +1060,7 @@ export default function TicketManagementClient() {
                   </div>
                 </div>
 
-                <div className={styles.detailTitleRow}>
-                  <h2 className={styles.detailTitle}>
-                    <Link
-                      href={`/dashboard/tickets/${encodeURIComponent(selectedTicket.id)}`}
-                      className={styles.detailTitleLink}
-                    >
-                      {selectedTicket.title}
-                    </Link>
-                  </h2>
-                  <Link
-                    href={`/dashboard/tickets/${encodeURIComponent(selectedTicket.id)}`}
-                    className={styles.openFullViewBtn}
-                  >
-                    <MemberIcon name="message" size={14} />
-                    Open Full View &amp; Chat →
-                  </Link>
-                </div>
+                <h2 className={styles.detailTitle}>{selectedTicket.title}</h2>
               </div>
 
               <div className={styles.detailSection}>
@@ -1119,22 +1093,6 @@ export default function TicketManagementClient() {
                   </div>
                 );
               })()}
-
-              <div className={styles.detailActionBanner}>
-                <div>
-                  <h4 style={{ margin: "0 0 4px 0", fontSize: "0.85rem", color: "#ffffff", fontWeight: 800 }}>Conversation &amp; Responses</h4>
-                  <p style={{ margin: 0, fontSize: "0.75rem", color: "#8e8e9c" }}>
-                    View full discussion thread, replies from staff, and send messages.
-                  </p>
-                </div>
-                <Link
-                  href={`/dashboard/tickets/${encodeURIComponent(selectedTicket.id)}`}
-                  className={styles.openFullViewBtn}
-                >
-                  <MemberIcon name="message" size={14} />
-                  Open Full View &amp; Chat →
-                </Link>
-              </div>
 
               {selectedTicket.thread_url && <div className={styles.discordBridgeBanner}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
