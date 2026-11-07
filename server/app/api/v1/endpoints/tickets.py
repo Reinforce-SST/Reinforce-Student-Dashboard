@@ -306,6 +306,33 @@ def list_my_tickets(
     return TicketListResponse(total=len(tickets), items=visible)
 
 
+@router.get("/metrics", summary="Get ticket status and category metrics")
+def get_ticket_metrics(
+    admin: dict = Depends(get_admin_user),
+) -> Dict[str, Any]:
+    """Calculate aggregate ticket metrics (counts by status and category)."""
+    docs = list(db.collection(TICKETS_COLLECTION).stream())
+    metrics: Dict[str, Any] = {
+        "total": len(docs),
+        "open": 0,
+        "in_progress": 0,
+        "resolved": 0,
+        "closed": 0,
+        "by_category": {},
+        "by_priority": {},
+    }
+    for doc in docs:
+        data = doc.to_dict() or {}
+        st = data.get("status", "open")
+        cat = data.get("category", "misc")
+        prio = data.get("priority", "medium")
+        if st in metrics:
+            metrics[st] += 1
+        metrics["by_category"][cat] = metrics["by_category"].get(cat, 0) + 1
+        metrics["by_priority"][prio] = metrics["by_priority"].get(prio, 0) + 1
+    return metrics
+
+
 @router.get("/{ticket_id}", response_model=TicketDetail, summary="Get ticket details")
 def get_ticket(
     ticket_id: str,

@@ -58,3 +58,66 @@ test("admin merit awards use the member ID and the contribution contract", async
     assert.equal(JSON.parse(calls[0].init.body).category, "project_work");
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test("squad roster locking, unlocking, and admin edits hit correct event endpoints", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, init });
+    return { ok: true, json: async () => ({ success: true, roster_locked: true }) };
+  };
+  try {
+    await api.lockTeamRoster("member-token", "evt-hackathon");
+    await api.unlockTeamRoster("member-token", "evt-hackathon");
+    await api.adminUpdateTeamRoster("admin-token", "evt-hackathon", "team-123", {
+      team_name: "Super Squad",
+      leader_uid: "lead-1",
+      member_uids: ["lead-1", "mem-2"],
+    });
+
+    assert.match(calls[0].url, /\/events\/evt-hackathon\/team\/lock$/);
+    assert.equal(calls[0].init.method, "POST");
+    assert.equal(calls[0].init.headers.Authorization, "Bearer member-token");
+
+    assert.match(calls[1].url, /\/events\/evt-hackathon\/team\/unlock$/);
+    assert.equal(calls[1].init.method, "POST");
+
+    assert.match(calls[2].url, /\/events\/evt-hackathon\/teams\/team-123\/roster$/);
+    assert.equal(calls[2].init.method, "PATCH");
+    assert.equal(calls[2].init.headers.Authorization, "Bearer admin-token");
+    const payload = JSON.parse(calls[2].init.body);
+    assert.equal(payload.team_name, "Super Squad");
+    assert.equal(payload.leader_uid, "lead-1");
+    assert.deepEqual(payload.member_uids, ["lead-1", "mem-2"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("squad merge, leave, and attaching ideas route through API properly", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, init });
+    return { ok: true, json: async () => ({ success: true }) };
+  };
+  try {
+    await api.mergeTeam("member-token", "evt-hackathon", { invite_code: "XYZ123" });
+    await api.leaveTeam("member-token", "evt-hackathon");
+    await api.attachEventIdea("member-token", "evt-hackathon", "idea-99");
+
+    assert.match(calls[0].url, /\/events\/evt-hackathon\/team\/merge$/);
+    assert.equal(calls[0].init.method, "POST");
+    assert.equal(JSON.parse(calls[0].init.body).invite_code, "XYZ123");
+
+    assert.match(calls[1].url, /\/events\/evt-hackathon\/team\/leave$/);
+    assert.equal(calls[1].init.method, "POST");
+
+    assert.match(calls[2].url, /\/events\/evt-hackathon\/my-registration\/idea$/);
+    assert.equal(calls[2].init.method, "POST");
+    assert.equal(JSON.parse(calls[2].init.body).idea_id, "idea-99");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+

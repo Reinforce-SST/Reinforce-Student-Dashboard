@@ -74,7 +74,7 @@ export default function SpgManagementClient() {
     const t = searchParams.get("tab")?.toLowerCase();
     if (t === "public" || t === "public_spgs") setScopeTab("PUBLIC_SPGS");
     else if (t === "ideas" || t === "idea_jar" || t === "idea_jar_spgs") setScopeTab("IDEA_JAR_SPGS");
-    else if (t === "my" || t === "my_spgs") setScopeTab("MY_SPGS");
+    else setScopeTab("MY_SPGS");
   }, [searchParams]);
 
   const handleScopeChange = (newScope: "MY_SPGS" | "PUBLIC_SPGS" | "IDEA_JAR_SPGS") => {

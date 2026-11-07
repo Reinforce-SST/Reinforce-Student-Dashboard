@@ -732,6 +732,8 @@ class RegistrationDocument(BaseModel):
     # Attendance & Submission Metadata
     spg_id: Optional[str] = None
     spg_status: Optional[str] = None
+    idea_id: Optional[str] = None
+    problem_statement_id: Optional[str] = None
     roster_locked: bool = False
     locked_at: Optional[str] = None
     submission: Optional[Dict[str, Any]] = None
@@ -771,6 +773,11 @@ class AdminUpdateTeamRosterRequest(BaseModel):
     team_name: Optional[str] = None
     member_uids: List[str]
     leader_uid: str
+
+
+class AttachRegistrationIdeaRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    idea_id: Optional[str] = None
 
 
 class TeamPoolMemberSummary(BaseModel):

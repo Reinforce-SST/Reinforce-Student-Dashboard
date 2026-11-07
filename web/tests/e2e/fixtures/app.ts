@@ -45,6 +45,8 @@ export type World = {
   registerError?: { status: number; detail: string };
   /** Learning Resources, published and hidden. */
   resources: Record<string, unknown>[];
+  /** Hero banners collection */
+  banners: Record<string, unknown>[];
 };
 
 function freshWorld(): World {
@@ -64,6 +66,7 @@ function freshWorld(): World {
     registrations: [{ ...fixture.eventRegistration }],
     contributions: [{ ...fixture.contribution }],
     resources: fixture.learningResources.map(item => ({ ...item })),
+    banners: [{ ...fixture.banner }],
   };
 }
 
@@ -297,15 +300,36 @@ async function handleApi(route: Route, world: World) {
     return ok(world.events[index]);
   }
   if (/^\/events\/[^/]+\/my-registration$/.test(path)) {
-    return ok(
-      world.registered
-        ? { is_registered: true, registration: { status: "registered" } }
-        : { is_registered: false, registration: null },
+    if (!world.registered) {
+      return ok({ is_registered: false, registration: null });
+    }
+    const eventId = path.split("/")[2];
+    const match = world.registrations.find(
+      r => r.event_id === eventId &&
+           (r.user_id === world.profile.id || (r.member_uids as string[])?.includes(world.profile.id as string))
     );
+    return ok({
+      is_registered: true,
+      registration: match ?? world.registrations[0] ?? { status: "registered", user_id: world.profile.id },
+    });
   }
   if (/^\/events\/[^/]+\/register$/.test(path)) {
     if (method === "POST" && world.registerError) return fail(world.registerError.status, world.registerError.detail);
     world.registered = method !== "DELETE";
+    if (method === "POST") {
+      const eventId = path.split("/")[2];
+      const req = body as { team_name?: string; member_uids?: string[] } | undefined;
+      const newReg = {
+        ...fixture.eventRegistration,
+        id: `reg-${Date.now()}`,
+        event_id: eventId,
+        user_id: world.profile.id,
+        team_name: req?.team_name ?? null,
+        member_uids: req?.member_uids ? [world.profile.id, ...req.member_uids] : [world.profile.id],
+        status: "registered",
+      };
+      world.registrations = [newReg, ...world.registrations];
+    }
     return ok({ status: world.registered ? "registered" : "cancelled" });
   }
   if (/^\/events\/[^/]+\/registrations\/manual$/.test(path)) {
@@ -371,10 +395,75 @@ async function handleApi(route: Route, world: World) {
   }
   if (/^\/events\/[^/]+\/feedback$/.test(path)) return ok({ success: true });
   if (/^\/events\/[^/]+\/status$/.test(path)) return ok({ ...fixture.upcomingEvent, status: "published" });
+  if (/^\/events\/[^/]+\/team\/lock$/.test(path)) {
+    const eventId = path.split("/")[2];
+    const idx = world.registrations.findIndex(r => r.event_id === eventId);
+    if (idx >= 0) {
+      world.registrations[idx] = { ...world.registrations[idx], roster_locked: true };
+      return ok(world.registrations[idx]);
+    }
+    return ok({ status: "registered", roster_locked: true });
+  }
+  if (/^\/events\/[^/]+\/team\/unlock$/.test(path)) {
+    const eventId = path.split("/")[2];
+    const idx = world.registrations.findIndex(r => r.event_id === eventId);
+    if (idx >= 0) {
+      world.registrations[idx] = { ...world.registrations[idx], roster_locked: false };
+      return ok(world.registrations[idx]);
+    }
+    return ok({ status: "registered", roster_locked: false });
+  }
+  if (/^\/events\/[^/]+\/teams\/[^/]+\/roster$/.test(path)) {
+    return ok({ success: true, message: "Squad roster updated and synced successfully!" });
+  }
+  if (/^\/events\/[^/]+\/team-pool$/.test(path)) return ok({ pool: [], total: 0 });
   if (/^\/events\/[^/]+$/.test(path)) {
     const slug = path.split("/")[2];
     const match = world.events.find(item => item.id === slug || item.slug === slug);
     return ok(match ? { ...fixture.eventDetail, ...match } : fixture.eventDetail);
+  }
+
+  /* ------------------------------------------------------------- banners */
+  if (path === "/banners" && method === "GET") {
+    const wanted = search.get("status");
+    const matching = world.banners.filter(item =>
+      !wanted || wanted === "all" || item.status === wanted ||
+      (wanted === "published" && item.status === "active") ||
+      (wanted === "active" && item.status === "published")
+    );
+    return ok({ banners: matching, total: matching.length });
+  }
+  if (path === "/banners" && method === "POST") {
+    const created = {
+      ...fixture.banner,
+      ...(body as object),
+      id: `banner-${world.banners.length + 1}`,
+      created_at: fixture.NOW_ISO,
+      updated_at: fixture.NOW_ISO,
+    };
+    world.banners = [created, ...world.banners];
+    return ok(created);
+  }
+  if (path === "/banners/media" && method === "POST") {
+    return ok({ url: "https://reinforce-sst.com/media/uploaded-banner.png" });
+  }
+  const bannerIdMatch = path.match(/^\/banners\/([^/]+)$/);
+  if (bannerIdMatch) {
+    const id = bannerIdMatch[1];
+    const index = world.banners.findIndex(item => item.id === id);
+    if (method === "GET") {
+      if (index < 0) return fail(404, "Banner not found");
+      return ok(world.banners[index]);
+    }
+    if (method === "PUT" || method === "PATCH") {
+      if (index < 0) return fail(404, "Banner not found");
+      world.banners[index] = { ...world.banners[index], ...(body as object), updated_at: fixture.NOW_ISO };
+      return ok(world.banners[index]);
+    }
+    if (method === "DELETE") {
+      if (index >= 0) world.banners.splice(index, 1);
+      return ok({ message: "Banner deleted successfully", id });
+    }
   }
 
   /* ----------------------------------------------------------- invitations */
@@ -387,6 +476,36 @@ async function handleApi(route: Route, world: World) {
   if (path === "/spgs" && method === "GET") return ok(page1(world.spgs));
   if (/^\/spgs\/[^/]+\/reports\/(form|pdf)$/.test(path)) return ok(fixture.spgReport);
   if (/^\/spgs\/[^/]+\/reports$/.test(path)) return ok(page1([fixture.spgReport]));
+  if (/^\/spgs\/[^/]+\/milestones(\/.*)?$/.test(path)) {
+    if (method === "GET") return ok([]);
+    if (method === "POST") {
+      const spgId = decodeURIComponent(path.split("/")[2] ?? "");
+      const payload = (body as Record<string, unknown>) ?? {};
+      return ok({
+        id: "ms-1",
+        spg_id: spgId,
+        title: (payload.title as string) ?? "Milestone",
+        description: (payload.description as string) ?? null,
+        is_completed: false,
+        completed_at: null,
+        order: 0,
+        submilestones: [],
+      });
+    }
+    if (method === "PATCH") {
+      const parts = path.split("/");
+      return ok({
+        id: parts[4] ?? "ms-1",
+        spg_id: decodeURIComponent(parts[2] ?? ""),
+        title: "Milestone",
+        is_completed: true,
+        completed_at: null,
+        order: 0,
+        submilestones: [],
+      });
+    }
+    if (method === "DELETE") return ok({ success: true });
+  }
   if (/^\/spgs\/[^/]+$/.test(path)) {
     const spgId = decodeURIComponent(path.split("/")[2] ?? "");
     return ok(world.spgs.find(item => item.id === spgId) ?? fixture.spg);
@@ -668,6 +787,7 @@ export const test = base.extend<{ app: AppFixture }>({
     const enter = async (path = "/dashboard") => {
       await page.goto("/");
       await signIn(page, world);
+      await page.waitForTimeout(50);
       await page.goto(path);
     };
 

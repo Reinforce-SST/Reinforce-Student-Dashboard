@@ -36,6 +36,7 @@ from app.schemas.contributions import (
 from app.schemas.events import (
     AdminUpdateTeamRosterRequest,
     AssignAllColumnRequest,
+    AttachRegistrationIdeaRequest,
     BatchUpdateMatrixRequest,
     CreateMatrixColumnRequest,
     CreateOrUpdateTeamRequest,
@@ -4468,10 +4469,6 @@ def submit_event_project(
 
     return {"success": True, "submission": sub_dict}
 
-
-class AttachRegistrationIdeaRequest(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    idea_id: Optional[str] = None
 
 
 @router.post("/{id}/my-registration/idea")

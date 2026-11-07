@@ -171,7 +171,7 @@ export default function DashboardClient() {
     return () => { active = false; };
   }, [token, profile.id, retryCount]);
 
-  const now = new Date();
+  const [now] = useState(() => new Date());
   const nowMs = now.getTime();
   const memberSpgs = spgs.filter((spg) =>
     (spg.status === "active" || spg.status === "paused") &&
@@ -188,10 +188,17 @@ export default function DashboardClient() {
     : dedicatedBanners.filter((b) => b.status !== "archived" && b.status !== "draft");
 
   const dedicatedSlides: FeaturedBanner[] = dedicatedSource.map((b) => {
-    const d = new Date(b.schedule.start_time);
+    const legacyB = b as BannerDocument & {
+      start_at?: string | number;
+      end_at?: string | number;
+      custom_url?: string;
+      target_event_id?: string;
+    };
+    const startTimeStr = b.schedule?.start_time || b.created_at || (typeof legacyB.start_at === "string" ? legacyB.start_at : undefined) || now.toISOString();
+    const d = new Date(startTimeStr);
     const dateStr = formatBannerDate(d);
 
-    const ctaDestination = b.banner_cta_url?.trim() || "";
+    const ctaDestination = b.banner_cta_url?.trim() || legacyB.custom_url?.trim() || "";
     // Extract target event ref (slug or id) if the CTA URL is an event path: /dashboard/events/<ref> or /events/<ref>
     const eventUrlMatch = ctaDestination.match(/(?:\/dashboard)?\/events\/([^/?#]+)/i);
     const targetEventRef = eventUrlMatch ? decodeURIComponent(eventUrlMatch[1].trim()).replace(/\/$/, "") : null;
@@ -219,7 +226,7 @@ export default function DashboardClient() {
       matchedEvent = candidatesByTitle[0];
     }
 
-    const eventId = matchedEvent ? matchedEvent.id : (targetEventRef || "");
+    const eventId = matchedEvent ? matchedEvent.id : (targetEventRef || legacyB.target_event_id || "");
 
     const venue = matchedEvent?.venue_info?.room ||
       matchedEvent?.venue_info?.venue_name ||
@@ -235,10 +242,16 @@ export default function DashboardClient() {
       ? (matchedEvent.format === "in_person" || matchedEvent.format === "offline" ? "CAMPUS" : (matchedEvent.format || "CAMPUS").toUpperCase())
       : "CAMPUS";
 
-    const startMs = new Date(b.schedule.start_time).getTime();
-    const endMs = b.schedule.end_time
+    const startMs = b.schedule?.start_time
+      ? new Date(b.schedule.start_time).getTime()
+      : legacyB.start_at
+      ? new Date(legacyB.start_at).getTime()
+      : nowMs;
+    const endMs = b.schedule?.end_time
       ? new Date(b.schedule.end_time).getTime()
-      : (Number.isFinite(startMs) ? startMs + (b.schedule.duration_minutes ? b.schedule.duration_minutes * 60_000 : 86_400_000) : null);
+      : legacyB.end_at
+      ? new Date(legacyB.end_at).getTime()
+      : (Number.isFinite(startMs) ? startMs + (b.schedule?.duration_minutes ? b.schedule.duration_minutes * 60_000 : 86_400_000) : null);
 
     const isEnded = matchedEvent
       ? (matchedEvent.status === "ended" || matchedEvent.status === "completed" || (endMs !== null && endMs < nowMs))

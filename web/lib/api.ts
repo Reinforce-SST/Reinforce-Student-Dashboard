@@ -2065,8 +2065,9 @@ export const api = {
       if (value) qs.set(key, value);
     }
     const query = qs.toString();
+    const scope = token ? "admin" : "public";
     return appCache.fetch(
-      `resources:list:${query || "all"}`,
+      `resources:list:${scope}:${query || "all"}`,
       () =>
         request<{ resources: LearningResource[]; total: number }>(
           `/learning-resources${query ? `?${query}` : ""}`,

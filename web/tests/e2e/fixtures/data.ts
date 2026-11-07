@@ -296,3 +296,28 @@ export const learningResources = [
     status: "hidden",
   },
 ];
+
+export const banner = {
+  id: "banner-1",
+  title: "Reinforce Annual Hackathon",
+  description: "Join the flagship AI hackathon and win prizes.",
+  banner_url: "https://reinforce-sst.com/media/hackathon.png",
+  banner_badge_text: "FEATURED",
+  banner_cta_text: "Explore Event →",
+  banner_cta_url: `/dashboard/events/${upcomingEvent.id}`,
+  target_event_id: upcomingEvent.id,
+  target_event: upcomingEvent,
+  custom_url: `/dashboard/events/${upcomingEvent.id}`,
+  schedule: {
+    start_time: from(-2),
+    end_time: from(10),
+    duration_minutes: 120,
+  },
+  status: "published",
+  priority: 10,
+  start_at: from(-2),
+  end_at: from(10),
+  created_at: from(-5),
+  updated_at: from(-1),
+};
+
