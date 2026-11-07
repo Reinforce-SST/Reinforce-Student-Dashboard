@@ -8,6 +8,7 @@ import hashlib
 import json
 import logging
 import secrets
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 import urllib.error
 import urllib.request
@@ -59,6 +60,16 @@ MESSAGES_SUBCOLLECTION = "messages"
 USERS_COLLECTION = "users"
 IDEAS_COLLECTION = "ideas"
 MAX_MESSAGES = 300
+
+
+def _parse_msg_timestamp(ts: Optional[str]) -> float:
+    if not ts:
+        return 0.0
+    try:
+        clean = str(ts).replace("Z", "+00:00")
+        return datetime.fromisoformat(clean).timestamp()
+    except Exception:
+        return 0.0
 
 
 def _bot_endpoint(path: str) -> str:
@@ -680,7 +691,7 @@ def get_ticket_messages(
     for msg in stream:
         messages.append(_to_ticket_message(msg.id, msg.to_dict() or {}))
 
-    messages.reverse()
+    messages.sort(key=lambda m: _parse_msg_timestamp(m.timestamp))
     return messages
 
 
@@ -1168,8 +1179,10 @@ def export_ticket_transcript(
 
     lines.extend(["", "## Conversation", ""])
 
-    for msg in stream:
-        m = msg.to_dict() or {}
+    raw_msgs = [msg.to_dict() or {} for msg in stream]
+    raw_msgs.sort(key=lambda m: _parse_msg_timestamp(iso_str(m.get("timestamp"))))
+
+    for m in raw_msgs:
         sender = m.get("sender_uid") or m.get("sender_role") or "Unknown"
         ts = iso_str(m.get("timestamp"))
         source = m.get("source", "web")

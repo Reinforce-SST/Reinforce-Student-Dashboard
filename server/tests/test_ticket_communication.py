@@ -137,6 +137,44 @@ class TicketCommunicationTests(unittest.TestCase):
         })
         self.assertEqual(msg.sender_name, "Discord Student")
 
+    def test_get_ticket_messages_sorts_chronologically(self):
+        self.as_member_a()
+        ticket_id = "tkt_mixed_timestamps"
+        self.db.collection("tickets").document(ticket_id).set({
+            "id": ticket_id,
+            "created_by_uid": MEMBER_A["uid"],
+            "category": "support",
+            "title": "Sorting Test",
+            "status": "open",
+        })
+        msgs_coll = self.db.collection("tickets").document(ticket_id).collection("messages")
+        msgs_coll.document("msg_older").set({
+            "id": "msg_older",
+            "sender_uid": MEMBER_A["uid"],
+            "content": "2h ago message",
+            "timestamp": "2026-11-07T19:00:00+00:00",
+        })
+        msgs_coll.document("msg_newer").set({
+            "id": "msg_newer",
+            "sender_uid": MEMBER_A["uid"],
+            "content": "7m ago message",
+            "timestamp": "2026-11-07T20:53:00+00:00",
+        })
+        msgs_coll.document("msg_middle").set({
+            "id": "msg_middle",
+            "sender_uid": MEMBER_A["uid"],
+            "content": "32m ago message",
+            "timestamp": "2026-11-07T20:28:00+00:00",
+        })
+
+        res = self.client.get(f"/api/v1/tickets/{ticket_id}/messages")
+        self.assertEqual(res.status_code, 200)
+        items = res.json()
+        self.assertEqual(len(items), 3)
+        self.assertEqual(items[0]["content"], "2h ago message")
+        self.assertEqual(items[1]["content"], "32m ago message")
+        self.assertEqual(items[2]["content"], "7m ago message")
+
     @patch("urllib.request.urlopen")
     def test_post_message_relays_sender_name_to_yuvi(self, mock_urlopen):
         self.as_member_a()
