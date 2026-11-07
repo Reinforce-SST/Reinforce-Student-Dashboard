@@ -760,18 +760,32 @@ def post_ticket_message(
     discord_meta = data.get("discord_meta") or {}
     thread_id = discord_meta.get("thread_id") or data.get("thread_id")
 
-    if thread_id and settings.yuvi_bot_url and settings.bot_internal_secret:
+    if not thread_id:
+        print(f"[Tickets] Ticket {ticket_id} has no linked discord thread_id; skipping relay")
+        logger.info("Ticket %s has no linked discord thread_id; skipping relay", ticket_id)
+    elif not (settings.yuvi_bot_url and settings.bot_internal_secret):
+        print(
+            f"[Tickets] Discord relay skipped for ticket {ticket_id}: yuvi_bot_url={bool(settings.yuvi_bot_url)}, bot_internal_secret_set={bool(settings.bot_internal_secret)}"
+        )
+        logger.warning(
+            "Discord relay skipped for ticket %s: yuvi_bot_url=%s, bot_internal_secret_set=%s",
+            ticket_id,
+            bool(settings.yuvi_bot_url),
+            bool(settings.bot_internal_secret),
+        )
+    else:
         relay_payload = {
             "ticket_id": ticket_id,
-            "thread_id": thread_id,
+            "thread_id": str(thread_id),
             "sender_uid": current_user["uid"],
             "sender_name": sender_name,
             "content": message_in.content,
             "attachments": message_in.attachments,
         }
+        target_url = _bot_endpoint("/tickets/relay-message")
         try:
             req = urllib.request.Request(
-                _bot_endpoint("/tickets/relay-message"),
+                target_url,
                 data=json.dumps(relay_payload).encode("utf-8"),
                 headers={
                     "Content-Type": "application/json",
@@ -779,10 +793,18 @@ def post_ticket_message(
                 },
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=3.0):
-                pass
+            with urllib.request.urlopen(req, timeout=5.0) as resp:
+                print(f"[Tickets] Discord message relayed for ticket {ticket_id} to {target_url} (status={resp.status})")
+                logger.info("Discord message relayed for ticket %s (status=%s)", ticket_id, resp.status)
         except Exception as exc:
-            logger.warning("Discord message relay failed for ticket %s: %s", ticket_id, type(exc).__name__)
+            err_body = ""
+            if hasattr(exc, "read"):
+                try:
+                    err_body = f" Body: {exc.read().decode('utf-8', errors='replace')}"
+                except Exception:
+                    pass
+            print(f"[Tickets] Discord message relay failed for ticket {ticket_id} to {target_url}: {exc}{err_body}")
+            logger.warning("Discord message relay failed for ticket %s to %s: %s%s", ticket_id, target_url, exc, err_body)
 
     return _to_ticket_message(msg_id, msg_doc)
 
