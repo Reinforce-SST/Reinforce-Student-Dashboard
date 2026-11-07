@@ -62,14 +62,29 @@ IDEAS_COLLECTION = "ideas"
 MAX_MESSAGES = 300
 
 
-def _parse_msg_timestamp(ts: Optional[str]) -> float:
-    if not ts:
+def _parse_msg_timestamp(ts: Any) -> float:
+    if ts is None:
+        return 0.0
+    if isinstance(ts, (int, float)):
+        return float(ts)
+    if hasattr(ts, "timestamp") and callable(ts.timestamp):
+        try:
+            return float(ts.timestamp())
+        except Exception:
+            pass
+    s = str(ts).strip()
+    if not s:
         return 0.0
     try:
-        clean = str(ts).replace("Z", "+00:00")
+        clean = s.replace("Z", "+00:00")
         return datetime.fromisoformat(clean).timestamp()
     except Exception:
-        return 0.0
+        pass
+    try:
+        return float(s)
+    except Exception:
+        pass
+    return 0.0
 
 
 def _bot_endpoint(path: str) -> str:
