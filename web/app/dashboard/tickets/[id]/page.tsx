@@ -249,7 +249,12 @@ export default function TicketPage() {
     );
   }
 
-  const { ticket, messages } = data;
+  const { ticket } = data;
+  const messages = (data.messages || []).slice().sort((a, b) => {
+    const tA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+    const tB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+    return tA - tB;
+  });
   const statusClass =
     ticket.status === "open"
       ? styles.statusOpen

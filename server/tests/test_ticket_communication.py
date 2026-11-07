@@ -11,6 +11,7 @@ Covers:
 - Ticket metrics analytics (GET /tickets/metrics)
 """
 
+import json
 import unittest
 from unittest.mock import patch
 
@@ -99,6 +100,7 @@ class TicketCommunicationTests(unittest.TestCase):
         }).json()
         self.assertEqual(msg1["content"], "The ImageNet mirror seems down from campus Wi-Fi.")
         self.assertEqual(msg1["sender_uid"], MEMBER_A["uid"])
+        self.assertEqual(msg1["sender_name"], MEMBER_A["name"])
 
         # 3. Admin posts response
         self.as_admin()
@@ -106,6 +108,7 @@ class TicketCommunicationTests(unittest.TestCase):
             "content": "Use the internal academic proxy at proxy.sst.scaler.com:8080.",
         }).json()
         self.assertEqual(msg2["sender_role"], "admin")
+        self.assertEqual(msg2["sender_name"], ADMIN_USER["name"])
 
         # 4. Member fetches messages thread
         self.as_member_a()
@@ -114,7 +117,89 @@ class TicketCommunicationTests(unittest.TestCase):
         messages = thread_res.json()
         self.assertEqual(len(messages), 2)
         self.assertEqual(messages[0]["content"], "The ImageNet mirror seems down from campus Wi-Fi.")
+        self.assertEqual(messages[0]["sender_name"], MEMBER_A["name"])
         self.assertEqual(messages[1]["content"], "Use the internal academic proxy at proxy.sst.scaler.com:8080.")
+        self.assertEqual(messages[1]["sender_name"], ADMIN_USER["name"])
+
+    def test_to_ticket_message_resolves_discord_sender_name(self):
+        self.db.collection("users").document("uid-discord-user").set({
+            "id": "uid-discord-user",
+            "full_name": "Discord Student",
+            "discord_id": "123456789012345678",
+            "is_member": True,
+        })
+        msg = tickets._to_ticket_message("msg-1", {
+            "sender_uid": "123456789012345678",
+            "sender_name": "discord_handle_xyz",
+            "sender_role": "user",
+            "source": "discord",
+            "content": "Hello from discord thread",
+        })
+        self.assertEqual(msg.sender_name, "Discord Student")
+
+    def test_get_ticket_messages_sorts_chronologically(self):
+        self.as_member_a()
+        ticket_id = "tkt_mixed_timestamps"
+        self.db.collection("tickets").document(ticket_id).set({
+            "id": ticket_id,
+            "created_by_uid": MEMBER_A["uid"],
+            "category": "support",
+            "title": "Sorting Test",
+            "status": "open",
+        })
+        msgs_coll = self.db.collection("tickets").document(ticket_id).collection("messages")
+        msgs_coll.document("msg_older").set({
+            "id": "msg_older",
+            "sender_uid": MEMBER_A["uid"],
+            "content": "2h ago message",
+            "timestamp": "2026-11-07T19:00:00+00:00",
+        })
+        msgs_coll.document("msg_newer").set({
+            "id": "msg_newer",
+            "sender_uid": MEMBER_A["uid"],
+            "content": "7m ago message",
+            "timestamp": "2026-11-07T20:53:00+00:00",
+        })
+        msgs_coll.document("msg_middle").set({
+            "id": "msg_middle",
+            "sender_uid": MEMBER_A["uid"],
+            "content": "32m ago message",
+            "timestamp": "2026-11-07T20:28:00+00:00",
+        })
+
+        res = self.client.get(f"/api/v1/tickets/{ticket_id}/messages")
+        self.assertEqual(res.status_code, 200)
+        items = res.json()
+        self.assertEqual(len(items), 3)
+        self.assertEqual(items[0]["content"], "2h ago message")
+        self.assertEqual(items[1]["content"], "32m ago message")
+        self.assertEqual(items[2]["content"], "7m ago message")
+
+    @patch("urllib.request.urlopen")
+    def test_post_message_relays_sender_name_to_yuvi(self, mock_urlopen):
+        self.as_member_a()
+        ticket_id = "tkt_with_thread"
+        self.db.collection("tickets").document(ticket_id).set({
+            "id": ticket_id,
+            "created_by_uid": MEMBER_A["uid"],
+            "category": "support",
+            "title": "Discord linked ticket",
+            "status": "open",
+            "discord_meta": {"thread_id": "999888777"},
+        })
+        with patch.object(tickets.settings, "yuvi_bot_url", "http://localhost:8001"), \
+             patch.object(tickets.settings, "bot_internal_secret", "secret123"):
+            res = self.client.post(f"/api/v1/tickets/{ticket_id}/messages", json={
+                "content": "Relayed message to discord",
+            })
+        self.assertEqual(res.status_code, 201)
+        mock_urlopen.assert_called_once()
+        req = mock_urlopen.call_args.args[0]
+        body = json.loads(req.data.decode("utf-8"))
+        self.assertEqual(body["sender_name"], MEMBER_A["name"])
+        self.assertEqual(body["sender_uid"], MEMBER_A["uid"])
+        self.assertEqual(body["thread_id"], "999888777")
+        self.assertEqual(body["content"], "Relayed message to discord")
 
     def test_member_closes_own_ticket(self):
         self.as_member_a()

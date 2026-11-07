@@ -921,12 +921,18 @@ export const api = {
         assigned_to_email: detail.assigned_to_email ?? null,
         assigned_to_avatar: detail.assigned_to_avatar ?? null,
       },
-      messages: messages.map((message) => ({
-        ...message,
-        sender_name:
-          message.sender_name?.trim() ||
-          (message.sender_role === "admin" || message.sender_role === "lead" ? "Club team" : "Member"),
-      })),
+      messages: messages
+        .map((message) => ({
+          ...message,
+          sender_name:
+            message.sender_name?.trim() ||
+            (message.sender_role === "admin" || message.sender_role === "lead" ? "Club team" : "Member"),
+        }))
+        .sort((a, b) => {
+          const tA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+          const tB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+          return tA - tB;
+        }),
     };
   },
 

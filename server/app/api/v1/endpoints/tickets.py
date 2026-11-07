@@ -8,6 +8,7 @@ import hashlib
 import json
 import logging
 import secrets
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 import urllib.error
 import urllib.request
@@ -61,12 +62,45 @@ IDEAS_COLLECTION = "ideas"
 MAX_MESSAGES = 300
 
 
+def _parse_msg_timestamp(ts: Any) -> float:
+    if ts is None:
+        return 0.0
+    if isinstance(ts, (int, float)):
+        return float(ts)
+    if hasattr(ts, "timestamp") and callable(ts.timestamp):
+        try:
+            return float(ts.timestamp())
+        except Exception:
+            pass
+    s = str(ts).strip()
+    if not s:
+        return 0.0
+    try:
+        clean = s.replace("Z", "+00:00")
+        return datetime.fromisoformat(clean).timestamp()
+    except Exception:
+        pass
+    try:
+        return float(s)
+    except Exception:
+        pass
+    return 0.0
+
+
 def _bot_endpoint(path: str) -> str:
     base = settings.yuvi_bot_url.rstrip("/")
     legacy_verify_path = "/internal/verify-success"
     if base.endswith(legacy_verify_path):
         base = base[: -len(legacy_verify_path)]
     return f"{base}/{path.lstrip('/')}"
+
+
+def _bot_headers() -> Dict[str, str]:
+    return {
+        "Content-Type": "application/json",
+        "X-Internal-Secret": settings.bot_internal_secret,
+        "User-Agent": "Reinforce-API/1.0",
+    }
 
 
 def _identity_keys(current_user: dict) -> set[str]:
@@ -221,10 +255,45 @@ def _to_ticket_detail(doc_id: str, data: Dict[str, Any]) -> TicketDetail:
 
 
 def _to_ticket_message(msg_id: str, data: Dict[str, Any]) -> TicketMessage:
+    sender_uid = data.get("sender_uid") or data.get("sender_id")
+    sender_name = data.get("sender_name")
+
+    if sender_uid:
+        user_info = _get_user_info(str(sender_uid))
+        if user_info.get("name"):
+            sender_name = user_info["name"]
+        else:
+            candidates = [str(sender_uid)]
+            if str(sender_uid).isdigit():
+                candidates.append(int(sender_uid))
+            for cand in candidates:
+                try:
+                    profiles = (
+                        db.collection(USERS_COLLECTION)
+                        .where("discord_id", "==", cand)
+                        .limit(1)
+                        .get()
+                    )
+                    if profiles:
+                        p_data = profiles[0].to_dict() or {}
+                        resolved = p_data.get("full_name") or p_data.get("name")
+                        if resolved:
+                            sender_name = resolved
+                            break
+                except Exception:
+                    pass
+
+    if not sender_name:
+        sender_name = data.get("sender_name") or (
+            "Staff Team"
+            if data.get("sender_role") in (SenderRole.ADMIN.value, SenderRole.LEAD.value, "admin", "lead")
+            else "Member"
+        )
+
     return TicketMessage(
         id=msg_id,
-        sender_uid=data.get("sender_uid") or data.get("sender_id"),
-        sender_name=data.get("sender_name"),
+        sender_uid=sender_uid,
+        sender_name=sender_name,
         sender_role=data.get("sender_role") or SenderRole.USER,
         source=data.get("source") or MessageSource.WEB,
         content=data.get("content") or "",
@@ -594,10 +663,7 @@ def create_ticket(
             req = urllib.request.Request(
                 _bot_endpoint("/tickets/create-thread"),
                 data=json.dumps(bot_payload).encode("utf-8"),
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Internal-Secret": settings.bot_internal_secret,
-                },
+                headers=_bot_headers(),
                 method="POST",
             )
             with urllib.request.urlopen(req, timeout=5.0) as resp:
@@ -645,7 +711,7 @@ def get_ticket_messages(
     for msg in stream:
         messages.append(_to_ticket_message(msg.id, msg.to_dict() or {}))
 
-    messages.reverse()
+    messages.sort(key=lambda m: _parse_msg_timestamp(m.timestamp))
     return messages
 
 
@@ -676,9 +742,13 @@ def post_ticket_message(
     msg_id = f"msg_{uuid.uuid4().hex[:10]}"
     role = SenderRole.ADMIN if is_admin else SenderRole.USER
 
+    sender_info = _get_user_info(current_user["uid"])
+    sender_name = sender_info.get("name") or current_user.get("full_name") or current_user.get("name") or current_user.get("email") or "Member"
+
     msg_doc = {
         "id": msg_id,
         "sender_uid": current_user["uid"],
+        "sender_name": sender_name,
         "sender_role": role.value,
         "source": MessageSource.WEB.value,
         "content": message_in.content,
@@ -695,28 +765,48 @@ def post_ticket_message(
     discord_meta = data.get("discord_meta") or {}
     thread_id = discord_meta.get("thread_id") or data.get("thread_id")
 
-    if thread_id and settings.yuvi_bot_url and settings.bot_internal_secret:
+    if not thread_id:
+        print(f"[Tickets] Ticket {ticket_id} has no linked discord thread_id; skipping relay")
+        logger.info("Ticket %s has no linked discord thread_id; skipping relay", ticket_id)
+    elif not (settings.yuvi_bot_url and settings.bot_internal_secret):
+        print(
+            f"[Tickets] Discord relay skipped for ticket {ticket_id}: yuvi_bot_url={bool(settings.yuvi_bot_url)}, bot_internal_secret_set={bool(settings.bot_internal_secret)}"
+        )
+        logger.warning(
+            "Discord relay skipped for ticket %s: yuvi_bot_url=%s, bot_internal_secret_set=%s",
+            ticket_id,
+            bool(settings.yuvi_bot_url),
+            bool(settings.bot_internal_secret),
+        )
+    else:
         relay_payload = {
             "ticket_id": ticket_id,
-            "thread_id": thread_id,
+            "thread_id": str(thread_id),
             "sender_uid": current_user["uid"],
+            "sender_name": sender_name,
             "content": message_in.content,
             "attachments": message_in.attachments,
         }
+        target_url = _bot_endpoint("/tickets/relay-message")
         try:
             req = urllib.request.Request(
-                _bot_endpoint("/tickets/relay-message"),
+                target_url,
                 data=json.dumps(relay_payload).encode("utf-8"),
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Internal-Secret": settings.bot_internal_secret,
-                },
+                headers=_bot_headers(),
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=3.0):
-                pass
+            with urllib.request.urlopen(req, timeout=5.0) as resp:
+                print(f"[Tickets] Discord message relayed for ticket {ticket_id} to {target_url} (status={resp.status})")
+                logger.info("Discord message relayed for ticket %s (status=%s)", ticket_id, resp.status)
         except Exception as exc:
-            logger.warning("Discord message relay failed for ticket %s: %s", ticket_id, type(exc).__name__)
+            err_body = ""
+            if hasattr(exc, "read"):
+                try:
+                    err_body = f" Body: {exc.read().decode('utf-8', errors='replace')}"
+                except Exception:
+                    pass
+            print(f"[Tickets] Discord message relay failed for ticket {ticket_id} to {target_url}: {exc}{err_body}")
+            logger.warning("Discord message relay failed for ticket %s to %s: %s%s", ticket_id, target_url, exc, err_body)
 
     return _to_ticket_message(msg_id, msg_doc)
 
@@ -1128,8 +1218,10 @@ def export_ticket_transcript(
 
     lines.extend(["", "## Conversation", ""])
 
-    for msg in stream:
-        m = msg.to_dict() or {}
+    raw_msgs = [msg.to_dict() or {} for msg in stream]
+    raw_msgs.sort(key=lambda m: _parse_msg_timestamp(iso_str(m.get("timestamp"))))
+
+    for m in raw_msgs:
         sender = m.get("sender_uid") or m.get("sender_role") or "Unknown"
         ts = iso_str(m.get("timestamp"))
         source = m.get("source", "web")

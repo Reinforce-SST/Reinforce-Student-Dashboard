@@ -1674,3 +1674,16 @@
   padding-bottom: 8px;
 }
 
+.ticketTitleLink {
+  color: #ffffff;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.ticketTitleLink:hover {
+  color: var(--brand, #E5B731);
+  text-decoration: underline;
+}
+
+
+
