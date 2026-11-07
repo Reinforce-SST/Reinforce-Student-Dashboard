@@ -347,7 +347,7 @@ export default function EventAttendeesPanel({
                   {team.spg_id && (
                     <div className={styles.spgBadgeRow}>
                       <span className={styles.spgLabelBadge}>SPG Group</span>
-                      <Link href={`/dashboard/spg?id=${team.spg_id}`} className={styles.spgLink}>
+                      <Link href={`/dashboard/spg/${encodeURIComponent(team.spg_id)}`} className={styles.spgLink}>
                         View SPG Workspace ↗
                       </Link>
                     </div>

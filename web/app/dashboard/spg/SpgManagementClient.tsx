@@ -32,6 +32,13 @@ export default function SpgManagementClient() {
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
 
   useEffect(() => {
+    const spgId = searchParams.get("id");
+    if (spgId) {
+      router.replace(`/dashboard/spg/${encodeURIComponent(spgId)}`);
+    }
+  }, [searchParams, router]);
+
+  useEffect(() => {
     if (!token) return;
     let active = true;
     api.listMyInvitations(token, "pending")
