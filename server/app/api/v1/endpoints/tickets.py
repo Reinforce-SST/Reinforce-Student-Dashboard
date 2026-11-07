@@ -95,6 +95,14 @@ def _bot_endpoint(path: str) -> str:
     return f"{base}/{path.lstrip('/')}"
 
 
+def _bot_headers() -> Dict[str, str]:
+    return {
+        "Content-Type": "application/json",
+        "X-Internal-Secret": settings.bot_internal_secret,
+        "User-Agent": "Reinforce-API/1.0",
+    }
+
+
 def _identity_keys(current_user: dict) -> set[str]:
     keys = {str(current_user["uid"])}
     discord_id = linked_discord_id(db, current_user["uid"], current_user.get("email") or "")
@@ -655,10 +663,7 @@ def create_ticket(
             req = urllib.request.Request(
                 _bot_endpoint("/tickets/create-thread"),
                 data=json.dumps(bot_payload).encode("utf-8"),
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Internal-Secret": settings.bot_internal_secret,
-                },
+                headers=_bot_headers(),
                 method="POST",
             )
             with urllib.request.urlopen(req, timeout=5.0) as resp:
@@ -787,10 +792,7 @@ def post_ticket_message(
             req = urllib.request.Request(
                 target_url,
                 data=json.dumps(relay_payload).encode("utf-8"),
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Internal-Secret": settings.bot_internal_secret,
-                },
+                headers=_bot_headers(),
                 method="POST",
             )
             with urllib.request.urlopen(req, timeout=5.0) as resp:
