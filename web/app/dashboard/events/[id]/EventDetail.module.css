@@ -3282,8 +3282,9 @@
   color: #d4d4d8;
 }
 
-/* Modals (Intake RSVP & Submission) */
-.modalBackdrop {
+/* Modals (Intake RSVP, Submission, Lock Roster, Invites, Cancel) */
+.modalBackdrop,
+.modalOverlay {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.75);
@@ -3295,7 +3296,8 @@
   padding: 20px;
 }
 
-.modalCard {
+.modalCard,
+.modalBox {
   background: #141416;
   border: 1px solid #31343a;
   border-radius: 16px;
@@ -3322,7 +3324,8 @@
   gap: 4px;
 }
 
-.modalHeading {
+.modalHeading,
+.modalTitle {
   font-size: 18px;
   font-weight: 800;
   color: #ffffff;
@@ -3509,7 +3512,8 @@
   font-size: 13px;
 }
 
-.modalFooter {
+.modalFooter,
+.modalActions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
