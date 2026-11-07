@@ -286,7 +286,6 @@ export default function TicketManagementClient() {
 
   const [supportSubject, setSupportSubject] = useState("");
   const [supportDetails, setSupportDetails] = useState("");
-  const [discordHandle, setDiscordHandle] = useState("");
 
   const [ideaTrack, setIdeaTrack] = useState<"research" | "product" | "kaggle" | "general">("product");
   const [ideaDifficulty, setIdeaDifficulty] = useState<"beginner" | "intermediate" | "advanced">("intermediate");
@@ -606,7 +605,6 @@ export default function TicketManagementClient() {
       fieldsObj = {
         Subject: supportSubject || formTitle,
         Details: supportDetails,
-        "Discord Handle": discordHandle,
       };
     } else if (selectedCategory === "idea_jar") {
       const difficultyLabel = ideaDifficulty === "beginner" ? "Beginner" : ideaDifficulty === "advanced" ? "Advanced" : "Intermediate";
@@ -1863,32 +1861,17 @@ export default function TicketManagementClient() {
 
               {selectedCategory === "support" && (
                 <>
-                  <div className={styles.fieldsRow}>
-                    <div className={styles.formGroup}>
-                      <label className={styles.inputLabel} htmlFor="modal-support-subject">
-                        Subject
-                      </label>
-                      <input
-                        id="modal-support-subject"
-                        type="text"
-                        className={styles.textInput}
-                        value={supportSubject}
-                        onChange={(e) => setSupportSubject(e.target.value)}
-                      />
-                    </div>
-
-                    <div className={styles.formGroup}>
-                      <label className={styles.inputLabel} htmlFor="modal-discord-handle">
-                        Discord Handle
-                      </label>
-                      <input
-                        id="modal-discord-handle"
-                        type="text"
-                        className={styles.textInput}
-                        value={discordHandle}
-                        onChange={(e) => setDiscordHandle(e.target.value)}
-                      />
-                    </div>
+                  <div className={styles.formGroup}>
+                    <label className={styles.inputLabel} htmlFor="modal-support-subject">
+                      Subject
+                    </label>
+                    <input
+                      id="modal-support-subject"
+                      type="text"
+                      className={styles.textInput}
+                      value={supportSubject}
+                      onChange={(e) => setSupportSubject(e.target.value)}
+                    />
                   </div>
 
                   <div className={styles.formGroup}>

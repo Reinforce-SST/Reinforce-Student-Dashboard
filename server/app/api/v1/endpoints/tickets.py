@@ -221,10 +221,45 @@ def _to_ticket_detail(doc_id: str, data: Dict[str, Any]) -> TicketDetail:
 
 
 def _to_ticket_message(msg_id: str, data: Dict[str, Any]) -> TicketMessage:
+    sender_uid = data.get("sender_uid") or data.get("sender_id")
+    sender_name = data.get("sender_name")
+
+    if sender_uid:
+        user_info = _get_user_info(str(sender_uid))
+        if user_info.get("name"):
+            sender_name = user_info["name"]
+        else:
+            candidates = [str(sender_uid)]
+            if str(sender_uid).isdigit():
+                candidates.append(int(sender_uid))
+            for cand in candidates:
+                try:
+                    profiles = (
+                        db.collection(USERS_COLLECTION)
+                        .where("discord_id", "==", cand)
+                        .limit(1)
+                        .get()
+                    )
+                    if profiles:
+                        p_data = profiles[0].to_dict() or {}
+                        resolved = p_data.get("full_name") or p_data.get("name")
+                        if resolved:
+                            sender_name = resolved
+                            break
+                except Exception:
+                    pass
+
+    if not sender_name:
+        sender_name = data.get("sender_name") or (
+            "Staff Team"
+            if data.get("sender_role") in (SenderRole.ADMIN.value, SenderRole.LEAD.value, "admin", "lead")
+            else "Member"
+        )
+
     return TicketMessage(
         id=msg_id,
-        sender_uid=data.get("sender_uid") or data.get("sender_id"),
-        sender_name=data.get("sender_name"),
+        sender_uid=sender_uid,
+        sender_name=sender_name,
         sender_role=data.get("sender_role") or SenderRole.USER,
         source=data.get("source") or MessageSource.WEB,
         content=data.get("content") or "",
@@ -676,9 +711,13 @@ def post_ticket_message(
     msg_id = f"msg_{uuid.uuid4().hex[:10]}"
     role = SenderRole.ADMIN if is_admin else SenderRole.USER
 
+    sender_info = _get_user_info(current_user["uid"])
+    sender_name = sender_info.get("name") or current_user.get("full_name") or current_user.get("name") or current_user.get("email") or "Member"
+
     msg_doc = {
         "id": msg_id,
         "sender_uid": current_user["uid"],
+        "sender_name": sender_name,
         "sender_role": role.value,
         "source": MessageSource.WEB.value,
         "content": message_in.content,
@@ -700,6 +739,7 @@ def post_ticket_message(
             "ticket_id": ticket_id,
             "thread_id": thread_id,
             "sender_uid": current_user["uid"],
+            "sender_name": sender_name,
             "content": message_in.content,
             "attachments": message_in.attachments,
         }
