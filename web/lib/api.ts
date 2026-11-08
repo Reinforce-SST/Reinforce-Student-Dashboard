@@ -787,7 +787,8 @@ export const api = {
     sortBy?: string,
     force?: boolean
   ) => {
-    const query = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+    const clampedSize = Math.min(Math.max(1, pageSize), 50);
+    const query = new URLSearchParams({ page: String(page), page_size: String(clampedSize) });
     if (search.trim()) query.set("search", search.trim());
     if (track && track !== "all") query.set("track", track);
     if (difficulty && difficulty !== "all") query.set("difficulty", difficulty);

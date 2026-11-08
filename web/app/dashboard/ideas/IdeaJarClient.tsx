@@ -115,7 +115,7 @@ export default function IdeaJarClient() {
     setLoading(true);
     setError("");
 
-    api.listIdeas("", 1, 60, selectedTrack === "all" ? undefined : selectedTrack, undefined, "newest")
+    api.listIdeas("", 1, 50, selectedTrack === "all" ? undefined : selectedTrack, undefined, "newest")
       .then((res) => {
         if (!active) return;
         setIdeas(res.items || []);
