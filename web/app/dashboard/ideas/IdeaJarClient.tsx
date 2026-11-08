@@ -1,18 +1,16 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { api, ApiError, type IdeaDetail, type IdeaSummary } from "@/lib/api";
 import { useMember } from "@/lib/useMember";
-import { useDebounce } from "@/lib/useDebounce";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import ArticleMarkdown from "@/components/dashboard/ArticleMarkdown";
 import LoadingBar from "@/components/dashboard/LoadingBar";
-import PaginationBar from "@/components/dashboard/PaginationBar";
 import { appCache } from "@/lib/cache";
 import styles from "./IdeaJar.module.css";
 
-function IdeaAuthorRow({ idea }: { idea: IdeaSummary | IdeaDetail }) {
+export function IdeaAuthorRow({ idea }: { idea: IdeaSummary | IdeaDetail }) {
   const profile = idea.creator_profile;
   const name = profile?.full_name || profile?.display_name || "Club Member";
   const avatar = profile?.avatar_url;
@@ -46,23 +44,14 @@ function IdeaAuthorRow({ idea }: { idea: IdeaSummary | IdeaDetail }) {
   );
 }
 
-const TRACK_OPTIONS = [
-  { id: "all", label: "All Tracks" },
-  { id: "product", label: "Product" },
-  { id: "research", label: "Research" },
-  { id: "kaggle", label: "Kaggle" },
-  { id: "misc", label: "General" },
-] as const;
-
-
-function formatIdeaDate(dateStr?: string | null): string {
+export function formatIdeaDate(dateStr?: string | null): string {
   if (!dateStr) return "";
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function getTrackBadgeClass(track: string): string {
+export function getTrackBadgeClass(track: string): string {
   switch (track.toLowerCase()) {
     case "research":
       return styles.trackResearch;
@@ -78,28 +67,18 @@ function getTrackBadgeClass(track: string): string {
 export default function IdeaJarClient() {
   const { token } = useMember();
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const debouncedSearch = useDebounce(searchQuery, 400);
+  const [beginnerIdeas, setBeginnerIdeas] = useState<IdeaSummary[]>([]);
+  const [beginnerTotal, setBeginnerTotal] = useState(0);
 
-  const [selectedTrack, setSelectedTrack] = useState<string>("all");
-  const [selectedDifficulty, setSelectedDifficulty] = useState<string>("all");
-  const [sortBy, setSortBy] = useState<string>("upvotes");
+  const [intermediateIdeas, setIntermediateIdeas] = useState<IdeaSummary[]>([]);
+  const [intermediateTotal, setIntermediateTotal] = useState(0);
 
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(12);
+  const [advancedIdeas, setAdvancedIdeas] = useState<IdeaSummary[]>([]);
+  const [advancedTotal, setAdvancedTotal] = useState(0);
 
-  const queryParams = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
-  if (debouncedSearch.trim()) queryParams.set("search", debouncedSearch.trim());
-  if (selectedTrack && selectedTrack !== "all") queryParams.set("track", selectedTrack);
-  if (selectedDifficulty && selectedDifficulty !== "all") queryParams.set("difficulty", selectedDifficulty);
-  if (sortBy) queryParams.set("sort_by", sortBy);
-  const cacheKey = `ideas:list:${queryParams.toString()}`;
+  const [featuredIdeas, setFeaturedIdeas] = useState<IdeaSummary[]>([]);
 
-  const cachedResult = appCache.get<{ items: IdeaSummary[]; has_more: boolean; total: number }>(cacheKey);
-
-  const [ideas, setIdeas] = useState<IdeaSummary[]>(() => cachedResult?.data?.items || []);
-  const [total, setTotal] = useState(() => cachedResult?.data?.total ?? cachedResult?.data?.items?.length ?? 0);
-  const [loading, setLoading] = useState(() => !cachedResult?.data);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const cachedPending = appCache.get<{ items: IdeaSummary[] }>("ideas:my");
@@ -112,8 +91,6 @@ export default function IdeaJarClient() {
   const [drawState, setDrawState] = useState<"idle" | "drawing" | "empty" | "error">("idle");
   const [votedIds, setVotedIds] = useState<Set<string>>(new Set());
   const [votingId, setVotingId] = useState<string | null>(null);
-
-  const prevFilterRef = useRef({ debouncedSearch, selectedTrack, selectedDifficulty, sortBy });
 
   // Load user's pending ideas for the status banner
   useEffect(() => {
@@ -133,46 +110,35 @@ export default function IdeaJarClient() {
     };
   }, [token]);
 
-  // Fetch verified ideas from backend
-  useEffect(() => {
-    const prev = prevFilterRef.current;
-    const filterChanged =
-      prev.debouncedSearch !== debouncedSearch ||
-      prev.selectedTrack !== selectedTrack ||
-      prev.selectedDifficulty !== selectedDifficulty ||
-      prev.sortBy !== sortBy;
-
-    if (filterChanged) {
-      prevFilterRef.current = { debouncedSearch, selectedTrack, selectedDifficulty, sortBy };
-      if (page !== 1) {
-        setPage(1);
-        return; // setPage(1) will re-trigger the fetch with page: 1
-      }
-    }
-
+  // Fetch verified ideas from backend: exactly max 3 latest for each jar
+  const fetchJars = useCallback(() => {
     let active = true;
-    const isCached = appCache.has(cacheKey);
-    if (!isCached) setLoading(true);
+    setLoading(true);
     setError("");
 
-    api.listIdeas(
-      debouncedSearch,
-      page,
-      pageSize,
-      selectedTrack,
-      selectedDifficulty,
-      sortBy
-    )
-      .then((res) => {
+    Promise.all([
+      api.listIdeas("", 1, 3, undefined, "beginner", "newest"),
+      api.listIdeas("", 1, 3, undefined, "intermediate", "newest"),
+      api.listIdeas("", 1, 3, undefined, "advanced", "newest"),
+      api.listIdeas("", 1, 6, undefined, undefined, "newest"),
+    ])
+      .then(([begRes, intRes, advRes, featRes]) => {
         if (!active) return;
-        setIdeas(res.items || []);
-        setTotal(res.total ?? (res.items || []).length);
+        setBeginnerIdeas(begRes.items?.slice(0, 3) || []);
+        setBeginnerTotal(begRes.total ?? begRes.items?.length ?? 0);
+
+        setIntermediateIdeas(intRes.items?.slice(0, 3) || []);
+        setIntermediateTotal(intRes.total ?? intRes.items?.length ?? 0);
+
+        setAdvancedIdeas(advRes.items?.slice(0, 3) || []);
+        setAdvancedTotal(advRes.total ?? advRes.items?.length ?? 0);
+
+        const featured = (featRes.items || []).filter((i) => Boolean(i.is_featured)).slice(0, 3);
+        setFeaturedIdeas(featured);
       })
       .catch((err) => {
         if (!active) return;
-        if (ideas.length === 0) {
-          setError(err instanceof Error ? err.message : "Ideas could not be loaded.");
-        }
+        setError(err instanceof Error ? err.message : "Ideas could not be loaded.");
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -181,14 +147,36 @@ export default function IdeaJarClient() {
     return () => {
       active = false;
     };
-  }, [debouncedSearch, selectedTrack, selectedDifficulty, sortBy, page, pageSize, cacheKey]);
+  }, []);
+
+  useEffect(() => {
+    return fetchJars();
+  }, [fetchJars]);
+
+  const updateIdeaScore = (ideaId: string, explicitCount?: number, delta: number = 0) => {
+    const applyScore = (list: IdeaSummary[]) =>
+      list.map((item) => {
+        if (item.id === ideaId) {
+          const count = explicitCount !== undefined ? explicitCount : Math.max(0, (item.stats?.upvote_count ?? 0) + delta);
+          return {
+            ...item,
+            stats: { ...item.stats, upvote_count: count },
+          };
+        }
+        return item;
+      });
+
+    setBeginnerIdeas(applyScore);
+    setIntermediateIdeas(applyScore);
+    setAdvancedIdeas(applyScore);
+    setFeaturedIdeas(applyScore);
+  };
 
   // Handle upvoting
   const handleVote = async (ideaId: string) => {
     if (votingId === ideaId || !token) return;
     setVotingId(ideaId);
 
-    // Optimistic toggle
     const isCurrentlyVoted = votedIds.has(ideaId);
     setVotedIds((prev) => {
       const next = new Set(prev);
@@ -197,32 +185,11 @@ export default function IdeaJarClient() {
       return next;
     });
 
-    setIdeas((prev) =>
-      prev.map((idea) => {
-        if (idea.id === ideaId) {
-          const delta = isCurrentlyVoted ? -1 : 1;
-          const currentCount = idea.stats?.upvote_count ?? 0;
-          return {
-            ...idea,
-            stats: {
-              ...idea.stats,
-              upvote_count: Math.max(0, currentCount + delta),
-            },
-          };
-        }
-        return idea;
-      })
-    );
+    updateIdeaScore(ideaId, undefined, isCurrentlyVoted ? -1 : 1);
 
     try {
       const result = await api.upvoteIdea(token, ideaId);
-      setIdeas((prev) =>
-        prev.map((idea) =>
-          idea.id === ideaId
-            ? { ...idea, stats: { ...idea.stats, upvote_count: result.upvote_count } }
-            : idea
-        )
-      );
+      updateIdeaScore(ideaId, result.upvote_count);
       if (result.upvoted) {
         setVotedIds((prev) => new Set(prev).add(ideaId));
       } else {
@@ -240,22 +207,7 @@ export default function IdeaJarClient() {
         else next.delete(ideaId);
         return next;
       });
-      setIdeas((prev) =>
-        prev.map((idea) => {
-          if (idea.id === ideaId) {
-            const delta = isCurrentlyVoted ? 1 : -1;
-            const currentCount = idea.stats?.upvote_count ?? 0;
-            return {
-              ...idea,
-              stats: {
-                ...idea.stats,
-                upvote_count: Math.max(0, currentCount + delta),
-              },
-            };
-          }
-          return idea;
-        })
-      );
+      updateIdeaScore(ideaId, undefined, isCurrentlyVoted ? 1 : -1);
     } finally {
       setVotingId(null);
     }
@@ -273,35 +225,11 @@ export default function IdeaJarClient() {
     }
   }
 
-  // Partition live ideas into:
-  // - Featured (Golden Jar)
-  // - Green (Beginner), Blue (Intermediate), Purple (Advanced).
-  const { featuredIdeas, beginnerIdeas, intermediateIdeas, advancedIdeas } = useMemo(() => {
-    // Filter by search query if user typed something
-    const searchFilter = (item: IdeaSummary) => {
-      if (!debouncedSearch) return true;
-      const q = debouncedSearch.toLowerCase();
-      return (
-        item.title.toLowerCase().includes(q) ||
-        (item.description && item.description.toLowerCase().includes(q))
-      );
-    };
-
-    // Filter by track if user selected a track
-    const trackFilter = (item: IdeaSummary) => {
-      if (selectedTrack === "all") return true;
-      return item.track?.toLowerCase() === selectedTrack.toLowerCase();
-    };
-
-    const filtered = ideas.filter((i) => searchFilter(i) && trackFilter(i));
-
-    return {
-      featuredIdeas: filtered.filter((i) => Boolean(i.is_featured)),
-      beginnerIdeas: filtered.filter((i) => i.difficulty?.toLowerCase() === "beginner" && !i.is_featured),
-      intermediateIdeas: filtered.filter((i) => i.difficulty?.toLowerCase() === "intermediate" && !i.is_featured),
-      advancedIdeas: filtered.filter((i) => i.difficulty?.toLowerCase() === "advanced" && !i.is_featured),
-    };
-  }, [ideas, debouncedSearch, selectedTrack]);
+  const hasAnyIdeas =
+    featuredIdeas.length > 0 ||
+    beginnerIdeas.length > 0 ||
+    intermediateIdeas.length > 0 ||
+    advancedIdeas.length > 0;
 
   return (
     <div className={styles.pageContainer}>
@@ -314,8 +242,8 @@ export default function IdeaJarClient() {
           </span>
           <h1 className={styles.pageTitle}>IDEA JAR & PROPOSALS</h1>
           <p className={styles.pageSubtitle}>
-            Explore and upvote high-impact project concepts, algorithms, and applications proposed by club members.
-            Top voted proposals become candidate initiatives for Special Project Groups (SPGs).
+            Explore the latest high-impact project concepts proposed by club members.
+            Each jar holds top ideas by difficulty. Open any jar to search, filter, and browse all proposals.
           </p>
         </div>
 
@@ -330,6 +258,14 @@ export default function IdeaJarClient() {
             <span>{drawState === "drawing" ? "Drawing…" : "Draw from the jar"}</span>
           </button>
           <Link
+            href="/dashboard/ideas/all"
+            className={styles.browseAllBtn}
+            aria-label="Browse and search all proposals"
+          >
+            <MemberIcon name="sparkles" size={15} />
+            <span>Browse All Ideas →</span>
+          </Link>
+          <Link
             href="/dashboard/tickets?category=idea_jar"
             className={styles.submitBtn}
             id="btn-propose-idea"
@@ -340,6 +276,9 @@ export default function IdeaJarClient() {
           </Link>
         </div>
       </section>
+
+      {/* Non-blocking top loading bar */}
+      <LoadingBar loading={loading} />
 
       {/* Drawn idea. aria-live so the draw is announced, not just painted. */}
       {(drawn || drawState === "empty" || drawState === "error") && (
@@ -400,86 +339,13 @@ export default function IdeaJarClient() {
         </section>
       )}
 
-      {/* Controls & Filter Bar */}
-      <section className={styles.controlsBar} aria-label="Search and Filter Ideas">
-        {/* Track Pills */}
-        <div className={styles.trackPills} role="tablist" aria-label="Filter by track">
-          {TRACK_OPTIONS.map((opt) => (
-            <button
-              key={opt.id}
-              type="button"
-              role="tab"
-              aria-selected={selectedTrack === opt.id}
-              onClick={() => setSelectedTrack(opt.id)}
-              className={`${styles.trackPillBtn} ${
-                selectedTrack === opt.id ? styles.trackPillActive : ""
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Search & Dropdowns */}
-        <div className={styles.filterRightGroup}>
-          <div className={styles.searchBox}>
-            <span className={styles.searchIcon}>
-              <MemberIcon name="search" size={14} />
-            </span>
-            <input
-              type="search"
-              aria-label="Search ideas by title or overview"
-              placeholder="Search concepts, tools, models..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className={styles.searchInput}
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery("")}
-                className={styles.clearSearchBtn}
-                aria-label="Clear search input"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-
-          <select
-            value={selectedDifficulty}
-            onChange={(e) => setSelectedDifficulty(e.target.value)}
-            className={styles.dropdownSelect}
-            aria-label="Filter by difficulty"
-          >
-            <option value="all">All Difficulties</option>
-            <option value="beginner">Beginner</option>
-            <option value="intermediate">Intermediate</option>
-            <option value="advanced">Advanced</option>
-          </select>
-
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            className={styles.dropdownSelect}
-            aria-label="Sort ideas"
-          >
-            <option value="upvotes">Most Upvoted</option>
-            <option value="newest">Newest First</option>
-          </select>
-        </div>
-      </section>
-
-      {/* Non-blocking top loading bar */}
-      <LoadingBar loading={loading} />
-
       {/* Error Banner */}
       {error && (
         <div className={styles.errorBanner} role="alert">
           <span>{error}</span>
           <button
             type="button"
-            onClick={() => setPage(1)}
+            onClick={() => fetchJars()}
             className={styles.retryBtn}
           >
             Retry
@@ -488,9 +354,9 @@ export default function IdeaJarClient() {
       )}
 
       {/* Loading Skeleton Cards Grid */}
-      {loading && ideas.length === 0 && (
+      {loading && !hasAnyIdeas && (
         <div className={styles.ideasGrid} aria-label="Loading ideas skeleton">
-          {Array.from({ length: 6 }).map((_, idx) => (
+          {Array.from({ length: 3 }).map((_, idx) => (
             <div key={idx} className={styles.skeletonCard}>
               <div className={styles.cardTopMeta}>
                 <div className={`${styles.skeletonBadge} ${styles.shimmer}`} />
@@ -512,16 +378,14 @@ export default function IdeaJarClient() {
       )}
 
       {/* Empty State when no ideas match anywhere */}
-      {!loading && !error && featuredIdeas.length === 0 && beginnerIdeas.length === 0 && intermediateIdeas.length === 0 && advancedIdeas.length === 0 && (
+      {!loading && !error && !hasAnyIdeas && (
         <div className={styles.emptyState}>
           <div className={styles.emptyIcon}>
             <MemberIcon name="ideas" size={24} />
           </div>
           <h3 className={styles.emptyTitle}>No proposals found</h3>
           <p className={styles.emptyDesc}>
-            {searchQuery || selectedTrack !== "all" || selectedDifficulty !== "all"
-              ? "Try adjusting your filters or clearing your search term to see more ideas."
-              : "No community ideas have been published yet. Be the first to spark a project initiative!"}
+            No community ideas have been published yet. Be the first to spark a project initiative!
           </p>
           <div className={styles.emptyCta}>
             <Link href="/dashboard/tickets?category=idea_jar" className={styles.submitBtn}>
@@ -546,7 +410,16 @@ export default function IdeaJarClient() {
                   <div className={styles.jarSublabel}>Priority Challenges & Lead Endorsements</div>
                 </div>
               </div>
-              <span className={styles.jarCountBadge}>{featuredIdeas.length} Featured</span>
+              <div className={styles.jarLidRight}>
+                <span className={styles.jarCountBadge}>{featuredIdeas.length} Featured</span>
+                <Link
+                  href="/dashboard/ideas/all"
+                  className={styles.openJarLidBtn}
+                  title="Browse all ideas"
+                >
+                  Browse All →
+                </Link>
+              </div>
             </div>
 
             <div className={styles.jarGoldCardsHorizontal}>
@@ -610,7 +483,7 @@ export default function IdeaJarClient() {
         </section>
       )}
 
-      {/* 3 Themed Jars: Green (Beginner), Blue (Intermediate), Purple (Advanced) */}
+      {/* 3 Themed Jars Columns: Green (Beginner), Blue (Intermediate), Purple (Advanced) */}
       <section className={styles.jarsColumnsLayout} aria-label="Difficulty Jars Columns">
         {/* 1. Green Jar: Beginners */}
         <div className={`${styles.jarColumn} ${styles.jarGreen}`}>
@@ -624,13 +497,22 @@ export default function IdeaJarClient() {
                 <div className={styles.jarSublabel}>Fundamental & Guided</div>
               </div>
             </div>
-            <span className={styles.jarCountBadge}>{beginnerIdeas.length}</span>
+            <div className={styles.jarLidRight}>
+              <span className={styles.jarCountBadge}>{beginnerTotal}</span>
+              <Link
+                href="/dashboard/ideas/all?difficulty=beginner"
+                className={styles.openJarLidBtn}
+                title="Open Beginner Jar in full view"
+              >
+                Open Jar →
+              </Link>
+            </div>
           </div>
 
           <div className={styles.jarListWrapper}>
             {beginnerIdeas.length === 0 ? (
               <div className={styles.jarEmptyState}>
-                <span>No beginner proposals match current filters</span>
+                <span>No beginner proposals published yet</span>
               </div>
             ) : (
               beginnerIdeas.map((idea) => {
@@ -687,6 +569,16 @@ export default function IdeaJarClient() {
               })
             )}
           </div>
+
+          <div className={styles.jarBottomBar}>
+            <Link
+              href="/dashboard/ideas/all?difficulty=beginner"
+              className={styles.viewAllJarLink}
+            >
+              <span>View all {beginnerTotal} Beginner ideas</span>
+              <MemberIcon name="chevron-right" size={13} />
+            </Link>
+          </div>
         </div>
 
         {/* 2. Blue Jar: Intermediate */}
@@ -701,13 +593,22 @@ export default function IdeaJarClient() {
                 <div className={styles.jarSublabel}>Practical & Applied</div>
               </div>
             </div>
-            <span className={styles.jarCountBadge}>{intermediateIdeas.length}</span>
+            <div className={styles.jarLidRight}>
+              <span className={styles.jarCountBadge}>{intermediateTotal}</span>
+              <Link
+                href="/dashboard/ideas/all?difficulty=intermediate"
+                className={styles.openJarLidBtn}
+                title="Open Intermediate Jar in full view"
+              >
+                Open Jar →
+              </Link>
+            </div>
           </div>
 
           <div className={styles.jarListWrapper}>
             {intermediateIdeas.length === 0 ? (
               <div className={styles.jarEmptyState}>
-                <span>No intermediate proposals match current filters</span>
+                <span>No intermediate proposals published yet</span>
               </div>
             ) : (
               intermediateIdeas.map((idea) => {
@@ -764,6 +665,16 @@ export default function IdeaJarClient() {
               })
             )}
           </div>
+
+          <div className={styles.jarBottomBar}>
+            <Link
+              href="/dashboard/ideas/all?difficulty=intermediate"
+              className={styles.viewAllJarLink}
+            >
+              <span>View all {intermediateTotal} Intermediate ideas</span>
+              <MemberIcon name="chevron-right" size={13} />
+            </Link>
+          </div>
         </div>
 
         {/* 3. Purple Jar: Advanced */}
@@ -778,13 +689,22 @@ export default function IdeaJarClient() {
                 <div className={styles.jarSublabel}>Cutting-Edge & Research</div>
               </div>
             </div>
-            <span className={styles.jarCountBadge}>{advancedIdeas.length}</span>
+            <div className={styles.jarLidRight}>
+              <span className={styles.jarCountBadge}>{advancedTotal}</span>
+              <Link
+                href="/dashboard/ideas/all?difficulty=advanced"
+                className={styles.openJarLidBtn}
+                title="Open Advanced Jar in full view"
+              >
+                Open Jar →
+              </Link>
+            </div>
           </div>
 
           <div className={styles.jarListWrapper}>
             {advancedIdeas.length === 0 ? (
               <div className={styles.jarEmptyState}>
-                <span>No advanced proposals match current filters</span>
+                <span>No advanced proposals published yet</span>
               </div>
             ) : (
               advancedIdeas.map((idea) => {
@@ -841,25 +761,18 @@ export default function IdeaJarClient() {
               })
             )}
           </div>
+
+          <div className={styles.jarBottomBar}>
+            <Link
+              href="/dashboard/ideas/all?difficulty=advanced"
+              className={styles.viewAllJarLink}
+            >
+              <span>View all {advancedTotal} Advanced ideas</span>
+              <MemberIcon name="chevron-right" size={13} />
+            </Link>
+          </div>
         </div>
       </section>
-
-      {/* Pagination Bar */}
-      {!loading && total > 0 && (
-        <PaginationBar
-          currentPage={page}
-          totalItems={total}
-          pageSize={pageSize}
-          onPageChange={setPage}
-          onPageSizeChange={(newSize) => {
-            setPageSize(newSize);
-            setPage(1);
-          }}
-          pageSizeOptions={[12, 24, 48]}
-          itemLabel="ideas"
-          disabled={loading}
-        />
-      )}
     </div>
   );
 }

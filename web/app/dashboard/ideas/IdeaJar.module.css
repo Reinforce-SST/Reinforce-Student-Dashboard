@@ -1168,3 +1168,108 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* --------------------------------------------------------------------------
+   Dedicated All Ideas Page & Jar Linking Additions
+   -------------------------------------------------------------------------- */
+.browseAllBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #18181b;
+  color: #e4e4e7;
+  border: 1px solid #33333b;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 0.82rem;
+  font-weight: 750;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.browseAllBtn:hover {
+  background: #232328;
+  color: #ffffff;
+  border-color: #4f4f5a;
+  transform: translateY(-1px);
+}
+
+.openJarLidBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 4px 10px;
+  border-radius: 6px;
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.openJarLidBtn:hover {
+  background: rgba(255, 255, 255, 0.22);
+  transform: translateX(1px);
+}
+
+.jarLidRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.jarBottomBar {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.viewAllJarLink {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 9px 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #d4d4d8;
+  font-size: 0.74rem;
+  font-weight: 750;
+  text-decoration: none;
+  transition: all 0.18s ease;
+}
+
+.viewAllJarLink:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateY(-1px);
+}
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #a1a1aa;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: color 0.15s ease, transform 0.15s ease;
+  width: fit-content;
+  margin-bottom: -10px;
+}
+
+.backLink:hover {
+  color: var(--brand, #E5B731);
+  transform: translateX(-2px);
+}
+
