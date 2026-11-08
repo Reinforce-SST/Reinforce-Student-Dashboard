@@ -216,8 +216,12 @@ async function handleApi(route: Route, world: World) {
   }
   if (path === "/ideas" && method === "GET") {
     const term = (search.get("search") ?? "").toLowerCase();
+    const track = search.get("track");
+    const diff = search.get("difficulty");
     const matching = world.ideas
       .filter(isApproved)
+      .filter(item => !track || track === "all" || item.track === track)
+      .filter(item => !diff || diff === "all" || item.difficulty === diff)
       .filter(item => !term || String(item.title).toLowerCase().includes(term));
     return ok(page1(matching));
   }
