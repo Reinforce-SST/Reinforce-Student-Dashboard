@@ -757,7 +757,9 @@ def list_users(
         if doc_id.isdigit() and not data.get("full_name"):
             continue
 
-        if discord_id and str(data.get("discord_id")) != str(discord_id).strip():
+        # Same oracle as the email search below: an anonymous caller could map a
+        # Discord ID to a member. Neither the web app nor YUVI sends this filter.
+        if discord_id and (user is None or str(data.get("discord_id")) != str(discord_id).strip()):
             continue
 
         live_pts_dict = live_points_map.get(doc_id) or (live_points_map.get(data.get("email")) if data.get("email") else None)
