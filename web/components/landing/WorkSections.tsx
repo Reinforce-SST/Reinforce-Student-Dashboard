@@ -62,7 +62,7 @@ export default function WorkSections() {
             <pre><code>
               <span className={styles.ln} style={rowDelay(0)}><span className={styles.c1}>/auth</span></span>
               <span className={styles.ln} style={rowDelay(1)}><span className={styles.c2}>↳ Open your private verification link</span></span>
-              <span className={styles.ln} style={rowDelay(2)}>reinforce-student-dashboard-xi.vercel.app</span>
+              <span className={styles.ln} style={rowDelay(2)}>www.reinforce-sst.com</span>
               <span className={styles.ln} style={rowDelay(3)}><span className={styles.c1}>/auth</span></span>
               <span className={styles.ln} style={rowDelay(4)}>{" "}</span>
               <span className={styles.ln} style={rowDelay(5)}><span className={styles.c2}>Sign in with your SST Google account.</span></span>

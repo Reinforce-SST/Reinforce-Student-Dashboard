@@ -563,7 +563,7 @@ export default function LeaderboardClient() {
                           </h2>
                         </div>
                         <span style={{ fontSize: "0.68rem", color: "#8c8c98" }}>
-                          Batch &apos;{member.batch_year ? String(member.batch_year).slice(-2) : "24"} • {!member.is_member ? "OPEN" : member.tier === "advanced" ? "ADVANCED" : "GENERAL"}
+                          {member.batch_year ? <>Batch &apos;{String(member.batch_year).slice(-2)} • </> : null}{!member.is_member ? "OPEN" : member.tier === "advanced" ? "ADVANCED" : "GENERAL"}
                         </span>
                       </div>
                     </div>
@@ -680,9 +680,11 @@ export default function LeaderboardClient() {
                   <span className={`${styles.tierChip} ${!selectedMember.is_member ? styles.tierOpen : selectedMember.tier === "advanced" ? styles.tierAdvanced : styles.tierGeneral}`}>
                     {!selectedMember.is_member ? "OPEN" : selectedMember.tier === "advanced" ? "ADVANCED" : "GENERAL"}
                   </span>
-                  <span style={{ fontSize: "0.75rem", color: "#8c8c98" }}>
-                    Batch of {selectedMember.batch_year || 2024}
-                  </span>
+                  {selectedMember.batch_year ? (
+                    <span style={{ fontSize: "0.75rem", color: "#8c8c98" }}>
+                      Batch of {selectedMember.batch_year}
+                    </span>
+                  ) : null}
                 </div>
               </div>
             </div>

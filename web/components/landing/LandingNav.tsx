@@ -24,7 +24,7 @@ export default function LandingNav() {
       <ul className={styles.nlinks}>{LINKS.map((link) => <li key={link.href}><Link href={link.href}>{link.label}</Link></li>)}</ul>
       <div className={styles.nsp} />
       <div className={styles.nright}>
-        <span className={styles.ledgerLink}><LandingButton href="#ledger" variant="line">See the ledger</LandingButton></span>
+        <span className={styles.ledgerLink}><LandingButton href="/#ledger" variant="line">See the ledger</LandingButton></span>
         {isLoggedIn ? (
           <LandingButton href="/dashboard">Dashboard</LandingButton>
         ) : (
