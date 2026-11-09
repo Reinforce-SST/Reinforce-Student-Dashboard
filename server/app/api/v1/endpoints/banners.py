@@ -3,7 +3,6 @@
 Dedicated collection 'banners' in Firestore.
 Separate from events — banners manage top-level announcement slides on the dashboard.
 """
-from datetime import datetime, timezone
 import io
 from typing import Any, Dict, List, Optional
 import uuid
@@ -74,7 +73,6 @@ def list_banners(
 
     docs = list(query.stream())
     banners: List[BannerDocument] = []
-    now_str = now_iso()
 
     for doc in docs:
         b = _doc_to_banner_document(doc)

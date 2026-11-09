@@ -28,7 +28,6 @@ from app.schemas.spgs import (
     SPGStatus,
     SPGSubmilestone,
     SPGSubmilestoneCreate,
-    SPGSubmilestoneUpdate,
     SPGTrack,
     SPGType,
     SPGUpdate,

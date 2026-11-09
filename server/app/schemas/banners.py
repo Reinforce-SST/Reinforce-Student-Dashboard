@@ -3,9 +3,9 @@
 Dedicated schema for Dashboard Hero Banners stored in the 'banners' Firestore collection.
 Independent from events.
 """
-from datetime import datetime, timezone
+from datetime import timezone
 from enum import Enum
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, List, Optional
 from pydantic import (
     AfterValidator,
     AwareDatetime,
@@ -14,7 +14,7 @@ from pydantic import (
     Field,
     PlainSerializer,
 )
-from app.schemas.common import NonBlankStr, TitleStr
+from app.schemas.common import TitleStr
 
 UtcDatetime = Annotated[
     AwareDatetime,

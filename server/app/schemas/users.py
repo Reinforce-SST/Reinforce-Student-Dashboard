@@ -10,7 +10,6 @@ from pydantic import (
     field_validator,
 )
 
-from app.schemas.common import NonBlankStr
 
 ALLOWED_EMAIL_DOMAINS = ("@sst.scaler.com", "@scaler.com")
 

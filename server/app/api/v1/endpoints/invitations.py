@@ -5,10 +5,9 @@ Enforces that joining an SPG or Event Team requires an explicit invitation from
 the group lead, which the invitee can accept or decline.
 """
 
-from datetime import datetime, timezone
 import secrets
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.security import get_current_user
 from app.services.firebase import db

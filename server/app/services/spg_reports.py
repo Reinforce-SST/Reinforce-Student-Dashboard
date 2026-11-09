@@ -17,7 +17,6 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable, List, Optional, Tuple
 
-from pydantic import ValidationError
 
 from app.schemas.spg_reports import (
     SPGFormReportSubmission,
@@ -204,16 +203,6 @@ def _discard(
         # The upload is orphaned rather than the request failing twice; the
         # caller is already raising the real error.
         pass
-
-
-def get_report(db: Any, report_id: str) -> Optional[SPGReportRecord]:
-    snapshot = db.collection(REPORTS_COLLECTION).document(report_id).get()
-    if not getattr(snapshot, "exists", False):
-        return None
-    try:
-        return _load(snapshot)
-    except ValidationError:
-        raise SPGReportError(409, "The stored report does not match the report schema.") from None
 
 
 def list_reports(
