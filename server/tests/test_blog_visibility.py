@@ -87,6 +87,21 @@ class BlogVisibilityTests(unittest.TestCase):
         self.client.get("/api/v1/blogs/draft-theirs")
         self.assertEqual(self.db.store["blogs/draft-theirs"]["stats"]["view_count"], 0)
 
+    def test_a_drafts_comments_are_private_too(self):
+        for who, expected in ((None, 404), (OTHER, 404), (AUTHOR, 200), (ADMIN, 200)):
+            with self.subTest(who=who and who["uid"]):
+                self.user = dict(who) if who else None
+                self.assertEqual(self.client.get("/api/v1/blogs/draft-mine/comments").status_code, expected)
+
+    def test_a_published_articles_comments_stay_public(self):
+        self.assertEqual(self.client.get("/api/v1/blogs/live/comments").status_code, 200)
+
+    def test_nobody_can_comment_on_someone_elses_draft(self):
+        self.user = dict(OTHER)
+        response = self.client.post("/api/v1/blogs/draft-mine/comments", json={"content": "Hi"})
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(any(key.startswith("blogs/draft-mine/comments/") for key in self.db.store))
+
 
 if __name__ == "__main__":
     unittest.main()

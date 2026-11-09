@@ -425,10 +425,13 @@ def toggle_upvote(
 # ---------------------------------------------------------------------------
 
 @router.get("/{blog_id}/comments", response_model=CommentTreeResponse, summary="Fetch comments tree for a blog")
-def get_comments(blog_id: str) -> CommentTreeResponse:
+def get_comments(
+    blog_id: str,
+    viewer: Optional[dict] = Depends(get_optional_current_user),
+) -> CommentTreeResponse:
     """Fetch all comments for a blog structured as a 1-layer reply tree."""
     blog_doc = db.collection(BLOGS_COLLECTION).document(blog_id).get()
-    if not blog_doc.exists:
+    if not blog_doc.exists or not _may_read(blog_doc.to_dict() or {}, viewer):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Blog not found")
 
     docs = (
@@ -487,7 +490,8 @@ def create_comment(
 ) -> CommentResponse:
     """Post a top-level comment or reply (enforces 1-layer depth)."""
     blog_ref = db.collection(BLOGS_COLLECTION).document(blog_id)
-    if not blog_ref.get().exists:
+    blog_doc = blog_ref.get()
+    if not blog_doc.exists or not _may_read(blog_doc.to_dict() or {}, user):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Blog not found")
 
     now = now_iso()
