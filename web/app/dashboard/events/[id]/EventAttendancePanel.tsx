@@ -354,12 +354,6 @@ export default function EventAttendancePanel({
     }
   };
 
-  const escapeCsv = (val: unknown): string => {
-    if (val === null || val === undefined) return '""';
-    const str = String(val).replace(/"/g, '""');
-    return `"${str}"`;
-  };
-
   const formatIstTime = (isoStr?: string | null): string => {
     if (!isoStr) return "";
     try {

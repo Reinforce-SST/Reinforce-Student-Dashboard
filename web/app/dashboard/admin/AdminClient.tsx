@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useMember } from "@/lib/useMember";
 import { api, type StudentProfile, type EventSummaryItem } from "@/lib/api";
-import { getEventGraduationBatches, toISTInputString, parseDateOrIST } from "@/lib/eventsData";
+import { toISTInputString, parseDateOrIST } from "@/lib/eventsData";
 import { getBannerPresentation, isBannerDestination } from "@/lib/dashboardData";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import PaginationBar from "@/components/dashboard/PaginationBar";
@@ -95,8 +95,6 @@ export default function AdminClient({ initialTab }: { initialTab?: AdminTab } = 
     banner_cta_text: bannerCtaText,
     banner_cta_url: bannerCtaUrl,
   });
-  const bannerTrack = "all";
-  const bannerFormat = "offline";
   const [bannerUrl, setBannerUrl] = useState("");
   const [bannerFilePreview, setBannerFilePreview] = useState<string | null>(null);
   const [bannerFile, setBannerFile] = useState<File | null>(null);
@@ -142,44 +140,11 @@ export default function AdminClient({ initialTab }: { initialTab?: AdminTab } = 
     setSubmitSuccess(`Autofilled banner details from event "${ev.title}"!`);
   };
 
-  // --- TAB 2: Full Club Event Publisher State ---
-  const [eventTitle, setEventTitle] = useState("");
-  const [eventSlug, setEventSlug] = useState("");
-  const [eventType, setEventType] = useState("");
-  const [eventTrack, setEventTrack] = useState("research");
-  const [eventFormat, setEventFormat] = useState("offline");
-  const [eventSummary, setEventSummary] = useState("");
-  const [eventDetailedInfo, setEventDetailedInfo] = useState("");
-  const [eventVenueName, setEventVenueName] = useState("");
-  const [eventRoom, setEventRoom] = useState("");
-  const [eventMeetingUrl, setEventMeetingUrl] = useState("");
-  const [eventStartDateTime, setEventStartDateTime] = useState("");
-  const [eventEndDateTime, setEventEndDateTime] = useState("");
-  const [eventRegDeadline, setEventRegDeadline] = useState("");
-  const [eventAccessScope, setEventAccessScope] = useState("open_to_all");
-  const eventGraduationBatches = getEventGraduationBatches();
-  const [eventEligibleBatches, setEventEligibleBatches] = useState<number[]>(getEventGraduationBatches);
-  const [eventParticipationMode, setEventParticipationMode] = useState<"solo" | "team">("solo");
-  const [eventMinTeamSize, setEventMinTeamSize] = useState(1);
-  const [eventMaxTeamSize, setEventMaxTeamSize] = useState(1);
-  const [eventMaxParticipants, setEventMaxParticipants] = useState<number | "">("");
-  // A team event forms one project group per registered team unless the admin
-  // opts out. Solo events never do; the server enforces that too.
-  const [eventFormsTeamSpg, setEventFormsTeamSpg] = useState(true);
-  const [eventPointsReward, setEventPointsReward] = useState<number | "">("");
-  const [eventSlidesUrl, setEventSlidesUrl] = useState("");
-  const [eventDiscordThread, setEventDiscordThread] = useState("");
-  const [eventBannerUrl, setEventBannerUrl] = useState("");
-  const [eventFilePreview, setEventFilePreview] = useState<string | null>(null);
-  const [eventFile, setEventFile] = useState<File | null>(null);
-  const [eventStatus, setEventStatus] = useState("published");
-
   // Status & Refs
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const bannerFileInputRef = useRef<HTMLInputElement>(null);
-  const eventFileInputRef = useRef<HTMLInputElement>(null);
 
   // Merit Award State
   const [awardPoints, setAwardPoints] = useState<number | "">(25);
@@ -346,36 +311,6 @@ export default function AdminClient({ initialTab }: { initialTab?: AdminTab } = 
     reader.readAsDataURL(file);
   };
 
-  // Event Poster Upload Handler
-  const handleEventFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 5 * 1024 * 1024) {
-      setEventFile(null);
-      setEventFilePreview(null);
-      setSubmitError("Image file size exceeds 5MB limit.");
-      return;
-    }
-    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
-      setEventFile(null);
-      setEventFilePreview(null);
-      setSubmitError("Use a PNG, JPG, or WebP image.");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      setEventFilePreview(result);
-      setEventFile(file);
-      setEventBannerUrl("");
-      setSubmitError(null);
-    };
-    reader.onerror = () => setSubmitError("Could not read this image. Try another file.");
-    reader.readAsDataURL(file);
-  };
-
   // Submit 1: Dashboard Featured Banner
   const handleSubmitBanner = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -432,113 +367,6 @@ export default function AdminClient({ initialTab }: { initialTab?: AdminTab } = 
     } catch (err: unknown) {
       console.error("Failed to publish banner:", err);
       const msg = err instanceof Error ? err.message : "Failed to create banner on the backend.";
-      setSubmitError(msg);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Submit 2: Full Club Event Publisher
-  const handleSubmitClubEvent = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!eventTitle.trim() || !eventSummary.trim() || !eventType.trim()) {
-      setSubmitError("Event title, event type, and summary description are required.");
-      return;
-    }
-    if (eventEligibleBatches.length === 0) {
-      setSubmitError("Select at least one eligible graduation batch.");
-      return;
-    }
-    if (eventEligibleBatches.some((batch) => !getEventGraduationBatches().includes(batch))) {
-      setSubmitError("The eligible batches have changed. Reload this page and review your selection.");
-      return;
-    }
-    if (!["research", "product", "kaggle", "misc", "all"].includes(eventTrack)) {
-      setSubmitError("This event track is not supported by the backend yet. Choose Research, Product, Kaggle, Misc, or All.");
-      return;
-    }
-    if (!["open_to_all", "members_only"].includes(eventAccessScope)) {
-      setSubmitError("Invite-only events are not supported by the backend yet. Choose Open to All Students or Club Members Only.");
-      return;
-    }
-
-    setIsSubmitting(true);
-    setSubmitSuccess(null);
-    setSubmitError(null);
-
-    try {
-      const startDateObj = new Date(eventStartDateTime);
-      const endDateObj = eventEndDateTime ? new Date(eventEndDateTime) : null;
-      const deadlineDateObj = eventRegDeadline ? new Date(eventRegDeadline) : null;
-      if (Number.isNaN(startDateObj.getTime()) || (endDateObj && Number.isNaN(endDateObj.getTime())) || (deadlineDateObj && Number.isNaN(deadlineDateObj.getTime()))) {
-        throw new Error("Enter valid event dates before publishing.");
-      }
-      if (endDateObj && endDateObj <= startDateObj) {
-        throw new Error("The event end time must be after its start time.");
-      }
-      const imageUrl = eventFile
-        ? (await api.adminUploadEventMedia(token, eventFile)).url
-        : eventBannerUrl.trim();
-      if (eventFile) {
-        setEventBannerUrl(imageUrl);
-        setEventFile(null);
-        setEventFilePreview(null);
-      }
-      const durationMinutes = endDateObj
-        ? Math.max(1, Math.round((endDateObj.getTime() - startDateObj.getTime()) / 60000))
-        : undefined;
-
-      const payload = {
-        title: eventTitle.trim(),
-        slug: eventSlug.trim() || undefined,
-        description: eventSummary.trim(),
-        detailed_info: eventDetailedInfo.trim() || undefined,
-        event_type: eventType.trim(),
-        track: eventTrack,
-        format: eventFormat,
-        venue_info: {
-          venue_name: eventVenueName.trim() || undefined,
-          room: eventRoom.trim() || undefined,
-          meeting_url: eventMeetingUrl.trim() || undefined,
-        },
-        schedule: {
-          start_time: startDateObj.toISOString(),
-          end_time: endDateObj ? endDateObj.toISOString() : undefined,
-          duration_minutes: durationMinutes,
-          registration_deadline: deadlineDateObj?.toISOString(),
-        },
-        eligibility: {
-          access_scope: eventAccessScope,
-          allowed_years: eventEligibleBatches,
-          allowed_tiers: ["beginner", "advanced", "all"],
-          allowed_tracks: ["all"],
-          is_mandatory: false,
-        },
-        participation: {
-          mode: eventParticipationMode,
-          min_team_size: Number(eventMinTeamSize),
-          max_team_size: Number(eventMaxTeamSize),
-          max_participants: eventMaxParticipants ? Number(eventMaxParticipants) : undefined,
-          requires_event_spg: eventParticipationMode === "team" && eventFormsTeamSpg,
-          spg_auto_disband_days: 3,
-        },
-        points_reward: {
-          attendance_points: Number(eventPointsReward),
-          track: eventTrack,
-        },
-        resources: {
-          slides_url: eventSlidesUrl.trim() || undefined,
-          discord_thread_id: eventDiscordThread.trim() || undefined,
-        },
-        banner_url: imageUrl || undefined,
-        status: eventStatus,
-      };
-
-      const result = await api.adminCreateEvent(token || "", payload);
-      setSubmitSuccess(`Club Event "${result.title}" published to calendar and standalone page successfully!`);
-    } catch (err: unknown) {
-      console.error("Failed to publish club event:", err);
-      const msg = err instanceof Error ? err.message : "Failed to publish club event to the backend.";
       setSubmitError(msg);
     } finally {
       setIsSubmitting(false);

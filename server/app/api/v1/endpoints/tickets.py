@@ -7,14 +7,13 @@ Maintains pure UID references with zero user denormalization.
 import hashlib
 import json
 import logging
-import secrets
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 import urllib.error
 import urllib.request
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from google.cloud import firestore
 from pydantic import ValidationError
 

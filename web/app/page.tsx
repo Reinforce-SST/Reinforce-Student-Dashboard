@@ -5,7 +5,7 @@ import ClosingSections from "@/components/landing/ClosingSections";
 import WorkSections from "@/components/landing/WorkSections";
 import HeroCollage from "@/components/landing/HeroCollage";
 import HeroCta from "@/components/landing/HeroCta";
-import { LandingButton, MarkerText, Stars, stagger } from "@/components/landing/Primitives";
+import { MarkerText, Stars, stagger } from "@/components/landing/Primitives";
 import styles from "./page.module.css";
 
 /** Marketing content only: no authenticated API requests or invented figures. */

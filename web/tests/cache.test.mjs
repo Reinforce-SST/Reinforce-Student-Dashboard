@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CacheStore, appCache } from "../.test-build/lib/cache.js";
+import { CacheStore } from "../.test-build/lib/cache.js";
 
 test("cache store stores and retrieves values within TTL", () => {
   const cache = new CacheStore({ maxSize: 10, defaultTtlMs: 5000 });

@@ -33,7 +33,6 @@ from app.schemas.users import (
     MemberTier,
     SocialLinks,
     TrackPoints,
-    UserDocument,
     UserListResponse,
     UserMeResponse,
     UserPublicResponse,

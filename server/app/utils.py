@@ -5,11 +5,6 @@ import re
 from typing import Any, Optional
 
 
-def now_utc() -> datetime:
-    """Return current timezone-aware UTC datetime."""
-    return datetime.now(timezone.utc)
-
-
 def now_iso() -> str:
     """Return current UTC timestamp in ISO-8601 string format."""
     return datetime.now(timezone.utc).isoformat()

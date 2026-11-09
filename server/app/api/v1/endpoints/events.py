@@ -15,9 +15,8 @@ import secrets
 from typing import Any, Dict, List, Optional, Set
 import uuid
 
-from pydantic import BaseModel, ConfigDict
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 from google.cloud import firestore
 
 from app.api.security import get_admin_user, get_current_user, get_optional_current_user
@@ -40,7 +39,6 @@ from app.schemas.events import (
     BatchUpdateMatrixRequest,
     CreateMatrixColumnRequest,
     CreateOrUpdateTeamRequest,
-    CustomFieldSchema,
     EventCreate,
     EventDocument,
     EventEligibility,
@@ -55,9 +53,7 @@ from app.schemas.events import (
     EventSubmissionRequest,
     EventSummary,
     EventTrack,
-    EventTrackSchema,
     EventUpdate,
-    EventWinner,
     EventWinnersUpdateRequest,
     FeedbackDocument,
     FeedbackSubmitRequest,
@@ -65,7 +61,6 @@ from app.schemas.events import (
     MATRIX_ADAPTERS,
     MatrixAccessUpdateRequest,
     MatrixAttendanceUpdateRequest,
-    MatrixCellUpdateItem,
     MatrixColumnDef,
     MatrixColumnType,
     MatrixRowHydrated,
@@ -81,13 +76,11 @@ from app.schemas.events import (
     RollCallResponse,
     SPGDecisionAction,
     SPGDecisionRequest,
-    TeamInviteInfo,
     TeamInviteMemberRequest,
     TeamMergeByCodeRequest,
     TeamPoolMemberSummary,
     TeamPoolResponse,
     TeamSettingsSchema,
-    TimelineItemSchema,
     UpdateMatrixCellRequest,
     UpdateMemberCustomResponsesRequest,
     UpdateRegistrationTrackRequest,
@@ -995,7 +988,6 @@ def cancel_registration(
         reg_doc = active_regs[0]
         reg_data = reg_doc.to_dict() or {}
         prev_status = reg_data.get("status")
-        is_lead = reg_data.get("user_id") == user_uid
         event_ref = db.collection(EVENTS_COLLECTION).document(event_id)
         event_snap = event_ref.get(transaction=transaction)
         fresh = event_snap.to_dict() or {}
@@ -4479,7 +4471,6 @@ def attach_registration_idea(
 ):
     """Attach, change, or remove an Idea Jar problem statement for the member's registered team."""
     user_uid = get_user_uid(current_user)
-    is_admin = is_admin_user(current_user)
     event_doc = _get_event_doc_or_404(id)
     event_id = event_doc.id
     event_data = event_doc.to_dict() or {}

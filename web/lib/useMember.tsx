@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { api, type StudentProfile, type ProfileUpdate, type TicketListResponse } from "./api";
+import { api, type StudentProfile, type ProfileUpdate } from "./api";
 import { useAuth } from "./useAuth";
 import { appCache } from "./cache";
 import MemberLoading from "@/components/dashboard/MemberLoading";
@@ -87,64 +87,4 @@ export function useMember() {
   const value = useContext(MemberContext);
   if (!value) throw new Error("MemberProvider is required");
   return value;
-}
-
-export function useTickets() {
-  const { token, profile } = useMember();
-  const identity = profile.id;
-  const cacheKey = `tickets:my:${identity}`;
-
-  const [state, setState] = useState<{ token: string; data?: TicketListResponse; error?: string } | null>(() => {
-    const cached = appCache.get<TicketListResponse>(cacheKey);
-    return cached ? { token, data: cached.data } : null;
-  });
-  const [attempt, setAttempt] = useState(0);
-
-  useEffect(() => {
-    let active = true;
-    appCache
-      .fetch(
-        cacheKey,
-        async () => {
-          const tickets = await api.myTickets(token);
-          return {
-            linked: Boolean(profile.is_verified && profile.discord_id) || tickets.length > 0,
-            tickets,
-          };
-        },
-        {
-          ttl: 45 * 1000, // 45 seconds freshness
-          tags: ["tickets"],
-          userScope: identity,
-          force: attempt > 0,
-        }
-      )
-      .then((data) => {
-        if (active) setState({ token, data });
-      })
-      .catch(() => {
-        if (active) setState({ token, error: "Tickets could not be loaded. Try again in a moment." });
-      });
-
-    const unsubscribe = appCache.subscribe(cacheKey, () => {
-      const updated = appCache.get<TicketListResponse>(cacheKey);
-      if (updated && active) {
-        setState({ token, data: updated.data });
-      }
-    });
-
-    return () => {
-      active = false;
-      unsubscribe();
-    };
-  }, [token, profile.is_verified, profile.discord_id, attempt, cacheKey, identity]);
-
-  return {
-    data: state?.token === token ? state.data : undefined,
-    error: state?.token === token ? state.error : undefined,
-    retry: () => {
-      setState(null);
-      setAttempt((value) => value + 1);
-    },
-  };
 }

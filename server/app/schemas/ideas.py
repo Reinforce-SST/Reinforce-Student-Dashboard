@@ -11,7 +11,7 @@ from pydantic import (
     Field,
 )
 
-from app.schemas.common import DescriptionStr, NonBlankStr, TitleStr
+from app.schemas.common import DescriptionStr, TitleStr
 
 
 # ---------------------------------------------------------------------------

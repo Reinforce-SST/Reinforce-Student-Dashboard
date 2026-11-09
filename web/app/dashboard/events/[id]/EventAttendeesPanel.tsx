@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { api, type EventRegistration } from "@/lib/api";
-import { aggregateEventAttendees, type AggregatedTeam, type AttendeeProfile } from "@/lib/eventAttendees";
+import { aggregateEventAttendees, type AggregatedTeam } from "@/lib/eventAttendees";
 import MemberIcon from "@/components/dashboard/MemberIcon";
 import StudentHoverCard from "./StudentHoverCard";
 import styles from "./EventDetail.module.css";

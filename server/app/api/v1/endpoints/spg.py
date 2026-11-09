@@ -47,14 +47,12 @@ from app.schemas.spgs import (
     SPGRecruitingUpdateRequest,
     SPGResponse,
     SPGStatus,
-    SPGSubmilestone,
     SPGSubmilestoneCreate,
     SPGSubmilestoneUpdate,
     SPGTeamUpdateRequest,
     SPGTrack,
     SPGType,
     SPGUpdate,
-    SPGVisibility,
 )
 from app.services import contributions as contribution_service
 from app.services import spg_reports as reports_service
