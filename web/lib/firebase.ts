@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp, type FirebaseOptions } from "firebase/app";
-import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence, type Auth } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, type Auth } from "firebase/auth";
 
 /**
  * Firebase client. Values are NEXT_PUBLIC_* because the browser needs them —
@@ -17,8 +17,6 @@ const config: FirebaseOptions = {
 
 /** True when the deployment has been given its Firebase config. */
 export const isFirebaseConfigured = Boolean(config.apiKey && config.projectId);
-
-export const SST_DOMAIN = "sst.scaler.com";
 
 let _authInstance: Auth | null = null;
 

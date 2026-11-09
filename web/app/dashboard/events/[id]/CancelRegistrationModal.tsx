@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import MemberIcon from "@/components/dashboard/MemberIcon";
 import styles from "./EventDetail.module.css";
 
 interface CancelRegistrationModalProps {

@@ -13,7 +13,6 @@ import {
   type IdeaSummary,
   type TeamPoolMemberSummary,
 } from "@/lib/api";
-import type { EventSubmissionPayload, TimelineItemSchema } from "@/types/event-matrix";
 import { formatEventDuration, getEventGraduationBatches, parseDateOrIST } from "@/lib/eventsData";
 import EventAttendeesPanel from "./EventAttendeesPanel";
 import EventAttendancePanel from "./EventAttendancePanel";
@@ -28,47 +27,6 @@ import InviteTeammatesModal from "./InviteTeammatesModal";
 import type { InvitationItem } from "@/lib/api";
 import ArticleMarkdown from "@/components/dashboard/ArticleMarkdown";
 import styles from "./EventDetail.module.css";
-
-function formatInline(text: string): React.ReactNode[] {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith("**") && part.endsWith("**")) {
-      const inner = part.slice(2, -2);
-      const lower = inner.toLowerCase();
-      let trackStyle: React.CSSProperties | undefined;
-      if (lower.includes("research")) {
-        trackStyle = { color: "#f87171", fontWeight: 750 };
-      } else if (lower.includes("product")) {
-        trackStyle = { color: "#4ade80", fontWeight: 750 };
-      } else if (lower.includes("kaggle")) {
-        trackStyle = { color: "#38c8ff", fontWeight: 750 };
-      }
-      return (
-        <strong key={i} className={styles.mdBold} style={trackStyle}>
-          {inner}
-        </strong>
-      );
-    }
-    if (part.startsWith("`") && part.endsWith("`")) {
-      return (
-        <code
-          key={i}
-          style={{
-            background: "#1c1c22",
-            padding: "2px 6px",
-            borderRadius: "4px",
-            color: "var(--brand, #E5B731)",
-            fontFamily: "var(--font-mono, monospace)",
-            fontSize: "0.85em",
-          }}
-        >
-          {part.slice(1, -1)}
-        </code>
-      );
-    }
-    return <span key={i}>{part}</span>;
-  });
-}
 
 function renderMarkdown(md?: string | null) {
   if (!md) {
@@ -103,7 +61,6 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
   const squadSize = hasSquad ? squadMembers.length : 1;
   const isLeader = Boolean(myRegistration?.is_team_leader) || (squadMembers.length > 0 && squadMembers[0] === profile?.id) || (Boolean(myRegistration?.team_name) && squadSize <= 1);
   const isEligibleSquad = squadSize >= minTeamSize;
-  const isFullSquad = squadSize >= maxTeamSize;
   const [registeredCount, setRegisteredCount] = useState(event.stats?.registered_count ?? 0);
   const [deadlinePassed, setDeadlinePassed] = useState(false);
   const [linkedResources, setLinkedResources] = useState<LearningResource[]>([]);

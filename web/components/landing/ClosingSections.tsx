@@ -1,4 +1,4 @@
-import { LandingButton, MarkerText, Stars, stagger } from "./Primitives";
+import { MarkerText, Stars, stagger } from "./Primitives";
 import HeroCta from "./HeroCta";
 import styles from "@/app/page.module.css";
 
