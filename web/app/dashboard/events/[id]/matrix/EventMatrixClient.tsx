@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMember } from "@/lib/useMember";
-import { api } from "@/lib/api";
+import { api, type EventRegistration } from "@/lib/api";
 import type {
   EventMatrixResponse,
   CreateMatrixColumnPayload,
@@ -14,6 +14,7 @@ import MemberIcon from "@/components/dashboard/MemberIcon";
 import LoadingBar from "@/components/dashboard/LoadingBar";
 import { useConfirmDialog } from "@/components/dashboard/useConfirmDialog";
 import EventMatrixTable from "./EventMatrixTable";
+import SubmissionMatrixTable from "./SubmissionMatrixTable";
 import AddColumnModal from "./AddColumnModal";
 import ManageVolunteersModal from "./ManageVolunteersModal";
 import MatrixCellSidebar, { type ActiveCellTarget } from "./MatrixCellSidebar";
@@ -28,10 +29,15 @@ export default function EventMatrixClient({ eventId }: { eventId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Tabs: Operations (Full editor) vs Public View (Read-only preview)
-  const [matrixTab, setMatrixTab] = useState<"operations" | "public_view">(
+  // Tabs: Operations (Full editor) vs Submissions Matrix (Admin only) vs Public View (Read-only preview)
+  const [matrixTab, setMatrixTab] = useState<"operations" | "submissions" | "public_view">(
     "operations"
   );
+
+  // Raw registrations for Submissions Matrix
+  const [registrations, setRegistrations] = useState<EventRegistration[]>([]);
+  const [loadingRegistrations, setLoadingRegistrations] = useState(false);
+  const [eventTracks, setEventTracks] = useState<Array<{ track_id: string; name: string }>>([]);
 
   // Search & Filter
   const [search, setSearch] = useState("");
@@ -87,9 +93,56 @@ export default function EventMatrixClient({ eventId }: { eventId: string }) {
     }
   }, [token, eventId]);
 
+  const loadRegistrations = useCallback(async () => {
+    if (!token) return;
+    setLoadingRegistrations(true);
+    try {
+      const regs = await api.getEventRegistrations(token, eventId);
+      setRegistrations(regs);
+    } catch (err) {
+      console.error("Failed to load event registrations:", err);
+    } finally {
+      setLoadingRegistrations(false);
+    }
+  }, [token, eventId]);
+
   useEffect(() => {
     loadMatrix();
-  }, [loadMatrix]);
+    if (token) {
+      loadRegistrations();
+      api
+        .getEvent(eventId, token)
+        .then((ev) => {
+          if (ev?.event_tracks) {
+            setEventTracks(ev.event_tracks);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [loadMatrix, loadRegistrations, eventId, token]);
+
+  // Read URL query parameter for ?tab=submissions
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("tab") === "submissions") {
+        setMatrixTab("submissions");
+      }
+    }
+  }, []);
+
+  const handleTabChange = (nextTab: "operations" | "submissions" | "public_view") => {
+    setMatrixTab(nextTab);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (nextTab === "operations") {
+        url.searchParams.delete("tab");
+      } else {
+        url.searchParams.set("tab", nextTab);
+      }
+      window.history.replaceState({}, "", url.toString());
+    }
+  };
 
   // Stage Attendance Update
   const handleStageAttendance = (userId: string, newStatus: string) => {
@@ -333,6 +386,13 @@ export default function EventMatrixClient({ eventId }: { eventId: string }) {
   const isPublic = Boolean(data?.matrix_is_public);
   const isPinned = Boolean(data?.matrix_is_pinned);
   const canEdit = Boolean(data?.has_edit_access) && matrixTab !== "public_view";
+
+  // Revert submissions tab if user is not an admin
+  useEffect(() => {
+    if (!loading && data && !isAdmin && matrixTab === "submissions") {
+      setMatrixTab("operations");
+    }
+  }, [loading, data, isAdmin, matrixTab]);
 
   // Toggle Public Matrix Visibility
   const handleTogglePublic = async () => {
@@ -652,7 +712,9 @@ export default function EventMatrixClient({ eventId }: { eventId: string }) {
         <div className={styles.headerTop}>
           <div className={styles.titleArea}>
             <div className={styles.matrixTitleRow}>
-              <h1 className={styles.matrixHeading}>EVENT MATRIX</h1>
+              <h1 className={styles.matrixHeading}>
+                {matrixTab === "submissions" ? "SUBMISSIONS MATRIX" : "EVENT MATRIX"}
+              </h1>
               <span className={styles.eventTitleTag}>{data.event_title}</span>
               {isPinned && (
                 <span
@@ -670,7 +732,9 @@ export default function EventMatrixClient({ eventId }: { eventId: string }) {
               )}
             </div>
             <p className={styles.matrixSubtitle}>
-              Dynamic operational roster, live attendance roll-call, submission reviews, and custom evaluation records.
+              {matrixTab === "submissions"
+                ? "Admin Deliverables Overview: Inspect final repositories, live demos, slides, papers, and team submissions."
+                : "Dynamic operational roster, live attendance roll-call, submission reviews, and custom evaluation records."}
             </p>
           </div>
 
@@ -679,16 +743,39 @@ export default function EventMatrixClient({ eventId }: { eventId: string }) {
             <div className={styles.filterPills}>
               <button
                 type="button"
-                onClick={() => setMatrixTab("operations")}
+                onClick={() => handleTabChange("operations")}
                 className={`${styles.filterPill} ${
                   matrixTab === "operations" ? styles.filterPillActive : ""
                 }`}
               >
                 Editor Matrix
               </button>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => handleTabChange("submissions")}
+                  className={`${styles.filterPill} ${
+                    matrixTab === "submissions" ? styles.filterPillActive : ""
+                  }`}
+                  style={
+                    matrixTab === "submissions"
+                      ? {
+                          background: "#e5b731",
+                          color: "#121214",
+                          borderColor: "#e5b731",
+                          fontWeight: 750,
+                        }
+                      : {}
+                  }
+                  title="Deliverables & Project Submissions Matrix (Admin Only)"
+                >
+                  <MemberIcon name="award" size={13} />
+                  <span>Submissions Matrix 🔒</span>
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => setMatrixTab("public_view")}
+                onClick={() => handleTabChange("public_view")}
                 className={`${styles.filterPill} ${
                   matrixTab === "public_view" ? styles.filterPillActive : ""
                 }`}
@@ -831,156 +918,174 @@ export default function EventMatrixClient({ eventId }: { eventId: string }) {
           </div>
         </div>
 
-        {/* Filter and Search Bar */}
-        <div className={styles.filterBar}>
-          <div className={styles.filterPills}>
-            {[
-              { id: "all", label: `All Attendees (${stats.total})` },
-              { id: "checked_in", label: `Checked In (${stats.checkedIn} - ${stats.pct}%)` },
-              { id: "registered", label: "Registered" },
-              { id: "waitlisted", label: "Waitlisted" },
-              { id: "absent", label: "Absent" },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setStatusFilter(tab.id)}
-                className={`${styles.filterPill} ${
-                  statusFilter === tab.id ? styles.filterPillActive : ""
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-            {/* Team mode filter */}
+        {/* Filter and Search Bar for Operations / Public View */}
+        {matrixTab !== "submissions" && (
+          <div className={styles.filterBar}>
             <div className={styles.filterPills}>
               {[
-                { id: "all", label: "All Members" },
-                { id: "team", label: "Team Only" },
-                { id: "solo", label: "Solo Only" },
-              ].map((t) => (
+                { id: "all", label: `All Attendees (${stats.total})` },
+                { id: "checked_in", label: `Checked In (${stats.checkedIn} - ${stats.pct}%)` },
+                { id: "registered", label: "Registered" },
+                { id: "waitlisted", label: "Waitlisted" },
+                { id: "absent", label: "Absent" },
+              ].map((tab) => (
                 <button
-                  key={t.id}
+                  key={tab.id}
                   type="button"
-                  onClick={() => setTeamFilter(t.id as "all" | "team" | "solo")}
+                  onClick={() => setStatusFilter(tab.id)}
                   className={`${styles.filterPill} ${
-                    teamFilter === t.id ? styles.filterPillActive : ""
+                    statusFilter === tab.id ? styles.filterPillActive : ""
                   }`}
                 >
-                  {t.label}
+                  {tab.label}
                 </button>
               ))}
             </div>
 
-            {/* Track filter (if tracks are present) */}
-            {availableTracks.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+              {/* Team mode filter */}
               <div className={styles.filterPills}>
-                <button
-                  type="button"
-                  onClick={() => setTrackFilter("all")}
-                  className={`${styles.filterPill} ${
-                    trackFilter === "all" ? styles.filterPillActive : ""
-                  }`}
-                >
-                  All Tracks
-                </button>
-                {availableTracks.map((tr) => (
+                {[
+                  { id: "all", label: "All Members" },
+                  { id: "team", label: "Team Only" },
+                  { id: "solo", label: "Solo Only" },
+                ].map((t) => (
                   <button
-                    key={tr}
+                    key={t.id}
                     type="button"
-                    onClick={() => setTrackFilter(tr)}
+                    onClick={() => setTeamFilter(t.id as "all" | "team" | "solo")}
                     className={`${styles.filterPill} ${
-                      trackFilter === tr ? styles.filterPillActive : ""
+                      teamFilter === t.id ? styles.filterPillActive : ""
                     }`}
                   >
-                    Track: {tr}
+                    {t.label}
                   </button>
                 ))}
               </div>
-            )}
 
-            {/* Search Box */}
-            <div className={styles.searchBox}>
-              <MemberIcon name="search" size={14} />
-              <input
-                type="search"
-                placeholder="Search member, email, team, cell values..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className={styles.searchInput}
-              />
+              {/* Track filter (if tracks are present) */}
+              {availableTracks.length > 0 && (
+                <div className={styles.filterPills}>
+                  <button
+                    type="button"
+                    onClick={() => setTrackFilter("all")}
+                    className={`${styles.filterPill} ${
+                      trackFilter === "all" ? styles.filterPillActive : ""
+                    }`}
+                  >
+                    All Tracks
+                  </button>
+                  {availableTracks.map((tr) => (
+                    <button
+                      key={tr}
+                      type="button"
+                      onClick={() => setTrackFilter(tr)}
+                      className={`${styles.filterPill} ${
+                        trackFilter === tr ? styles.filterPillActive : ""
+                      }`}
+                    >
+                      Track: {tr}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Search Box */}
+              <div className={styles.searchBox}>
+                <MemberIcon name="search" size={14} />
+                <input
+                  type="search"
+                  placeholder="Search member, email, team, cell values..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className={styles.searchInput}
+                />
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </section>
 
-      {/* Main Matrix Workspace (Table + Persistent Sidebar) */}
-      <div className={styles.matrixWorkspace}>
-        <div className={styles.matrixTableSection}>
-          <EventMatrixTable
-            columns={data.columns}
-            rows={filteredRows}
-            isAdmin={isAdmin}
-            canEdit={canEdit}
-            stagedCells={stagedCells}
-            stagedAttendance={stagedAttendance}
-            activeCellTarget={activeCellTarget}
-            onUpdateAttendance={handleStageAttendance}
-            onUpdateCell={handleStageCell}
-            onDeleteColumn={handleDeleteColumn}
-            onAssignAll={handleAssignAll}
-            onOpenDrawer={(target) => setActiveCellTarget(target)}
+      {/* Main Matrix Workspace (Table + Persistent Sidebar) or Submissions Matrix */}
+      {matrixTab === "submissions" ? (
+        <div style={{ marginTop: "18px" }}>
+          <SubmissionMatrixTable
+            eventId={eventId}
+            eventTitle={data.event_title}
+            registrations={registrations}
+            loading={loadingRegistrations}
+            approvedIdeas={data.approved_ideas || []}
+            tracks={eventTracks}
+            onRefresh={loadRegistrations}
           />
         </div>
+      ) : (
+        <>
+          <div className={styles.matrixWorkspace}>
+            <div className={styles.matrixTableSection}>
+              <EventMatrixTable
+                columns={data.columns}
+                rows={filteredRows}
+                isAdmin={isAdmin}
+                canEdit={canEdit}
+                stagedCells={stagedCells}
+                stagedAttendance={stagedAttendance}
+                activeCellTarget={activeCellTarget}
+                onUpdateAttendance={handleStageAttendance}
+                onUpdateCell={handleStageCell}
+                onDeleteColumn={handleDeleteColumn}
+                onAssignAll={handleAssignAll}
+                onOpenDrawer={(target) => setActiveCellTarget(target)}
+              />
+            </div>
 
-        {/* Persistent Right Sidebar (Always visible on PC for instant access, no blur) */}
-        <MatrixCellSidebar
-          target={activeCellTarget}
-          canEdit={canEdit}
-          stats={stats}
-          columnsCount={data.columns.length}
-          eventSpgs={data.event_spgs || []}
-          approvedIdeas={data.approved_ideas || []}
-          onSaveCell={handleStageCell}
-          onSaveAttendance={handleStageAttendance}
-          onDeselect={() => setActiveCellTarget(null)}
-        />
-      </div>
-
-      {/* Sticky Save Changes Bar */}
-      {totalUnsaved > 0 && matrixTab === "operations" && (
-        <aside className={styles.stickySaveBar} role="status">
-          <div className={styles.stickySaveInfo}>
-            <span className={styles.unsavedDot} />
-            <span>
-              You have <strong>{totalUnsaved}</strong> unsaved matrix change
-              {totalUnsaved > 1 ? "s" : ""}.
-            </span>
+            {/* Persistent Right Sidebar (Always visible on PC for instant access, no blur) */}
+            <MatrixCellSidebar
+              target={activeCellTarget}
+              canEdit={canEdit}
+              stats={stats}
+              columnsCount={data.columns.length}
+              eventSpgs={data.event_spgs || []}
+              approvedIdeas={data.approved_ideas || []}
+              onSaveCell={handleStageCell}
+              onSaveAttendance={handleStageAttendance}
+              onDeselect={() => setActiveCellTarget(null)}
+            />
           </div>
 
-          <div className={styles.stickySaveActions}>
-            <button
-              type="button"
-              onClick={handleDiscardChanges}
-              disabled={savingBatch}
-              className={styles.discardBtn}
-            >
-              Discard Changes
-            </button>
-            <button
-              type="button"
-              onClick={handleSaveChanges}
-              disabled={savingBatch}
-              className={styles.saveChangesBtn}
-            >
-              <MemberIcon name="check" size={14} />
-              {savingBatch ? "Saving Changes..." : "Save Matrix Changes"}
-            </button>
-          </div>
-        </aside>
+          {/* Sticky Save Changes Bar */}
+          {totalUnsaved > 0 && matrixTab === "operations" && (
+            <aside className={styles.stickySaveBar} role="status">
+              <div className={styles.stickySaveInfo}>
+                <span className={styles.unsavedDot} />
+                <span>
+                  You have <strong>{totalUnsaved}</strong> unsaved matrix change
+                  {totalUnsaved > 1 ? "s" : ""}.
+                </span>
+              </div>
+
+              <div className={styles.stickySaveActions}>
+                <button
+                  type="button"
+                  onClick={handleDiscardChanges}
+                  disabled={savingBatch}
+                  className={styles.discardBtn}
+                >
+                  Discard Changes
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveChanges}
+                  disabled={savingBatch}
+                  className={styles.saveChangesBtn}
+                >
+                  <MemberIcon name="check" size={14} />
+                  {savingBatch ? "Saving Changes..." : "Save Matrix Changes"}
+                </button>
+              </div>
+            </aside>
+          )}
+        </>
       )}
 
       {/* Add Column Modal (Admins only) */}

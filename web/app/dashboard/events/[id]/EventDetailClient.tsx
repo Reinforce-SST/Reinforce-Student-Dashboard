@@ -1043,6 +1043,21 @@ export default function EventDetailClient({ event }: { event: EventDocument }) {
                   Open Event Matrix ↗
                 </Link>
               )}
+              {isAdmin && (
+                <Link
+                  href={`/dashboard/events/${encodeURIComponent(event.slug || event.id)}/matrix?tab=submissions`}
+                  className={styles.heroMatrixLink}
+                  style={{
+                    borderColor: "rgba(229, 183, 49, 0.4)",
+                    background: "rgba(229, 183, 49, 0.12)",
+                    color: "#e5b731",
+                  }}
+                  title="Open Admin Deliverables & Submissions Matrix"
+                >
+                  <MemberIcon name="award" size={15} />
+                  Submissions Matrix ↗
+                </Link>
+              )}
             </div>
 
             {/* Registered attendee metadata: Team Invite Code, Track Switcher, Roster Lock */}
