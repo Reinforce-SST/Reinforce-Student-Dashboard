@@ -209,3 +209,58 @@ test("event matrix batch update and assign-all routes", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("admin event registrations fetch delivers team and solo submission deliverables", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, init });
+    return {
+      ok: true,
+      json: async () => [
+        {
+          id: "reg-1",
+          event_id: "evt-hack-1",
+          user_id: "lead-1",
+          team_id: "team-squad-1",
+          team_name: "Code Crafters",
+          is_team_leader: true,
+          member_uids: ["lead-1", "teammate-1"],
+          status: "registered",
+          registered_at: "2026-11-05T10:00:00Z",
+          submission: {
+            repo_url: "https://github.com/code-crafters/project",
+            demo_url: "https://crafters.demo.app",
+            slides_url: "https://docs.google.com/presentation/d/deck",
+            paper_link: "https://arxiv.org/abs/example",
+            notes: "Final hackathon submission deliverable",
+            submitted_at: "2026-11-05T11:45:00Z",
+            submitted_by: "lead-1",
+          },
+          user_profile: { id: "lead-1", full_name: "Lead Member", email: "lead@sst.scaler.com" },
+          member_profiles: [
+            { id: "lead-1", full_name: "Lead Member", email: "lead@sst.scaler.com" },
+            { id: "teammate-1", full_name: "Teammate One", email: "teammate@sst.scaler.com" },
+          ],
+        },
+      ],
+    };
+  };
+
+  try {
+    const regs = await api.getEventRegistrations("admin-token", "evt-hack-1");
+    assert.equal(regs.length, 1);
+    const first = regs[0];
+    assert.equal(first.team_name, "Code Crafters");
+    assert.equal(first.is_team_leader, true);
+    assert.ok(first.submission);
+    assert.equal(first.submission.repo_url, "https://github.com/code-crafters/project");
+    assert.equal(first.submission.demo_url, "https://crafters.demo.app");
+    assert.equal(first.submission.slides_url, "https://docs.google.com/presentation/d/deck");
+    assert.equal(first.submission.notes, "Final hackathon submission deliverable");
+    assert.match(calls[0].url, /\/events\/evt-hack-1\/registrations$/);
+    assert.equal(calls[0].init.headers.Authorization, "Bearer admin-token");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
