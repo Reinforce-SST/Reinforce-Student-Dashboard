@@ -110,6 +110,19 @@ class UserEnumerationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual([item["id"] for item in response.json()["items"]], ["uid-target"])
 
+    # --- GET /users?discord_id= -----------------------------------------
+
+    def test_anonymous_discord_id_filter_matches_nobody(self):
+        response = self.client.get("/api/v1/users", params={"discord_id": "999888777"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["items"], [])
+
+    def test_authenticated_discord_id_filter_still_resolves(self):
+        self.authenticated()
+        response = self.client.get("/api/v1/users", params={"discord_id": "999888777"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["id"] for item in response.json()["items"]], ["uid-target"])
+
 
 if __name__ == "__main__":
     unittest.main()
